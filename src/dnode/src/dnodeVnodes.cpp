@@ -86,7 +86,7 @@ static int32_t dnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
 }
 
 static void *dnodeOpenVnode(void *param) {
-  SOpenVnodeThread *pThread = param;
+  SOpenVnodeThread *pThread = static_cast<SOpenVnodeThread * >(param);
   char stepDesc[TSDB_STEP_DESC_LEN] = {0};
 
   dDebug("thread:%d, start to open %d vnodes", pThread->threadIndex, pThread->vnodeNum);
@@ -125,10 +125,10 @@ int32_t dnodeInitVnodes() {
 
   int32_t threadNum = tsNumOfCores;
   int32_t vnodesPerThread = numOfVnodes / threadNum + 1;
-  SOpenVnodeThread *threads = calloc(threadNum, sizeof(SOpenVnodeThread));
+  SOpenVnodeThread *threads = static_cast<SOpenVnodeThread * >(calloc(threadNum, sizeof(SOpenVnodeThread)));
   for (int32_t t = 0; t < threadNum; ++t) {
     threads[t].threadIndex = t;
-    threads[t].vnodeList = calloc(vnodesPerThread, sizeof(int32_t));
+    threads[t].vnodeList = static_cast<int32_t *>(calloc(vnodesPerThread, sizeof(int32_t)));
   }
 
   for (int32_t v = 0; v < numOfVnodes; ++v) {
@@ -202,7 +202,7 @@ static void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
     return;
   }
 
-  SStatusRsp *pStatusRsp = pMsg->pCont;
+  SStatusRsp *pStatusRsp = static_cast<SStatusRsp *>(pMsg->pCont);
   SMInfos *minfos = &pStatusRsp->mnodes;
   dnodeUpdateMInfos(minfos);
 
@@ -233,7 +233,7 @@ static void dnodeSendStatusMsg(void *handle, void *tmrId) {
   }
 
   int32_t contLen = sizeof(SStatusMsg) + TSDB_MAX_VNODES * sizeof(SVnodeLoad);
-  SStatusMsg *pStatus = rpcMallocCont(contLen);
+  SStatusMsg *pStatus = static_cast<SStatusMsg *>(rpcMallocCont(contLen));
   if (pStatus == NULL) {
     taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
     dError("failed to malloc status message");
@@ -273,11 +273,10 @@ static void dnodeSendStatusMsg(void *handle, void *tmrId) {
   contLen = sizeof(SStatusMsg) + pStatus->openVnodes * sizeof(SVnodeLoad);
   pStatus->openVnodes = htons(pStatus->openVnodes);
 
-  SRpcMsg rpcMsg = {
-    .pCont   = pStatus,
-    .contLen = contLen,
-    .msgType = TSDB_MSG_TYPE_DM_STATUS
-  };
+  SRpcMsg rpcMsg;
+  rpcMsg.pCont = pStatus;
+  rpcMsg.contLen = contLen;
+  rpcMsg.msgType = TSDB_MSG_TYPE_DM_STATUS;
 
   SRpcEpSet epSet;
   dnodeGetEpSetForPeer(&epSet);

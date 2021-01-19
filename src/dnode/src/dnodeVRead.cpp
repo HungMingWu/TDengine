@@ -55,7 +55,7 @@ void dnodeDispatchToVReadQueue(SRpcMsg *pMsg) {
   int32_t queuedMsgNum = 0;
   int32_t leftLen = pMsg->contLen;
   int32_t code = TSDB_CODE_VND_INVALID_VGROUP_ID;
-  char *  pCont = pMsg->pCont;
+  char *  pCont = static_cast<char*>(pMsg->pCont);
 
   while (leftLen > 0) {
     SMsgHead *pHead = (SMsgHead *)pCont;
@@ -75,7 +75,9 @@ void dnodeDispatchToVReadQueue(SRpcMsg *pMsg) {
   }
 
   if (queuedMsgNum == 0) {
-    SRpcMsg rpcRsp = {.handle = pMsg->handle, .code = code};
+    SRpcMsg rpcRsp;
+    rpcRsp.handle = pMsg->handle;
+    rpcRsp.code = code;
     rpcSendResponse(&rpcRsp);
   }
 
@@ -99,12 +101,11 @@ void dnodeFreeVFetchQueue(void *pFqueue) {
 }
 
 void dnodeSendRpcVReadRsp(void *pVnode, SVReadMsg *pRead, int32_t code) {
-  SRpcMsg rpcRsp = {
-    .handle  = pRead->rpcHandle,
-    .pCont   = pRead->rspRet.rsp,
-    .contLen = pRead->rspRet.len,
-    .code    = code,
-  };
+  SRpcMsg rpcRsp;
+  rpcRsp.handle = pRead->rpcHandle;
+  rpcRsp.pCont = pRead->rspRet.rsp;
+  rpcRsp.contLen = pRead->rspRet.len;
+  rpcRsp.code = code;
 
   rpcSendResponse(&rpcRsp);
 }
@@ -113,7 +114,7 @@ void dnodeDispatchNonRspMsg(void *pVnode, SVReadMsg *pRead, int32_t code) {
 }
 
 static void *dnodeProcessReadQueue(void *wparam) {
-  SWorker *    pWorker = wparam;
+  SWorker *    pWorker = static_cast<SWorker *>(wparam);
   SWorkerPool *pPool = pWorker->pPool;
   SVReadMsg *  pRead;
   int32_t      qtype;
