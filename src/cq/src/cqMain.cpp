@@ -30,6 +30,7 @@
 #include "tglobal.h"
 #include "tlog.h"
 #include "twal.h"
+#include <mutex>
 
 #define cFatal(...) { if (cqDebugFlag & DEBUG_FATAL) { taosPrintLog("CQ  FATAL ", 255, __VA_ARGS__); }}
 #define cError(...) { if (cqDebugFlag & DEBUG_ERROR) { taosPrintLog("CQ  ERROR ", 255, __VA_ARGS__); }}
@@ -49,7 +50,7 @@ typedef struct {
   struct SCqObj *pHead;
   void    *dbConn;
   void    *tmrCtrl;
-  pthread_mutex_t mutex;
+  std::mutex mutex;
 } SCqContext;
 
 typedef struct SCqObj {
@@ -73,7 +74,7 @@ void *cqOpen(void *ahandle, const SCqCfg *pCfg) {
   if (tsEnableStream == 0) {
     return NULL;
   }
-  SCqContext *pContext = calloc(sizeof(SCqContext), 1);
+  auto pContext = new(std::nothrow) SCqContext{};
   if (pContext == NULL) {
     terrno = TAOS_SYSTEM_ERROR(errno);
     return NULL;
@@ -95,8 +96,6 @@ void *cqOpen(void *ahandle, const SCqCfg *pCfg) {
   pContext->cqWrite = pCfg->cqWrite;
   tscEmbedded = 1;
 
-  pthread_mutex_init(&pContext->mutex, NULL);
-
   cDebug("vgId:%d, CQ is opened", pContext->vgId);
 
   return pContext;
@@ -106,14 +105,14 @@ void cqClose(void *handle) {
   if (tsEnableStream == 0) {
     return;
   }
-  SCqContext *pContext = handle;
+  SCqContext *pContext = static_cast<SCqContext *>(handle);
   if (handle == NULL) return;
 
   // stop all CQs
   cqStop(pContext);
 
   // free all resources
-  pthread_mutex_lock(&pContext->mutex);
+  pContext->mutex.lock();
 
   SCqObj *pObj = pContext->pHead;
   while (pObj) {
@@ -124,26 +123,24 @@ void cqClose(void *handle) {
     free(pTemp);
   } 
   
-  pthread_mutex_unlock(&pContext->mutex);
-
-  pthread_mutex_destroy(&pContext->mutex);
+  pContext->mutex.unlock();
 
   taosTmrCleanUp(pContext->tmrCtrl);
   pContext->tmrCtrl = NULL;
 
   cDebug("vgId:%d, CQ is closed", pContext->vgId);
-  free(pContext);
+  delete pContext;
 }
 
 void cqStart(void *handle) {
   if (tsEnableStream == 0) {
     return;
   }
-  SCqContext *pContext = handle;
+  SCqContext *pContext = static_cast<SCqContext *>(handle);
   if (pContext->dbConn || pContext->master) return;
 
   cDebug("vgId:%d, start all CQs", pContext->vgId);
-  pthread_mutex_lock(&pContext->mutex);
+  std::lock_guard<std::mutex> lock(pContext->mutex);
 
   pContext->master = 1;
 
@@ -153,18 +150,17 @@ void cqStart(void *handle) {
     pObj = pObj->next;
   }
 
-  pthread_mutex_unlock(&pContext->mutex);
 }
 
 void cqStop(void *handle) {
   if (tsEnableStream == 0) {
     return;
   }
-  SCqContext *pContext = handle;
+  SCqContext *pContext = static_cast<SCqContext *>(handle);
   cDebug("vgId:%d, stop all CQs", pContext->vgId);
   if (pContext->dbConn == NULL || pContext->master == 0) return;
 
-  pthread_mutex_lock(&pContext->mutex);
+  std::lock_guard<std::mutex> lock(pContext->mutex);
 
   pContext->master = 0;
   SCqObj *pObj = pContext->pHead;
@@ -182,17 +178,15 @@ void cqStop(void *handle) {
 
   if (pContext->dbConn) taos_close(pContext->dbConn);
   pContext->dbConn = NULL;
-
-  pthread_mutex_unlock(&pContext->mutex);
 }
 
 void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, char *sqlStr, STSchema *pSchema) {
   if (tsEnableStream == 0) {
     return NULL;
   }
-  SCqContext *pContext = handle;
+  SCqContext *pContext = static_cast<SCqContext *>(handle);
 
-  SCqObj *pObj = calloc(sizeof(SCqObj), 1);
+  SCqObj *pObj = static_cast<SCqObj *>(calloc(sizeof(SCqObj), 1));
   if (pObj == NULL) return NULL;
 
   pObj->uid = uid;
@@ -207,15 +201,13 @@ void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, ch
 
   cInfo("vgId:%d, id:%d CQ:%s is created", pContext->vgId, pObj->tid, pObj->sqlStr);
 
-  pthread_mutex_lock(&pContext->mutex);
+  std::lock_guard<std::mutex> lock(pContext->mutex);
 
   pObj->next = pContext->pHead;
   if (pContext->pHead) pContext->pHead->prev = pObj;
   pContext->pHead = pObj;
 
   cqCreateStream(pContext, pObj);
-
-  pthread_mutex_unlock(&pContext->mutex);
 
   return pObj;
 }
@@ -224,10 +216,10 @@ void cqDrop(void *handle) {
   if (tsEnableStream == 0) {
     return;
   }
-  SCqObj *pObj = handle;
+  SCqObj *pObj = static_cast<SCqObj *>(handle);
   SCqContext *pContext = pObj->pContext;
 
-  pthread_mutex_lock(&pContext->mutex);
+  std::lock_guard<std::mutex> lock(pContext->mutex);
 
   if (pObj->prev) {
     pObj->prev->next = pObj->next;
@@ -254,7 +246,6 @@ void cqDrop(void *handle) {
   free(pObj->sqlStr);
   free(pObj);
 
-  pthread_mutex_unlock(&pContext->mutex);
 }
 
 static void doCreateStream(void *param, TAOS_RES *result, int32_t code) {
@@ -264,9 +255,8 @@ static void doCreateStream(void *param, TAOS_RES *result, int32_t code) {
   if (atomic_val_compare_exchange_ptr(&(pContext->dbConn), NULL, pSql->pTscObj) != NULL) {
     taos_close(pSql->pTscObj);
   }
-  pthread_mutex_lock(&pContext->mutex);
+  std::lock_guard<std::mutex> lock(pContext->mutex);
   cqCreateStream(pContext, pObj);
-  pthread_mutex_unlock(&pContext->mutex);
 }
 
 static void cqProcessCreateTimer(void *param, void *tmrId) {
@@ -277,9 +267,8 @@ static void cqProcessCreateTimer(void *param, void *tmrId) {
     cDebug("vgId:%d, try connect to TDengine", pContext->vgId);
     taos_connect_a(NULL, pContext->user, pContext->pass, pContext->db, 0, doCreateStream, param, NULL);
   } else {
-    pthread_mutex_lock(&pContext->mutex);
+    std::lock_guard<std::mutex> lock(pContext->mutex);
     cqCreateStream(pContext, pObj);
-    pthread_mutex_unlock(&pContext->mutex);
   }
 }
 
@@ -298,7 +287,7 @@ static void cqCreateStream(SCqContext *pContext, SCqObj *pObj) {
 
     // TODO the pObj->pStream may be released if error happens
     if (pObj->pStream) {
-      tscSetStreamDestTable(pObj->pStream, pObj->dstTable);
+      tscSetStreamDestTable(static_cast<SSqlStream*>(pObj->pStream), pObj->dstTable);
       pContext->num++;
       cDebug("vgId:%d, id:%d CQ:%s is opened", pContext->vgId, pObj->tid, pObj->sqlStr);
     } else {
@@ -323,7 +312,7 @@ static void cqProcessStreamRes(void *param, TAOS_RES *tres, TAOS_ROW row) {
   cDebug("vgId:%d, id:%d CQ:%s stream result is ready", pContext->vgId, pObj->tid, pObj->sqlStr);
 
   int32_t size = sizeof(SWalHead) + sizeof(SSubmitMsg) + sizeof(SSubmitBlk) + TD_DATA_ROW_HEAD_SIZE + pObj->rowSize;
-  char *buffer = calloc(size, 1);
+  char *buffer = static_cast<char*>(calloc(size, 1));
 
   SWalHead   *pHead = (SWalHead *)buffer;
   SSubmitMsg *pMsg = (SSubmitMsg *) (buffer + sizeof(SWalHead));
@@ -342,7 +331,7 @@ static void cqProcessStreamRes(void *param, TAOS_RES *tres, TAOS_ROW row) {
     } else if (c->type == TSDB_DATA_TYPE_NCHAR) {
       char buf[TSDB_MAX_NCHAR_LEN];
       int32_t len = taos_fetch_lengths(tres)[i];
-      taosMbsToUcs4(val, len, buf, sizeof(buf), &len);
+      taosMbsToUcs4(static_cast<char*>(val), len, buf, sizeof(buf), &len);
       memcpy(val + sizeof(VarDataLenT), buf, len);
       varDataLen(val) = len;
     }

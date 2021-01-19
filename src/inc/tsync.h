@@ -116,7 +116,7 @@ void    syncConfirmForward(int64_t rid, uint64_t version, int32_t code);
 void    syncRecover(int64_t rid);  // recover from other nodes:
 int32_t syncGetNodesRole(int64_t rid, SNodesRole *);
 
-extern char *syncRole[];
+extern const char *syncRole[];
 
 //global configurable parameters
 extern int32_t  sDebugFlag;
