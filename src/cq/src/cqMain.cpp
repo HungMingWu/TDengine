@@ -31,6 +31,7 @@
 #include "tlog.h"
 #include "twal.h"
 #include <mutex>
+#include <string>
 
 #define cFatal(...) { if (cqDebugFlag & DEBUG_FATAL) { taosPrintLog("CQ  FATAL ", 255, __VA_ARGS__); }}
 #define cError(...) { if (cqDebugFlag & DEBUG_ERROR) { taosPrintLog("CQ  ERROR ", 255, __VA_ARGS__); }}
@@ -58,8 +59,8 @@ typedef struct SCqObj {
   uint64_t       uid;
   int32_t        tid;      // table ID
   int32_t        rowSize;  // bytes of a row
-  char *         dstTable;
-  char *         sqlStr;   // SQL string
+  std::string    dstTable;
+  std::string    sqlStr;   // SQL string
   STSchema *     pSchema;  // pointer to schema array
   void *         pStream;
   struct SCqObj *prev;
@@ -105,7 +106,7 @@ void cqClose(void *handle) {
   if (tsEnableStream == 0) {
     return;
   }
-  SCqContext *pContext = static_cast<SCqContext *>(handle);
+  SCqContext *pContext = new (std::nothrow) SCqContext{};
   if (handle == NULL) return;
 
   // stop all CQs
@@ -119,8 +120,7 @@ void cqClose(void *handle) {
     SCqObj *pTemp = pObj;
     pObj = pObj->next;
     tdFreeSchema(pTemp->pSchema);
-    tfree(pTemp->sqlStr);
-    free(pTemp);
+    delete pTemp;
   } 
   
   pContext->mutex.unlock();
@@ -192,9 +192,9 @@ void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, ch
   pObj->uid = uid;
   pObj->tid = sid;
   if (dstTable != NULL) {
-    pObj->dstTable = strdup(dstTable);
+    pObj->dstTable = std::string(dstTable);
   }
-  pObj->sqlStr = strdup(sqlStr);
+  pObj->sqlStr = std::string(sqlStr);
 
   pObj->pSchema = tdDupSchema(pSchema);
   pObj->rowSize = schemaTLen(pSchema);
@@ -242,9 +242,7 @@ void cqDrop(void *handle) {
 
   cInfo("vgId:%d, id:%d CQ:%s is dropped", pContext->vgId, pObj->tid, pObj->sqlStr); 
   tdFreeSchema(pObj->pSchema);
-  free(pObj->dstTable);
-  free(pObj->sqlStr);
-  free(pObj);
+  delete pObj;
 
 }
 
@@ -283,11 +281,11 @@ static void cqCreateStream(SCqContext *pContext, SCqObj *pObj) {
   pObj->tmrId = 0;
 
   if (pObj->pStream == NULL) {
-    pObj->pStream = taos_open_stream(pContext->dbConn, pObj->sqlStr, cqProcessStreamRes, 0, pObj, NULL);
+    pObj->pStream = taos_open_stream(pContext->dbConn, pObj->sqlStr.c_str(), cqProcessStreamRes, 0, pObj, NULL);
 
     // TODO the pObj->pStream may be released if error happens
     if (pObj->pStream) {
-      tscSetStreamDestTable(static_cast<SSqlStream*>(pObj->pStream), pObj->dstTable);
+      tscSetStreamDestTable(static_cast<SSqlStream*>(pObj->pStream), pObj->dstTable.c_str());
       pContext->num++;
       cDebug("vgId:%d, id:%d CQ:%s is opened", pContext->vgId, pObj->tid, pObj->sqlStr);
     } else {
