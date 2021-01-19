@@ -30,8 +30,11 @@
 #include "tglobal.h"
 #include "tlog.h"
 #include "twal.h"
+#include <algorithm>
+#include <list>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #define cFatal(...) { if (cqDebugFlag & DEBUG_FATAL) { taosPrintLog("CQ  FATAL ", 255, __VA_ARGS__); }}
 #define cError(...) { if (cqDebugFlag & DEBUG_ERROR) { taosPrintLog("CQ  ERROR ", 255, __VA_ARGS__); }}
@@ -48,7 +51,7 @@ typedef struct {
   char     pass[TSDB_KEY_LEN];
   char     db[TSDB_DB_NAME_LEN];
   FCqWrite cqWrite;
-  struct SCqObj *pHead;
+  std::list<struct SCqObj *> pObjectList;
   void    *dbConn;
   void    *tmrCtrl;
   std::mutex mutex;
@@ -63,8 +66,6 @@ typedef struct SCqObj {
   std::string    sqlStr;   // SQL string
   STSchema *     pSchema;  // pointer to schema array
   void *         pStream;
-  struct SCqObj *prev;
-  struct SCqObj *next;
   SCqContext *   pContext;
 } SCqObj;
 
@@ -115,12 +116,9 @@ void cqClose(void *handle) {
   // free all resources
   pContext->mutex.lock();
 
-  SCqObj *pObj = pContext->pHead;
-  while (pObj) {
-    SCqObj *pTemp = pObj;
-    pObj = pObj->next;
-    tdFreeSchema(pTemp->pSchema);
-    delete pTemp;
+  for (auto &pObj : pContext->pObjectList) {
+    tdFreeSchema(pObj->pSchema);
+    delete pObj;
   } 
   
   pContext->mutex.unlock();
@@ -144,10 +142,8 @@ void cqStart(void *handle) {
 
   pContext->master = 1;
 
-  SCqObj *pObj = pContext->pHead;
-  while (pObj) {
+  for (auto &pObj : pContext->pObjectList) {
     cqCreateStream(pContext, pObj);
-    pObj = pObj->next;
   }
 
 }
@@ -163,8 +159,7 @@ void cqStop(void *handle) {
   std::lock_guard<std::mutex> lock(pContext->mutex);
 
   pContext->master = 0;
-  SCqObj *pObj = pContext->pHead;
-  while (pObj) {
+  for (auto &pObj : pContext->pObjectList) {
     if (pObj->pStream) {
       taos_close_stream(pObj->pStream);
       pObj->pStream = NULL;
@@ -173,7 +168,6 @@ void cqStop(void *handle) {
       taosTmrStop(pObj->tmrId);
       pObj->tmrId = 0;
     }
-    pObj = pObj->next;
   }
 
   if (pContext->dbConn) taos_close(pContext->dbConn);
@@ -186,7 +180,7 @@ void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, ch
   }
   SCqContext *pContext = static_cast<SCqContext *>(handle);
 
-  SCqObj *pObj = static_cast<SCqObj *>(calloc(sizeof(SCqObj), 1));
+  auto pObj = new (std::nothrow) SCqObj{};
   if (pObj == NULL) return NULL;
 
   pObj->uid = uid;
@@ -203,9 +197,7 @@ void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, ch
 
   std::lock_guard<std::mutex> lock(pContext->mutex);
 
-  pObj->next = pContext->pHead;
-  if (pContext->pHead) pContext->pHead->prev = pObj;
-  pContext->pHead = pObj;
+  pContext->pObjectList.emplace_front(pObj);
 
   cqCreateStream(pContext, pObj);
 
@@ -221,15 +213,8 @@ void cqDrop(void *handle) {
 
   std::lock_guard<std::mutex> lock(pContext->mutex);
 
-  if (pObj->prev) {
-    pObj->prev->next = pObj->next;
-  } else {
-    pContext->pHead = pObj->next;
-  }
-
-  if (pObj->next) {
-    pObj->next->prev = pObj->prev;
-  }
+  auto it = std::find(begin(pContext->pObjectList), end(pContext->pObjectList), pObj);
+  pContext->pObjectList.erase(it);
 
   // free the resources associated
   if (pObj->pStream) {
@@ -310,11 +295,11 @@ static void cqProcessStreamRes(void *param, TAOS_RES *tres, TAOS_ROW row) {
   cDebug("vgId:%d, id:%d CQ:%s stream result is ready", pContext->vgId, pObj->tid, pObj->sqlStr);
 
   int32_t size = sizeof(SWalHead) + sizeof(SSubmitMsg) + sizeof(SSubmitBlk) + TD_DATA_ROW_HEAD_SIZE + pObj->rowSize;
-  char *buffer = static_cast<char*>(calloc(size, 1));
+  std::vector<char> buffer(size);
 
-  SWalHead   *pHead = (SWalHead *)buffer;
-  SSubmitMsg *pMsg = (SSubmitMsg *) (buffer + sizeof(SWalHead));
-  SSubmitBlk *pBlk = (SSubmitBlk *) (buffer + sizeof(SWalHead) + sizeof(SSubmitMsg));
+  SWalHead   *pHead = (SWalHead *)(buffer.data());
+  SSubmitMsg *pMsg = (SSubmitMsg *) (buffer.data() + sizeof(SWalHead));
+  SSubmitBlk *pBlk = (SSubmitBlk *) (buffer.data() + sizeof(SWalHead) + sizeof(SSubmitMsg));
 
   SDataRow trow = (SDataRow)pBlk->data;
   tdInitDataRow(trow, pSchema);
@@ -356,6 +341,5 @@ static void cqProcessStreamRes(void *param, TAOS_RES *tres, TAOS_ROW row) {
 
   // write into vnode write queue
   pContext->cqWrite(pContext->vgId, pHead, TAOS_QTYPE_CQ, NULL);
-  free(buffer);
 }
 
