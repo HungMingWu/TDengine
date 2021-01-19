@@ -22,7 +22,7 @@
 
 static SBnThread tsBnThread;
 
-static void *bnThreadFunc(void *arg) {
+static void bnThreadFunc() {
   while (1) {
     pthread_mutex_lock(&tsBnThread.mutex);
     if (tsBnThread.stop) {
@@ -40,25 +40,14 @@ static void *bnThreadFunc(void *arg) {
   }
 
   mDebug("balance thread is stopped");
-  return NULL;
 }
 
 int32_t bnInitThread() {
-  memset(&tsBnThread, 0, sizeof(SBnThread));
   tsBnThread.stop = false;
   pthread_mutex_init(&tsBnThread.mutex, NULL);
   pthread_cond_init(&tsBnThread.cond, NULL);
 
-  pthread_attr_t thattr;
-  pthread_attr_init(&thattr);
-  pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_JOINABLE);
-  int32_t ret = pthread_create(&tsBnThread.thread, &thattr, bnThreadFunc, NULL);
-  pthread_attr_destroy(&thattr);
-
-  if (ret != 0) {
-    mError("failed to create balance thread since %s", strerror(errno));
-    return -1;
-  }
+  tsBnThread.thread = std::thread(bnThreadFunc);
 
   bnStartTimer(2000);
   mDebug("balance thread is created");
@@ -78,7 +67,7 @@ void bnCleanupThread() {
   tsBnThread.stop = true;
   pthread_cond_signal(&tsBnThread.cond);
   pthread_mutex_unlock(&(tsBnThread.mutex));
-  pthread_join(tsBnThread.thread, NULL);
+  tsBnThread.thread.join();
 
   pthread_cond_destroy(&tsBnThread.cond);
   pthread_mutex_destroy(&tsBnThread.mutex);
@@ -131,6 +120,7 @@ void bnStartTimer(int64_t mseconds) {
   }
 }
 
+extern "C" 
 void bnNotify() {
   bnStartTimer(500); 
 }

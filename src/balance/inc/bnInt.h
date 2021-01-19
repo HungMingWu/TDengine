@@ -16,12 +16,11 @@
 #ifndef TDENGINE_BALANCE_INT_H
 #define TDENGINE_BALANCE_INT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "mnodeInt.h"
 #include "mnodeDef.h"
 #include "mnodeDnode.h"
+#include <mutex>
+#include <thread>
 
 typedef struct {
   int32_t     size;
@@ -34,12 +33,13 @@ typedef struct {
   bool            stop;
   pthread_mutex_t mutex;
   pthread_cond_t  cond;
-  pthread_t       thread;
+  std::thread     thread;
 } SBnThread;
 
-typedef struct {
-  pthread_mutex_t mutex;
-} SBnMgmt;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int32_t bnInit();
 void    bnCleanUp();

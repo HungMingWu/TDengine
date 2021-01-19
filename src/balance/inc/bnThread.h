@@ -16,10 +16,11 @@
 #ifndef TDENGINE_BALANCE_THREAD_H
 #define TDENGINE_BALANCE_THREAD_H
 
+#include "bnInt.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "bnInt.h"
 
 int32_t bnInitThread();
 void    bnCleanupThread();

@@ -31,16 +31,8 @@
 
 extern int64_t tsDnodeRid;
 extern int64_t tsSdbRid;
-static SBnMgmt tsBnMgmt;
+static std::mutex tsBnMgmt;
 static void  bnMonitorDnodeModule();
-
-static void bnLock() {
-  pthread_mutex_lock(&tsBnMgmt.mutex);
-}
-
-static void bnUnLock() {
-  pthread_mutex_unlock(&tsBnMgmt.mutex);
-}
 
 static bool bnCheckFree(SDnodeObj *pDnode) {
   if (pDnode->status == TAOS_DN_STATUS_DROPPING || pDnode->status == TAOS_DN_STATUS_OFFLINE) {
@@ -140,7 +132,7 @@ static void bnAdjustVnodeIndex(SVgObj *pInVg) {
 static void bnDiscardVnode(SVgObj *pVgroup, SVnodeGid *pVnodeGid) {
   mDebug("vgId:%d, dnode:%d is dropping", pVgroup->vgId, pVnodeGid->dnodeId);
 
-  SDnodeObj *pDnode = mnodeGetDnode(pVnodeGid->dnodeId);
+  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVnodeGid->dnodeId));
   if (pDnode != NULL) {
     atomic_sub_fetch_32(&pDnode->openVnodes, 1);
     mnodeDecDnodeRef(pDnode);
@@ -163,11 +155,12 @@ static void bnDiscardVnode(SVgObj *pVgroup, SVnodeGid *pVnodeGid) {
   mnodeUpdateVgroup(pVgroup);
 }
 
+extern "C"
 int32_t bnAllocVnodes(SVgObj *pVgroup) {
   int32_t dnode = 0;
   int32_t vnodes = 0;
 
-  bnLock();
+  tsBnMgmt.lock();
   bnAccquireDnodes();
 
   mDebug("db:%s, try alloc %d vnodes to vgroup, dnodes total:%d, avail:%d", pVgroup->dbName, pVgroup->numOfVnodes,
@@ -192,7 +185,7 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
 
   if (vnodes != pVgroup->numOfVnodes) {
     bnReleaseDnodes();
-    bnUnLock();
+    tsBnMgmt.unlock();
 
     mDebug("db:%s, need vnodes:%d, but alloc:%d", pVgroup->dbName, pVgroup->numOfVnodes, vnodes);
 
@@ -215,7 +208,7 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
 
   bnAdjustVnodeIndex(pVgroup);
   bnReleaseDnodes();
-  bnUnLock();
+  tsBnMgmt.unlock();
   return TSDB_CODE_SUCCESS;
 }
 
@@ -397,6 +390,7 @@ static bool bnMonitorBalance() {
 // 1. reset balanceAccessSquence to zero
 // 2. reset state of dnodes to offline
 // 3. reset lastAccess of dnodes to zero
+extern "C"
 void bnReset() {
   void *     pIter = NULL;
   SDnodeObj *pDnode = NULL;
@@ -523,7 +517,7 @@ static bool bnMontiorDropping() {
 bool bnStart() {
   if (!sdbIsMaster()) return false;
 
-  bnLock();
+  std::lock_guard<std::mutex> lock(tsBnMgmt);
   bnAccquireDnodes();
 
   bnMonitorDnodeModule();
@@ -539,7 +533,6 @@ bool bnStart() {
   }
  
   bnReleaseDnodes();
-  bnUnLock();
 
   return updateSoon;
 }
@@ -588,16 +581,14 @@ void bnCheckStatus() {
 
 void bnCheckModules() {
   if (sdbIsMaster()) {
-    bnLock();
+    std::lock_guard<std::mutex> lock(tsBnMgmt);
     bnAccquireDnodes();
     bnMonitorDnodeModule();
     bnReleaseDnodes();
-    bnUnLock();
   }
 }
 
 int32_t bnInit() {
-  pthread_mutex_init(&tsBnMgmt.mutex, NULL);
   bnInitDnodes();
   bnInitThread();
   bnReset();
@@ -608,9 +599,9 @@ int32_t bnInit() {
 void bnCleanUp() {
   bnCleanupThread();
   bnCleanupDnodes();
-  pthread_mutex_destroy(&tsBnMgmt.mutex);
 }
 
+extern "C"
 int32_t bnDropDnode(SDnodeObj *pDnode) {
   int32_t    totalFreeVnodes = 0;
   void *     pIter = NULL;
@@ -669,6 +660,7 @@ static void bnMonitorDnodeModule() {
   }
 }
 
+extern "C"
 int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnodeId) {
   if (!sdbIsMaster()) {
     mError("dnode:%d, failed to alter vgId:%d to dnode:%d, for self not master", pSrcDnode->dnodeId, vnodeId, dnodeId);
@@ -686,14 +678,14 @@ int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnode
     return TSDB_CODE_MND_VGROUP_NOT_EXIST;
   }
 
-  SDnodeObj *pDestDnode = mnodeGetDnode(dnodeId);
+  SDnodeObj *pDestDnode = static_cast<SDnodeObj *>(mnodeGetDnode(dnodeId));
   if (pDestDnode == NULL) {
     mnodeDecVgroupRef(pVgroup);
     mError("dnode:%d, failed to alter vgId:%d to dnode:%d, for dnode not exist", pSrcDnode->dnodeId, vnodeId, dnodeId);
     return TSDB_CODE_MND_DNODE_NOT_EXIST;
   }
 
-  bnLock();
+  tsBnMgmt.lock();
   bnAccquireDnodes();
 
   int32_t code = TSDB_CODE_SUCCESS;
@@ -715,7 +707,7 @@ int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnode
   }
 
   bnReleaseDnodes();
-  bnUnLock();
+  tsBnMgmt.unlock();
 
   mnodeDecVgroupRef(pVgroup);
   mnodeDecDnodeRef(pDestDnode);

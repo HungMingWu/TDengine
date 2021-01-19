@@ -16,10 +16,11 @@
 #ifndef TDENGINE_BALANCE_SCORE_H
 #define TDENGINE_BALANCE_SCORE_H
 
+#include "bnInt.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "bnInt.h"
 
 void  bnInitDnodes();
 void  bnCleanupDnodes();

@@ -104,7 +104,7 @@ void bnInitDnodes() {
 
   memset(&tsBnDnodes, 0, sizeof(SBnDnodes));
   tsBnDnodes.maxSize = 16;
-  tsBnDnodes.list = calloc(tsBnDnodes.maxSize, sizeof(SDnodeObj *));
+  tsBnDnodes.list = static_cast<SDnodeObj **>(calloc(tsBnDnodes.maxSize, sizeof(SDnodeObj *)));
 }
 
 void bnCleanupDnodes() {
@@ -117,7 +117,7 @@ void bnCleanupDnodes() {
 static void bnCheckDnodesSize(int32_t dnodesNum) {
   if (tsBnDnodes.maxSize <= dnodesNum) {
     tsBnDnodes.maxSize = dnodesNum * 2;
-    tsBnDnodes.list = realloc(tsBnDnodes.list, tsBnDnodes.maxSize * sizeof(SDnodeObj *));
+    tsBnDnodes.list = static_cast<SDnodeObj **>(realloc(tsBnDnodes.list, tsBnDnodes.maxSize * sizeof(SDnodeObj *)));
   }
 }
 
