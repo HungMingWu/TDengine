@@ -19,10 +19,10 @@
 #include "hash.h"
 #include "dnodeEps.h"
 #include "defer.h"
-
+#include <mutex>
 static SDnodeEps *tsEps = NULL;
 static SHashObj * tsEpsHash = NULL;
-static pthread_mutex_t tsEpsMutex;
+static std::mutex tsEpsMutex;
 
 static int32_t dnodeReadEps();
 static int32_t dnodeWriteEps();
@@ -30,7 +30,6 @@ static void    dnodeResetEps(SDnodeEps *eps);
 static void    dnodePrintEps(SDnodeEps *eps);
 
 int32_t dnodeInitEps() {
-  pthread_mutex_init(&tsEpsMutex, NULL);
   tsEpsHash = taosHashInit(4, taosGetDefaultHashFunction(TSDB_DATA_TYPE_INT), true, HASH_ENTRY_LOCK);
   dnodeResetEps(NULL);
   int32_t ret = dnodeReadEps();
@@ -41,7 +40,7 @@ int32_t dnodeInitEps() {
 }
 
 void dnodeCleanupEps() {
-  pthread_mutex_lock(&tsEpsMutex);
+  std::lock_guard<std::mutex> lock(tsEpsMutex);
   if (tsEps) {
     free(tsEps);
     tsEps = NULL;
@@ -50,8 +49,6 @@ void dnodeCleanupEps() {
     taosHashCleanup(tsEpsHash);
     tsEpsHash = NULL;
   }
-  pthread_mutex_unlock(&tsEpsMutex);
-  pthread_mutex_destroy(&tsEpsMutex);
 }
 
 void dnodeUpdateEps(SDnodeEps *eps) {
@@ -63,7 +60,7 @@ void dnodeUpdateEps(SDnodeEps *eps) {
     eps->dnodeEps[i].dnodePort = htons(eps->dnodeEps[i].dnodePort);
   }
 
-  pthread_mutex_lock(&tsEpsMutex);
+  std::lock_guard<std::mutex> lock(tsEpsMutex);
   if (eps->dnodeNum != tsEps->dnodeNum) {
     dnodeResetEps(eps);
     dnodeWriteEps();
@@ -74,12 +71,11 @@ void dnodeUpdateEps(SDnodeEps *eps) {
       dnodeWriteEps();
     }
   }
-  pthread_mutex_unlock(&tsEpsMutex);
 }
 
 bool dnodeCheckEpChanged(int32_t dnodeId, char *epstr) {
   bool changed = false;
-  pthread_mutex_lock(&tsEpsMutex);
+  std::lock_guard<std::mutex> lock(tsEpsMutex);
   SDnodeEp *ep = static_cast<SDnodeEp*>(taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t)));
   if (ep != NULL) {
     char epSaved[TSDB_EP_LEN + 1];
@@ -87,19 +83,17 @@ bool dnodeCheckEpChanged(int32_t dnodeId, char *epstr) {
     changed = strcmp(epstr, epSaved) != 0;
     tstrncpy(epstr, epSaved, TSDB_EP_LEN);
   }
-  pthread_mutex_unlock(&tsEpsMutex);
   return changed;
 }
 
 void dnodeUpdateEp(int32_t dnodeId, char *epstr, char *fqdn, uint16_t *port) {
-  pthread_mutex_lock(&tsEpsMutex);
+  std::lock_guard<std::mutex> lock(tsEpsMutex);
   SDnodeEp *ep = static_cast< SDnodeEp *>(taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t)));
   if (ep != NULL) {
     if (port) *port = ep->dnodePort;
     if (fqdn) tstrncpy(fqdn, ep->dnodeFqdn, TSDB_FQDN_LEN);
     if (epstr) snprintf(epstr, TSDB_EP_LEN, "%s:%u", ep->dnodeFqdn, ep->dnodePort);
   }
-  pthread_mutex_unlock(&tsEpsMutex);
 }
 
 static void dnodeResetEps(SDnodeEps *eps) {

@@ -21,13 +21,17 @@ typedef struct SColumnInfoData {
   void* pData;    // the corresponding block data in memory
 } SColumnInfoData;
 
-void extractTableName(const char *tableId, char *name);
+#ifdef __cpluplus
+extern "C" {
+#endif
 
-char* extractDBName(const char *tableId, char *name);
+void extractTableName(const char* tableId, char* name);
+
+char* extractDBName(const char* tableId, char* name);
 
 size_t tableIdPrefix(const char* name, char* prefix, int32_t len);
 
-void extractTableNameFromToken(SStrToken *pToken, SStrToken* pTable);
+void extractTableNameFromToken(SStrToken* pToken, SStrToken* pTable);
 
 SSchema tGetTableNameColumnSchema();
 
@@ -53,4 +57,7 @@ SSchema tscGetTbnameColumnSchema();
  */
 bool isValidSchema(struct SSchema* pSchema, int32_t numOfCols, int32_t numOfTags);
 
+#ifdef __cpluplus
+}
+#endif
 #endif  // TDENGINE_NAME_H

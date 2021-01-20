@@ -56,7 +56,7 @@ static SStep tsDnodeSteps[] = {
   {"dnode-storage",   dnodeInitStorage,    dnodeCleanupStorage},
   {"dnode-cfg",       dnodeInitCfg,        NULL},
   {"dnode-eps",       dnodeInitEps,        dnodeCleanupEps},
-  {"dnode-minfos",    dnodeInitMInfos,     dnodeCleanupMInfos},
+  {"dnode-minfos",    dnodeInitMInfos,     NULL},
   {"dnode-wal",       walInit,             walCleanUp},
   {"dnode-sync",      syncInit,            syncCleanUp},
   {"dnode-check",     dnodeInitCheck,      dnodeCleanupCheck},     // NOTES: dnodeInitCheck must be behind the dnodeinitStorage component !!!

@@ -19,7 +19,6 @@
 #include "dnodeInt.h"
 
 int32_t dnodeInitMInfos();
-void    dnodeCleanupMInfos();
 void    dnodeUpdateMInfos(SMInfos *pMinfos);
 void    dnodeUpdateEpSetForPeer(SRpcEpSet *pEpSet);
 void    dnodeGetMInfos(SMInfos *pMinfos);

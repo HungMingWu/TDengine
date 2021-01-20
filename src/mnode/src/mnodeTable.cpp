@@ -102,12 +102,12 @@ static void mnodeDestroyChildTable(SCTableObj *pTable) {
 }
 
 static int32_t mnodeChildTableActionDestroy(SSdbRow *pRow) {
-  mnodeDestroyChildTable(pRow->pObj);
+  mnodeDestroyChildTable(static_cast<SCTableObj *>(pRow->pObj));
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeChildTableActionInsert(SSdbRow *pRow) {
-  SCTableObj *pTable = pRow->pObj;
+  SCTableObj *pTable = static_cast<SCTableObj *>(pRow->pObj);
 
   SVgObj *pVgroup = mnodeGetVgroup(pTable->vgId);
   if (pVgroup == NULL) {
@@ -124,7 +124,7 @@ static int32_t mnodeChildTableActionInsert(SSdbRow *pRow) {
 
   SAcctObj *pAcct = NULL;
   if (pDb != NULL) {
-    pAcct = mnodeGetAcct(pDb->acct);
+    pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
     if (pAcct == NULL) {
       mError("ctable:%s, acct:%s not exists", pTable->info.tableId, pDb->acct);
     }
@@ -132,7 +132,7 @@ static int32_t mnodeChildTableActionInsert(SSdbRow *pRow) {
 
   if (pTable->info.type == TSDB_CHILD_TABLE) {
     // add ref
-    pTable->superTable = mnodeGetSuperTableByUid(pTable->suid);
+    pTable->superTable = static_cast<SSTableObj *>(mnodeGetSuperTableByUid(pTable->suid));
     if (pTable->superTable != NULL) {
       mnodeAddTableIntoStable(pTable->superTable, pTable);
       grantAdd(TSDB_GRANT_TIMESERIES, pTable->superTable->numOfColumns - 1);
@@ -156,7 +156,7 @@ static int32_t mnodeChildTableActionInsert(SSdbRow *pRow) {
 }
 
 static int32_t mnodeChildTableActionDelete(SSdbRow *pRow) {
-  SCTableObj *pTable = pRow->pObj;
+  SCTableObj *pTable = static_cast<SCTableObj *>(pRow->pObj);
   if (pTable->vgId == 0) {
     return TSDB_CODE_MND_VGROUP_NOT_EXIST;
   }
@@ -167,7 +167,7 @@ static int32_t mnodeChildTableActionDelete(SSdbRow *pRow) {
 
   pVgroup = mnodeGetVgroup(pTable->vgId);
   if (pVgroup != NULL) pDb = mnodeGetDb(pVgroup->dbName);
-  if (pDb != NULL) pAcct = mnodeGetAcct(pDb->acct);
+  if (pDb != NULL) pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
 
   if (pTable->info.type == TSDB_CHILD_TABLE) {
     if (pTable->superTable) {
@@ -192,8 +192,8 @@ static int32_t mnodeChildTableActionDelete(SSdbRow *pRow) {
 }
 
 static int32_t mnodeChildTableActionUpdate(SSdbRow *pRow) {
-  SCTableObj *pNew = pRow->pObj;
-  SCTableObj *pTable = mnodeGetChildTable(pNew->info.tableId);
+  SCTableObj *pNew = static_cast<SCTableObj *>(pRow->pObj);
+  SCTableObj *pTable = static_cast<SCTableObj *>(mnodeGetChildTable(pNew->info.tableId));
   if (pTable != pNew) {
     void *oldTableId = pTable->info.tableId;
     void *oldSql = pTable->sql;
@@ -206,7 +206,7 @@ static int32_t mnodeChildTableActionUpdate(SSdbRow *pRow) {
     pTable->refCount = oldRefCount;
     pTable->sql = pNew->sql;
     pTable->schema = pNew->schema;
-    pTable->superTable = oldSTable;
+    pTable->superTable = static_cast<SSTableObj *>(oldSTable);
 
     free(pNew);
     free(oldSql);
@@ -219,7 +219,7 @@ static int32_t mnodeChildTableActionUpdate(SSdbRow *pRow) {
 }
 
 static int32_t mnodeChildTableActionEncode(SSdbRow *pRow) {
-  SCTableObj *pTable = pRow->pObj;
+  SCTableObj *pTable = static_cast<SCTableObj *>(pRow->pObj);
   assert(pTable != NULL && pRow->rowData != NULL);
 
   int32_t len = strlen(pTable->info.tableId);
@@ -250,15 +250,15 @@ static int32_t mnodeChildTableActionEncode(SSdbRow *pRow) {
 
 static int32_t mnodeChildTableActionDecode(SSdbRow *pRow) {
   assert(pRow->rowData != NULL);
-  SCTableObj *pTable = calloc(1, sizeof(SCTableObj));
+  SCTableObj *pTable = static_cast<SCTableObj *>(calloc(1, sizeof(SCTableObj)));
   if (pTable == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  int32_t len = strlen(pRow->rowData);
+  int32_t len = strlen(static_cast<char *>(pRow->rowData));
   if (len >= TSDB_TABLE_FNAME_LEN) {
     free(pTable);
     return TSDB_CODE_MND_INVALID_TABLE_ID;
   }
-  pTable->info.tableId = strdup(pRow->rowData);
+  pTable->info.tableId = strdup(static_cast<char *>(pRow->rowData));
   len++;
 
   memcpy((char*)pTable + sizeof(char *), pRow->rowData + len, tsChildTableUpdateSize);
@@ -275,7 +275,7 @@ static int32_t mnodeChildTableActionDecode(SSdbRow *pRow) {
     len += schemaSize;
 
     if (pTable->sqlLen != 0) {
-      pTable->sql = malloc(pTable->sqlLen);
+      pTable->sql = static_cast<char *>(malloc(pTable->sqlLen));
       if (pTable->sql == NULL) {
         mnodeDestroyChildTable(pTable);
         return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -354,21 +354,21 @@ static int32_t mnodeInitChildTables() {
   SCTableObj tObj;
   tsChildTableUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj.info.type;
 
-  SSdbTableDesc desc = {
-    .id           = SDB_TABLE_CTABLE,
-    .name         = "ctables",
-    .hashSessions = TSDB_DEFAULT_CTABLES_HASH_SIZE,
-    .maxRowSize   = sizeof(SCTableObj) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16) + TSDB_TABLE_FNAME_LEN + TSDB_CQ_SQL_SIZE,
-    .refCountPos  = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj,
-    .keyType      = SDB_KEY_VAR_STRING,
-    .fpInsert     = mnodeChildTableActionInsert,
-    .fpDelete     = mnodeChildTableActionDelete,
-    .fpUpdate     = mnodeChildTableActionUpdate,
-    .fpEncode     = mnodeChildTableActionEncode,
-    .fpDecode     = mnodeChildTableActionDecode,
-    .fpDestroy    = mnodeChildTableActionDestroy,
-    .fpRestored   = mnodeChildTableActionRestored
-  };
+  SSdbTableDesc desc;
+  desc.id = SDB_TABLE_CTABLE;
+  desc.name = "ctables";
+  desc.hashSessions = TSDB_DEFAULT_CTABLES_HASH_SIZE;
+  desc.maxRowSize = sizeof(SCTableObj) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16) +
+                    TSDB_TABLE_FNAME_LEN + TSDB_CQ_SQL_SIZE;
+  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
+  desc.keyType = SDB_KEY_VAR_STRING;
+  desc.fpInsert = mnodeChildTableActionInsert;
+  desc.fpDelete = mnodeChildTableActionDelete;
+  desc.fpUpdate = mnodeChildTableActionUpdate;
+  desc.fpEncode = mnodeChildTableActionEncode;
+  desc.fpDecode = mnodeChildTableActionDecode;
+  desc.fpDestroy = mnodeChildTableActionDestroy;
+  desc.fpRestored = mnodeChildTableActionRestored;
 
   tsCTableRid = sdbOpenTable(&desc);
   tsChildTableSdb = sdbGetTableByRid(tsCTableRid);
@@ -403,10 +403,11 @@ static void mnodeAddTableIntoStable(SSTableObj *pStable, SCTableObj *pCtable) {
   }
 
   if (pStable->vgHash != NULL) {
-    if (taosHashGet(pStable->vgHash, &pCtable->vgId, sizeof(pCtable->vgId)) == NULL) {
-      taosHashPut(pStable->vgHash, &pCtable->vgId, sizeof(pCtable->vgId), &pCtable->vgId, sizeof(pCtable->vgId));
+    if (taosHashGet(static_cast<SHashObj *>(pStable->vgHash), &pCtable->vgId, sizeof(pCtable->vgId)) == NULL) {
+      taosHashPut(static_cast<SHashObj *>(pStable->vgHash), &pCtable->vgId, sizeof(pCtable->vgId), &pCtable->vgId,
+                  sizeof(pCtable->vgId));
       mDebug("table:%s, vgId:%d is put into stable hash:%p, sizeOfVgList:%d", pStable->info.tableId, pCtable->vgId,
-             pStable->vgHash, taosHashGetSize(pStable->vgHash));
+             pStable->vgHash, taosHashGetSize(static_cast<SHashObj *>(pStable->vgHash)));
     }
   }
 }
@@ -418,9 +419,9 @@ static void mnodeRemoveTableFromStable(SSTableObj *pStable, SCTableObj *pCtable)
 
   SVgObj *pVgroup = mnodeGetVgroup(pCtable->vgId);
   if (pVgroup == NULL) {
-    taosHashRemove(pStable->vgHash, &pCtable->vgId, sizeof(pCtable->vgId));
+    taosHashRemove(static_cast<SHashObj *>(pStable->vgHash), &pCtable->vgId, sizeof(pCtable->vgId));
     mDebug("table:%s, vgId:%d is remove from stable hash:%p sizeOfVgList:%d", pStable->info.tableId, pCtable->vgId,
-           pStable->vgHash, taosHashGetSize(pStable->vgHash));
+           pStable->vgHash, taosHashGetSize(static_cast<SHashObj *>(pStable->vgHash)));
   }
   mnodeDecVgroupRef(pVgroup);
 }
@@ -428,7 +429,7 @@ static void mnodeRemoveTableFromStable(SSTableObj *pStable, SCTableObj *pCtable)
 static void mnodeDestroySuperTable(SSTableObj *pStable) {
   mDebug("table:%s, is destroyed, stable hash:%p", pStable->info.tableId, pStable->vgHash);
   if (pStable->vgHash != NULL) {
-    taosHashCleanup(pStable->vgHash);
+    taosHashCleanup(static_cast<SHashObj *>(pStable->vgHash));
     pStable->vgHash = NULL;
   }
   tfree(pStable->info.tableId);
@@ -437,12 +438,12 @@ static void mnodeDestroySuperTable(SSTableObj *pStable) {
 }
 
 static int32_t mnodeSuperTableActionDestroy(SSdbRow *pRow) {
-  mnodeDestroySuperTable(pRow->pObj);
+  mnodeDestroySuperTable(static_cast<SSTableObj *>(pRow->pObj));
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeSuperTableActionInsert(SSdbRow *pRow) {
-  SSTableObj *pStable = pRow->pObj;
+  SSTableObj *pStable = static_cast<SSTableObj *>(pRow->pObj);
   SDbObj *pDb = mnodeGetDbByTableId(pStable->info.tableId);
   if (pDb != NULL && pDb->status == TSDB_DB_STATUS_READY) {
     mnodeAddSuperTableIntoDb(pDb);
@@ -454,7 +455,7 @@ static int32_t mnodeSuperTableActionInsert(SSdbRow *pRow) {
 }
 
 static int32_t mnodeSuperTableActionDelete(SSdbRow *pRow) {
-  SSTableObj *pStable = pRow->pObj;
+  SSTableObj *pStable = static_cast<SSTableObj *>(pRow->pObj);
   SDbObj *pDb = mnodeGetDbByTableId(pStable->info.tableId);
   if (pDb != NULL) {
     mnodeRemoveSuperTableFromDb(pDb);
@@ -467,11 +468,11 @@ static int32_t mnodeSuperTableActionDelete(SSdbRow *pRow) {
 }
 
 static int32_t mnodeSuperTableActionUpdate(SSdbRow *pRow) {
-  SSTableObj *pNew = pRow->pObj;
-  SSTableObj *pTable = mnodeGetSuperTable(pNew->info.tableId);
+  SSTableObj *pNew = static_cast<SSTableObj *>(pRow->pObj);
+  SSTableObj *pTable = static_cast<SSTableObj *>(mnodeGetSuperTable(pNew->info.tableId));
   if (pTable != NULL && pTable != pNew) {
     mDebug("table:%s, will be updated, hash:%p sizeOfVgList:%d, new hash:%p sizeOfVgList:%d", pTable->info.tableId,
-           pTable->vgHash, taosHashGetSize(pTable->vgHash), pNew->vgHash, taosHashGetSize(pNew->vgHash));
+           pTable->vgHash, taosHashGetSize(static_cast<SHashObj *>(pTable->vgHash)), pNew->vgHash, taosHashGetSize(static_cast<SHashObj *>(pNew->vgHash)));
 
     void *oldTableId = pTable->info.tableId;
     void *oldSchema = pTable->schema;
@@ -490,7 +491,7 @@ static int32_t mnodeSuperTableActionUpdate(SSdbRow *pRow) {
     free(oldSchema);
 
     mDebug("table:%s, update finished, hash:%p sizeOfVgList:%d", pTable->info.tableId, pTable->vgHash,
-           taosHashGetSize(pTable->vgHash));
+           taosHashGetSize(static_cast<SHashObj *>(pTable->vgHash)));
   }
 
   mnodeDecTableRef(pTable);
@@ -498,7 +499,7 @@ static int32_t mnodeSuperTableActionUpdate(SSdbRow *pRow) {
 }
 
 static int32_t mnodeSuperTableActionEncode(SSdbRow *pRow) {
-  SSTableObj *pStable = pRow->pObj;
+  SSTableObj *pStable = static_cast<SSTableObj *>(pRow->pObj);
   assert(pRow->pObj != NULL && pRow->rowData != NULL);
 
   int32_t len = strlen(pStable->info.tableId);
@@ -525,19 +526,19 @@ static int32_t mnodeSuperTableActionDecode(SSdbRow *pRow) {
   SSTableObj *pStable = (SSTableObj *) calloc(1, sizeof(SSTableObj));
   if (pStable == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  int32_t len = strlen(pRow->rowData);
+  int32_t len = strlen(static_cast<char*>(pRow->rowData));
   if (len >= TSDB_TABLE_FNAME_LEN){
     free(pStable);
     return TSDB_CODE_MND_INVALID_TABLE_ID;
   }
-  pStable->info.tableId = strdup(pRow->rowData);
+  pStable->info.tableId = strdup(static_cast<char*>(pRow->rowData));
   len++;
 
   memcpy((char*)pStable + sizeof(char *), pRow->rowData + len, tsSuperTableUpdateSize);
   len += tsSuperTableUpdateSize;
 
   int32_t schemaSize = sizeof(SSchema) * (pStable->numOfColumns + pStable->numOfTags);
-  pStable->schema = malloc(schemaSize);
+  pStable->schema = static_cast<SSchema *>(malloc(schemaSize));
   if (pStable->schema == NULL) {
     mnodeDestroySuperTable(pStable);
     return TSDB_CODE_MND_NOT_SUPER_TABLE;
@@ -558,21 +559,20 @@ static int32_t mnodeInitSuperTables() {
   SSTableObj tObj;
   tsSuperTableUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj.info.type;
 
-  SSdbTableDesc desc = {
-    .id           = SDB_TABLE_STABLE,
-    .name         = "stables",
-    .hashSessions = TSDB_DEFAULT_STABLES_HASH_SIZE,
-    .maxRowSize   = sizeof(SSTableObj) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16) + TSDB_TABLE_FNAME_LEN,
-    .refCountPos  = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj,
-    .keyType      = SDB_KEY_VAR_STRING,
-    .fpInsert     = mnodeSuperTableActionInsert,
-    .fpDelete     = mnodeSuperTableActionDelete,
-    .fpUpdate     = mnodeSuperTableActionUpdate,
-    .fpEncode     = mnodeSuperTableActionEncode,
-    .fpDecode     = mnodeSuperTableActionDecode,
-    .fpDestroy    = mnodeSuperTableActionDestroy,
-    .fpRestored   = mnodeSuperTableActionRestored
-  };
+  SSdbTableDesc desc;
+  desc.id = SDB_TABLE_STABLE;
+  desc.name = "stables";
+  desc.hashSessions = TSDB_DEFAULT_STABLES_HASH_SIZE;
+  desc.maxRowSize = sizeof(SSTableObj) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16) + TSDB_TABLE_FNAME_LEN;
+  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
+  desc.keyType = SDB_KEY_VAR_STRING;
+  desc.fpInsert = mnodeSuperTableActionInsert;
+  desc.fpDelete = mnodeSuperTableActionDelete;
+  desc.fpUpdate = mnodeSuperTableActionUpdate;
+  desc.fpEncode = mnodeSuperTableActionEncode;
+  desc.fpDecode = mnodeSuperTableActionDecode;
+  desc.fpDestroy = mnodeSuperTableActionDestroy;
+  desc.fpRestored = mnodeSuperTableActionRestored;
 
   tsSTableUidHash = taosHashInit(8, taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT), true, HASH_ENTRY_LOCK);
   tsSTableRid = sdbOpenTable(&desc);
@@ -641,7 +641,7 @@ static void *mnodeGetSuperTable(char *tableId) {
 }
 
 static void *mnodeGetSuperTableByUid(uint64_t uid) {
-  SSTableObj **ppStable = taosHashGet(tsSTableUidHash, &uid, sizeof(int64_t));
+  SSTableObj **ppStable = static_cast<SSTableObj **>(taosHashGet(tsSTableUidHash, &uid, sizeof(int64_t)));
   if (ppStable == NULL || *ppStable == NULL) return NULL;
 
   SSTableObj *pStable = *ppStable;
@@ -719,14 +719,14 @@ static void mnodeExtractTableName(char* tableId, char* name) {
 }
 
 static SMnodeMsg *mnodeCreateSubMsg(SMnodeMsg *pBatchMasterMsg, int32_t contSize) {
-  SMnodeMsg *pSubMsg = taosAllocateQitem(sizeof(*pBatchMasterMsg) + contSize);
+  SMnodeMsg *pSubMsg = static_cast<SMnodeMsg *>(taosAllocateQitem(sizeof(*pBatchMasterMsg) + contSize));
   *pSubMsg = *pBatchMasterMsg;
 
   //pSubMsg->pCont = (char *) pSubMsg + sizeof(SMnodeMsg);
   pSubMsg->rpcMsg.pCont = pSubMsg->pCont;
   pSubMsg->successed = 0;
   pSubMsg->expected = 0;
-  SCMCreateTableMsg *pCM = pSubMsg->rpcMsg.pCont;
+  SCMCreateTableMsg *pCM = static_cast<SCMCreateTableMsg *>(pSubMsg->rpcMsg.pCont);
   pCM->numOfTables = htonl(1);
   pCM->contLen = htonl(contSize);
 
@@ -759,7 +759,7 @@ static int32_t mnodeValidateCreateTableMsg(SCreateTableMsg *pCreateTable, SMnode
     return TSDB_CODE_MND_DB_IN_DROPPING;
   }
 
-  if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(pCreateTable->tableFname);
+  if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(pCreateTable->tableFname));
   if (pMsg->pTable != NULL && pMsg->retry == 0) {
     if (pCreateTable->getMeta) {
       mDebug("msg:%p, app:%p table:%s, continue to get meta", pMsg, pMsg->rpcMsg.ahandle, pCreateTable->tableFname);
@@ -789,7 +789,7 @@ static int32_t mnodeProcessBatchCreateTableMsg(SMnodeMsg *pMsg) {
   if (pMsg->pBatchMasterMsg == NULL) { // batch master first round
     pMsg->pBatchMasterMsg = pMsg;
 
-    SCMCreateTableMsg *pCreate = pMsg->rpcMsg.pCont;
+    SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
     int32_t numOfTables = htonl(pCreate->numOfTables);
     int32_t contentLen = htonl(pCreate->contLen);
     pMsg->expected = numOfTables;
@@ -820,7 +820,7 @@ static int32_t mnodeProcessBatchCreateTableMsg(SMnodeMsg *pMsg) {
     }
   } else {
     if (pMsg->pBatchMasterMsg != pMsg) { // batch sub replay
-      SCMCreateTableMsg *pCreate = pMsg->rpcMsg.pCont;
+      SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
       SCreateTableMsg *pCreateTable = (SCreateTableMsg*) ((char*) pCreate + sizeof(SCMCreateTableMsg));
       int32_t code = mnodeValidateCreateTableMsg(pCreateTable, pMsg);
       if (code == TSDB_CODE_SUCCESS || code == TSDB_CODE_MND_TABLE_ALREADY_EXIST) {
@@ -846,7 +846,7 @@ static int32_t mnodeProcessBatchCreateTableMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
-  SCMCreateTableMsg *pCreate = pMsg->rpcMsg.pCont;
+  SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg * >(pMsg->rpcMsg.pCont);
 
   int32_t numOfTables = htonl(pCreate->numOfTables);
   int32_t contentLen = htonl(pCreate->contLen);
@@ -871,7 +871,7 @@ static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_DB_IN_DROPPING;
   }
 
-  if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(p->tableFname);
+  if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(p->tableFname));
   if (pMsg->pTable != NULL && pMsg->retry == 0) {
     if (p->getMeta) {
       mDebug("msg:%p, app:%p table:%s, continue to get meta", pMsg, pMsg->rpcMsg.ahandle, p->tableFname);
@@ -897,7 +897,7 @@ static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
-  SCMDropTableMsg *pDrop = pMsg->rpcMsg.pCont;
+  SCMDropTableMsg *pDrop = static_cast<SCMDropTableMsg *>(pMsg->rpcMsg.pCont);
   if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDbByTableId(pDrop->tableFname);
   if (pMsg->pDb == NULL) {
     mError("msg:%p, app:%p table:%s, failed to drop table, db not selected or db in dropping", pMsg,
@@ -916,7 +916,7 @@ static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_MONITOR_DB_FORBIDDEN;
   }
 
-  if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(pDrop->tableFname);
+  if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(pDrop->tableFname));
   if (pMsg->pTable == NULL) {
     if (pDrop->igNotExists) {
       mDebug("msg:%p, app:%p table:%s is not exist, treat as success", pMsg, pMsg->rpcMsg.ahandle, pDrop->tableFname);
@@ -930,7 +930,7 @@ static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
   if (pMsg->pTable->type == TSDB_SUPER_TABLE) {
     SSTableObj *pSTable = (SSTableObj *)pMsg->pTable;
     mInfo("msg:%p, app:%p table:%s, start to drop stable, uid:%" PRIu64 ", numOfChildTables:%d, sizeOfVgList:%d", pMsg,
-          pMsg->rpcMsg.ahandle, pDrop->tableFname, pSTable->uid, pSTable->numOfTables, taosHashGetSize(pSTable->vgHash));
+          pMsg->rpcMsg.ahandle, pDrop->tableFname, pSTable->uid, pSTable->numOfTables, taosHashGetSize(static_cast<SHashObj *>(pSTable->vgHash)));
     return mnodeProcessDropSuperTableMsg(pMsg);
   } else {
     SCTableObj *pCTable = (SCTableObj *)pMsg->pTable;
@@ -941,7 +941,7 @@ static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg) {
-  STableInfoMsg *pInfo = pMsg->rpcMsg.pCont;
+  STableInfoMsg *pInfo = static_cast<STableInfoMsg *>(pMsg->rpcMsg.pCont);
   pInfo->createFlag = htons(pInfo->createFlag);
   mDebug("msg:%p, app:%p table:%s, table meta msg is received from thandle:%p, createFlag:%d", pMsg, pMsg->rpcMsg.ahandle,
          pInfo->tableFname, pMsg->rpcMsg.handle, pInfo->createFlag);
@@ -958,7 +958,7 @@ static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_DB_IN_DROPPING;
   }
 
-  if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(pInfo->tableFname);
+  if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(pInfo->tableFname));
   if (pMsg->pTable == NULL) {
     if (!pInfo->createFlag) {
       mError("msg:%p, app:%p table:%s, failed to get table meta, table not exist", pMsg, pMsg->rpcMsg.ahandle,
@@ -997,14 +997,14 @@ static int32_t mnodeCreateSuperTableCb(SMnodeMsg *pMsg, int32_t code) {
 static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg) {
   if (pMsg == NULL) return TSDB_CODE_MND_APP_ERROR;
 
-  SCMCreateTableMsg *pCreate1 = pMsg->rpcMsg.pCont;
+  SCMCreateTableMsg *pCreate1 = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
   if (pCreate1->numOfTables == 0) {
     return TSDB_CODE_MND_INVALID_CREATE_TABLE_MSG;
   }
 
   SCreateTableMsg* pCreate = (SCreateTableMsg*)((char*)pCreate1 + sizeof(SCMCreateTableMsg));
 
-  SSTableObj *   pStable = calloc(1, sizeof(SSTableObj));
+  SSTableObj *pStable = static_cast<SSTableObj *>(calloc(1, sizeof(SSTableObj)));
   if (pStable == NULL) {
     mError("msg:%p, app:%p table:%s, failed to create, no enough memory", pMsg, pMsg->rpcMsg.ahandle, pCreate->tableFname);
     return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -1052,14 +1052,13 @@ static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg) {
   pMsg->pTable = (STableObj *)pStable;
   mnodeIncTableRef(pMsg->pTable);
 
-  SSdbRow row = {
-    .type    = SDB_OPER_GLOBAL,
-    .pTable  = tsSuperTableSdb,
-    .pObj    = pStable,
-    .rowSize = sizeof(SSTableObj) + schemaSize,
-    .pMsg    = pMsg,
-    .fpRsp   = mnodeCreateSuperTableCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.rowSize = sizeof(SSTableObj) + schemaSize;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeCreateSuperTableCb;
 
   int32_t code = sdbInsertRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -1087,16 +1086,16 @@ static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg) {
 
   SSTableObj *pStable = (SSTableObj *)pMsg->pTable;
   mInfo("msg:%p, app:%p stable:%s will be dropped, hash:%p sizeOfVgList:%d", pMsg, pMsg->rpcMsg.ahandle,
-        pStable->info.tableId, pStable->vgHash, taosHashGetSize(pStable->vgHash));
+        pStable->info.tableId, pStable->vgHash, taosHashGetSize(static_cast<SHashObj *>(pStable->vgHash)));
 
   if (pStable->vgHash != NULL /*pStable->numOfTables != 0*/) {
-    int32_t *pVgId = taosHashIterate(pStable->vgHash, NULL);
+    int32_t *pVgId = static_cast<int32_t *>(taosHashIterate(static_cast<SHashObj *>(pStable->vgHash), NULL));
     while (pVgId) {
       SVgObj *pVgroup = mnodeGetVgroup(*pVgId);
-      pVgId = taosHashIterate(pStable->vgHash, pVgId);
+      pVgId = static_cast<int32_t *>(taosHashIterate(static_cast<SHashObj *>(pStable->vgHash), pVgId));
       if (pVgroup == NULL) break;
 
-      SDropSTableMsg *pDrop = rpcMallocCont(sizeof(SDropSTableMsg));
+      SDropSTableMsg *pDrop = static_cast<SDropSTableMsg *>(rpcMallocCont(sizeof(SDropSTableMsg)));
       pDrop->contLen = htonl(sizeof(SDropSTableMsg));
       pDrop->vgId = htonl(pVgroup->vgId);
       pDrop->uid = htobe64(pStable->uid);
@@ -1104,25 +1103,27 @@ static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg) {
 
       mInfo("msg:%p, app:%p stable:%s, send drop stable msg to vgId:%d, hash:%p sizeOfVgList:%d", pMsg,
             pMsg->rpcMsg.ahandle, pStable->info.tableId, pVgroup->vgId, pStable->vgHash,
-            taosHashGetSize(pStable->vgHash));
+            taosHashGetSize(static_cast<SHashObj*>(pStable->vgHash)));
       SRpcEpSet epSet = mnodeGetEpSetFromVgroup(pVgroup);
-      SRpcMsg   rpcMsg = {.pCont = pDrop, .contLen = sizeof(SDropSTableMsg), .msgType = TSDB_MSG_TYPE_MD_DROP_STABLE};
+      SRpcMsg   rpcMsg;
+      rpcMsg.pCont = pDrop;
+      rpcMsg.contLen = sizeof(SDropSTableMsg);
+      rpcMsg.msgType = TSDB_MSG_TYPE_MD_DROP_STABLE;
       dnodeSendMsgToDnode(&epSet, &rpcMsg);
       mnodeDecVgroupRef(pVgroup);
     }
 
-    taosHashCancelIterate(pStable->vgHash, pVgId);
+    taosHashCancelIterate(static_cast<SHashObj *>(pStable->vgHash), pVgId);
 
     mnodeDropAllChildTablesInStable(pStable);
   }
 
-  SSdbRow row = {
-    .type    = SDB_OPER_GLOBAL,
-    .pTable  = tsSuperTableSdb,
-    .pObj    = pStable,
-    .pMsg    = pMsg,
-    .fpRsp   = mnodeDropSuperTableCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeDropSuperTableCb;
 
   int32_t code = sdbDeleteRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -1174,7 +1175,7 @@ static int32_t mnodeAddSuperTableTag(SMnodeMsg *pMsg, SSchema schema[], int32_t 
   }
 
   int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = realloc(pStable->schema, schemaSize + sizeof(SSchema) * ntags);
+  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize + sizeof(SSchema) * ntags));
 
   memcpy(pStable->schema + pStable->numOfColumns + pStable->numOfTags, schema, sizeof(SSchema) * ntags);
 
@@ -1189,13 +1190,12 @@ static int32_t mnodeAddSuperTableTag(SMnodeMsg *pMsg, SSchema schema[], int32_t 
   mInfo("msg:%p, app:%p stable %s, start to add tag %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId,
          schema[0].name);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeAddSuperTableTagCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeAddSuperTableTagCb;
 
   return sdbUpdateRow(&row);
 }
@@ -1223,13 +1223,12 @@ static int32_t mnodeDropSuperTableTag(SMnodeMsg *pMsg, char *tagName) {
 
   mInfo("msg:%p, app:%p stable %s, start to drop tag %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId, tagName);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeDropSuperTableTagCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeDropSuperTableTagCb;
 
   return sdbUpdateRow(&row);
 }
@@ -1267,13 +1266,12 @@ static int32_t mnodeModifySuperTableTagName(SMnodeMsg *pMsg, char *oldTagName, c
   mInfo("msg:%p, app:%p stable %s, start to modify tag %s to %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId,
          oldTagName, newTagName);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeModifySuperTableTagNameCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeModifySuperTableTagNameCb;
 
   return sdbUpdateRow(&row);
 }
@@ -1319,7 +1317,7 @@ static int32_t mnodeAddSuperTableColumn(SMnodeMsg *pMsg, SSchema schema[], int32
   }
 
   int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = realloc(pStable->schema, schemaSize + sizeof(SSchema) * ncols);
+  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize + sizeof(SSchema) * ncols));
 
   memmove(pStable->schema + pStable->numOfColumns + ncols, pStable->schema + pStable->numOfColumns,
           sizeof(SSchema) * pStable->numOfTags);
@@ -1333,7 +1331,7 @@ static int32_t mnodeAddSuperTableColumn(SMnodeMsg *pMsg, SSchema schema[], int32
   pStable->numOfColumns += ncols;
   pStable->sversion++;
 
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
   if (pAcct != NULL) {
     pAcct->acctInfo.numOfTimeSeries += (ncols * pStable->numOfTables);
     mnodeDecAcctRef(pAcct);
@@ -1341,13 +1339,12 @@ static int32_t mnodeAddSuperTableColumn(SMnodeMsg *pMsg, SSchema schema[], int32
 
   mInfo("msg:%p, app:%p stable %s, start to add column", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeAddSuperTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeAddSuperTableColumnCb;
 
  return sdbUpdateRow(&row);
 }
@@ -1376,9 +1373,9 @@ static int32_t mnodeDropSuperTableColumn(SMnodeMsg *pMsg, char *colName) {
   pStable->sversion++;
 
   int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = realloc(pStable->schema, schemaSize);
+  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize));
 
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
   if (pAcct != NULL) {
     pAcct->acctInfo.numOfTimeSeries -= pStable->numOfTables;
     mnodeDecAcctRef(pAcct);
@@ -1386,13 +1383,12 @@ static int32_t mnodeDropSuperTableColumn(SMnodeMsg *pMsg, char *colName) {
 
   mInfo("msg:%p, app:%p stable %s, start to delete column", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeDropSuperTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeDropSuperTableColumnCb;
 
   return sdbUpdateRow(&row);
 }
@@ -1430,13 +1426,12 @@ static int32_t mnodeChangeSuperTableColumn(SMnodeMsg *pMsg, char *oldName, char 
   mInfo("msg:%p, app:%p stable %s, start to modify column %s to %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId,
          oldName, newName);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsSuperTableSdb,
-    .pObj   = pStable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeChangeSuperTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsSuperTableSdb;
+  row.pObj = pStable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeChangeSuperTableColumnCb;
 
   return sdbUpdateRow(&row);
 }
@@ -1596,11 +1591,10 @@ void mnodeDropAllSuperTables(SDbObj *pDropDb) {
     if (pTable == NULL) break;
 
     if (strncmp(prefix, pTable->info.tableId, prefixLen) == 0) {
-      SSdbRow row = {
-        .type   = SDB_OPER_LOCAL,
-        .pTable = tsSuperTableSdb,
-        .pObj   = pTable,
-      };
+      SSdbRow row;
+      row.type = SDB_OPER_LOCAL;
+      row.pTable = tsSuperTableSdb;
+      row.pObj = pTable;
       sdbDeleteRow(&row);
       numOfTables ++;
     }
@@ -1628,7 +1622,7 @@ static int32_t mnodeSetSchemaFromSuperTable(SSchema *pSchema, SSTableObj *pTable
 
 static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg) {
   SSTableObj *pTable = (SSTableObj *)pMsg->pTable;
-  STableMetaMsg *pMeta   = rpcMallocCont(sizeof(STableMetaMsg) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16));
+  STableMetaMsg *pMeta   = static_cast<STableMetaMsg *>(rpcMallocCont(sizeof(STableMetaMsg) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16)));
   if (pMeta == NULL) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
@@ -1648,27 +1642,28 @@ static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg) {
   pMsg->rpcRsp.rsp = pMeta;
 
   mDebug("msg:%p, app:%p stable:%s, uid:%" PRIu64 " table meta is retrieved, sizeOfVgList:%d numOfTables:%d", pMsg,
-         pMsg->rpcMsg.ahandle, pTable->info.tableId, pTable->uid, taosHashGetSize(pTable->vgHash), pTable->numOfTables);
+         pMsg->rpcMsg.ahandle, pTable->info.tableId, pTable->uid, taosHashGetSize(static_cast<SHashObj*>(pTable->vgHash)),
+         pTable->numOfTables);
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
-  SSTableVgroupMsg *pInfo = pMsg->rpcMsg.pCont;
+  SSTableVgroupMsg *pInfo = static_cast<SSTableVgroupMsg *>(pMsg->rpcMsg.pCont);
   int32_t numOfTable = htonl(pInfo->numOfTables);
 
   // reserve space
   int32_t contLen = sizeof(SSTableVgroupRspMsg) + 32 * sizeof(SVgroupMsg) + sizeof(SVgroupsMsg);
   for (int32_t i = 0; i < numOfTable; ++i) {
     char *stableName = (char *)pInfo + sizeof(SSTableVgroupMsg) + (TSDB_TABLE_FNAME_LEN)*i;
-    SSTableObj *pTable = mnodeGetSuperTable(stableName);
+    SSTableObj *pTable = static_cast<SSTableObj *>(mnodeGetSuperTable(stableName));
     if (pTable != NULL && pTable->vgHash != NULL) {
-      contLen += (taosHashGetSize(pTable->vgHash) * sizeof(SVgroupMsg) + sizeof(SVgroupsMsg));
+      contLen += (taosHashGetSize(static_cast<SHashObj *>(pTable->vgHash)) * sizeof(SVgroupMsg) + sizeof(SVgroupsMsg));
     }
 
     mnodeDecTableRef(pTable);
   }
 
-  SSTableVgroupRspMsg *pRsp = rpcMallocCont(contLen);
+  SSTableVgroupRspMsg *pRsp = static_cast<SSTableVgroupRspMsg *>(rpcMallocCont(contLen));
   if (pRsp == NULL) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
@@ -1678,7 +1673,7 @@ static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
 
   for (int32_t i = 0; i < numOfTable; ++i) {
     char *stableName = (char *)pInfo + sizeof(SSTableVgroupMsg) + (TSDB_TABLE_FNAME_LEN)*i;
-    SSTableObj *pTable = mnodeGetSuperTable(stableName);
+    SSTableObj *pTable = static_cast<SSTableObj *>(mnodeGetSuperTable(stableName));
     if (pTable == NULL) {
       mError("msg:%p, app:%p stable:%s, not exist while get stable vgroup info", pMsg, pMsg->rpcMsg.ahandle, stableName);
       mnodeDecTableRef(pTable);
@@ -1699,13 +1694,13 @@ static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
     } else {
       SVgroupsMsg *pVgroupMsg = (SVgroupsMsg *)msg;
       mDebug("msg:%p, app:%p stable:%s, hash:%p sizeOfVgList:%d will be returned", pMsg, pMsg->rpcMsg.ahandle,
-             pTable->info.tableId, pTable->vgHash, taosHashGetSize(pTable->vgHash));
+             pTable->info.tableId, pTable->vgHash, taosHashGetSize(static_cast<SHashObj*>(pTable->vgHash)));
 
-      int32_t *pVgId = taosHashIterate(pTable->vgHash, NULL);
+      int32_t *pVgId = static_cast<int32_t *>(taosHashIterate(static_cast<SHashObj*>(pTable->vgHash), NULL));
       int32_t  vgSize = 0;
       while (pVgId) {
         SVgObj *pVgroup = mnodeGetVgroup(*pVgId);
-        pVgId = taosHashIterate(pTable->vgHash, pVgId);
+        pVgId = static_cast<int32_t *>(taosHashIterate(static_cast<SHashObj *>(pTable->vgHash), pVgId));
         if (pVgroup == NULL) continue;
 
         pVgroupMsg->vgroups[vgSize].vgId = htonl(pVgroup->vgId);
@@ -1725,7 +1720,7 @@ static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
         mnodeDecVgroupRef(pVgroup);
       }
 
-      taosHashCancelIterate(pTable->vgHash, pVgId);
+      taosHashCancelIterate(static_cast<SHashObj *>(pTable->vgHash), pVgId);
       mnodeDecTableRef(pTable);
 
       pVgroupMsg->numOfVgroups = htonl(vgSize);
@@ -1777,7 +1772,7 @@ static void *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCreateMsg, SCTabl
     contLen = sizeof(SMDCreateTableMsg) + totalCols * sizeof(SSchema) + pTable->sqlLen;
   }
 
-  SMDCreateTableMsg *pCreate = rpcMallocCont(contLen);
+  SMDCreateTableMsg *pCreate = static_cast<SMDCreateTableMsg *>(rpcMallocCont(contLen));
   if (pCreate == NULL) {
     terrno = TSDB_CODE_MND_OUT_OF_MEMORY;
     return NULL;
@@ -1839,20 +1834,19 @@ static int32_t mnodeDoCreateChildTableFp(SMnodeMsg *pMsg) {
   mDebug("msg:%p, app:%p table:%s, created in mnode, vgId:%d sid:%d, uid:%" PRIu64, pMsg, pMsg->rpcMsg.ahandle,
          pTable->info.tableId, pTable->vgId, pTable->tid, pTable->uid);
 
-  SCMCreateTableMsg *pCreate = pMsg->rpcMsg.pCont;
-  SMDCreateTableMsg *pMDCreate = mnodeBuildCreateChildTableMsg(pCreate, pTable);
+  SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
+  SMDCreateTableMsg *pMDCreate = static_cast<SMDCreateTableMsg *>(mnodeBuildCreateChildTableMsg(pCreate, pTable));
   if (pMDCreate == NULL) {
     return terrno;
   }
 
   SRpcEpSet epSet = mnodeGetEpSetFromVgroup(pMsg->pVgroup);
-  SRpcMsg rpcMsg = {
-      .ahandle = pMsg,
-      .pCont   = pMDCreate,
-      .contLen = htonl(pMDCreate->contLen),
-      .code    = 0,
-      .msgType = TSDB_MSG_TYPE_MD_CREATE_TABLE
-  };
+  SRpcMsg rpcMsg;
+  rpcMsg.ahandle = pMsg;
+  rpcMsg.pCont   = pMDCreate;
+  rpcMsg.contLen = htonl(pMDCreate->contLen);
+  rpcMsg.code = 0;
+  rpcMsg.msgType = TSDB_MSG_TYPE_MD_CREATE_TABLE;
 
   dnodeSendMsgToDnode(&epSet, &rpcMsg);
   return TSDB_CODE_MND_ACTION_IN_PROGRESS;
@@ -1902,10 +1896,10 @@ static int32_t mnodeDoCreateChildTableCb(SMnodeMsg *pMsg, int32_t code) {
 static int32_t mnodeDoCreateChildTable(SMnodeMsg *pMsg, int32_t tid) {
   SVgObj *pVgroup = pMsg->pVgroup;
 
-  SCMCreateTableMsg *p1 = pMsg->rpcMsg.pCont;
+  SCMCreateTableMsg *p1 = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
   SCreateTableMsg   *pCreate = (SCreateTableMsg*)((char*)p1 + sizeof(SCMCreateTableMsg));
 
-  SCTableObj *pTable = calloc(1, sizeof(SCTableObj));
+  SCTableObj *pTable = static_cast<SCTableObj *>(calloc(1, sizeof(SCTableObj)));
   if (pTable == NULL) {
     mError("msg:%p, app:%p table:%s, failed to alloc memory", pMsg, pMsg->rpcMsg.ahandle, pCreate->tableFname);
     return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -1933,7 +1927,7 @@ static int32_t mnodeDoCreateChildTable(SMnodeMsg *pMsg, int32_t tid) {
       return TSDB_CODE_TDB_INVALID_CREATE_TB_MSG;
     }
 
-    if (pMsg->pSTable == NULL) pMsg->pSTable = mnodeGetSuperTable(stableName);
+    if (pMsg->pSTable == NULL) pMsg->pSTable = static_cast<SSTableObj *>(mnodeGetSuperTable(stableName));
     if (pMsg->pSTable == NULL) {
       mError("msg:%p, app:%p table:%s, corresponding super table:%s does not exist", pMsg, pMsg->rpcMsg.ahandle,
              pCreate->tableFname, stableName);
@@ -1976,7 +1970,7 @@ static int32_t mnodeDoCreateChildTable(SMnodeMsg *pMsg, int32_t tid) {
 
     if (pTable->sqlLen != 0) {
       pTable->info.type = TSDB_STREAM_TABLE;
-      pTable->sql = calloc(1, pTable->sqlLen);
+      pTable->sql = static_cast<char *>(calloc(1, pTable->sqlLen));
       if (pTable->sql == NULL) {
         free(pTable);
         return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -2045,7 +2039,7 @@ static int32_t mnodeProcessCreateChildTableMsg(SMnodeMsg *pMsg) {
       return mnodeDoCreateChildTable(pMsg, tid);
     }
   } else {
-    if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(pCreate->tableFname);
+    if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(pCreate->tableFname));
   }
 
   if (pMsg->pTable == NULL) {
@@ -2062,7 +2056,7 @@ static int32_t mnodeSendDropChildTableMsg(SMnodeMsg *pMsg, bool needReturn) {
   SCTableObj *pTable = (SCTableObj *)pMsg->pTable;
   mLInfo("msg:%p, app:%p ctable:%s, is dropped from sdb", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId);
 
-  SMDDropTableMsg *pDrop = rpcMallocCont(sizeof(SMDDropTableMsg));
+  SMDDropTableMsg *pDrop = static_cast<SMDDropTableMsg *>(rpcMallocCont(sizeof(SMDDropTableMsg)));
   if (pDrop == NULL) {
     mError("msg:%p, app:%p ctable:%s, failed to drop ctable, no enough memory", pMsg, pMsg->rpcMsg.ahandle,
            pTable->info.tableId);
@@ -2080,13 +2074,12 @@ static int32_t mnodeSendDropChildTableMsg(SMnodeMsg *pMsg, bool needReturn) {
   mInfo("msg:%p, app:%p ctable:%s, send drop ctable msg, vgId:%d sid:%d uid:%" PRIu64, pMsg, pMsg->rpcMsg.ahandle,
         pDrop->tableFname, pTable->vgId, pTable->tid, pTable->uid);
 
-  SRpcMsg rpcMsg = {
-    .ahandle = pMsg,
-    .pCont   = pDrop,
-    .contLen = sizeof(SMDDropTableMsg),
-    .code    = 0,
-    .msgType = TSDB_MSG_TYPE_MD_DROP_TABLE
-  };
+  SRpcMsg rpcMsg;
+  rpcMsg.ahandle = pMsg;
+  rpcMsg.pCont = pDrop;
+  rpcMsg.contLen = sizeof(SMDDropTableMsg);
+  rpcMsg.code = 0;
+  rpcMsg.msgType = TSDB_MSG_TYPE_MD_DROP_TABLE;
 
   if (!needReturn) rpcMsg.ahandle = NULL;
 
@@ -2114,13 +2107,12 @@ static int32_t mnodeProcessDropChildTableMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_APP_ERROR;
   }
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsChildTableSdb,
-    .pObj   = pTable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeDropChildTableCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsChildTableSdb;
+  row.pObj = pTable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeDropChildTableCb;
 
   int32_t code = sdbDeleteRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -2150,7 +2142,7 @@ static int32_t mnodeAlterNormalTableColumnCb(SMnodeMsg *pMsg, int32_t code) {
     return code;
   }
 
-  SMDCreateTableMsg *pMDCreate = mnodeBuildCreateChildTableMsg(NULL, pTable);
+  SMDCreateTableMsg *pMDCreate = static_cast<SMDCreateTableMsg *>(mnodeBuildCreateChildTableMsg(NULL, pTable));
   if (pMDCreate == NULL) {
     return terrno;
   }
@@ -2166,13 +2158,12 @@ static int32_t mnodeAlterNormalTableColumnCb(SMnodeMsg *pMsg, int32_t code) {
   }
 
   SRpcEpSet epSet = mnodeGetEpSetFromVgroup(pMsg->pVgroup);
-  SRpcMsg rpcMsg = {
-      .ahandle = pMsg,
-      .pCont   = pMDCreate,
-      .contLen = htonl(pMDCreate->contLen),
-      .code    = 0,
-      .msgType = TSDB_MSG_TYPE_MD_ALTER_TABLE
-  };
+  SRpcMsg rpcMsg;
+  rpcMsg.ahandle = pMsg;
+  rpcMsg.pCont = pMDCreate;
+  rpcMsg.contLen = htonl(pMDCreate->contLen);
+  rpcMsg.code = 0;
+  rpcMsg.msgType = TSDB_MSG_TYPE_MD_ALTER_TABLE;
 
   mDebug("msg:%p, app:%p ctable %s, send alter column msg to vgId:%d", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId,
          pMsg->pVgroup->vgId);
@@ -2198,7 +2189,7 @@ static int32_t mnodeAddNormalTableColumn(SMnodeMsg *pMsg, SSchema schema[], int3
   }
 
   int32_t schemaSize = pTable->numOfColumns * sizeof(SSchema);
-  pTable->schema = realloc(pTable->schema, schemaSize + sizeof(SSchema) * ncols);
+  pTable->schema = static_cast<SSchema *>(realloc(pTable->schema, schemaSize + sizeof(SSchema) * ncols));
 
   memcpy(pTable->schema + pTable->numOfColumns, schema, sizeof(SSchema) * ncols);
 
@@ -2210,7 +2201,7 @@ static int32_t mnodeAddNormalTableColumn(SMnodeMsg *pMsg, SSchema schema[], int3
   pTable->numOfColumns += ncols;
   pTable->sversion++;
 
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
   if (pAcct != NULL) {
     pAcct->acctInfo.numOfTimeSeries += ncols;
     mnodeDecAcctRef(pAcct);
@@ -2218,13 +2209,12 @@ static int32_t mnodeAddNormalTableColumn(SMnodeMsg *pMsg, SSchema schema[], int3
 
   mInfo("msg:%p, app:%p ctable %s, start to add column", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsChildTableSdb,
-    .pObj   = pTable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeAlterNormalTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsChildTableSdb;
+  row.pObj = pTable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeAlterNormalTableColumnCb;
 
   return sdbUpdateRow(&row);
 }
@@ -2243,7 +2233,7 @@ static int32_t mnodeDropNormalTableColumn(SMnodeMsg *pMsg, char *colName) {
   pTable->numOfColumns--;
   pTable->sversion++;
 
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
   if (pAcct != NULL) {
     pAcct->acctInfo.numOfTimeSeries--;
     mnodeDecAcctRef(pAcct);
@@ -2251,13 +2241,12 @@ static int32_t mnodeDropNormalTableColumn(SMnodeMsg *pMsg, char *colName) {
 
   mInfo("msg:%p, app:%p ctable %s, start to drop column %s", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId, colName);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsChildTableSdb,
-    .pObj   = pTable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeAlterNormalTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsChildTableSdb;
+  row.pObj = pTable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeAlterNormalTableColumnCb;
 
   return sdbUpdateRow(&row);
 }
@@ -2288,13 +2277,12 @@ static int32_t mnodeChangeNormalTableColumn(SMnodeMsg *pMsg, char *oldName, char
   mInfo("msg:%p, app:%p ctable %s, start to modify column %s to %s", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId,
          oldName, newName);
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsChildTableSdb,
-    .pObj   = pTable,
-    .pMsg   = pMsg,
-    .fpRsp  = mnodeAlterNormalTableColumnCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsChildTableSdb;
+  row.pObj = pTable;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeAlterNormalTableColumnCb;
 
   return sdbUpdateRow(&row);
 }
@@ -2348,7 +2336,7 @@ static int32_t mnodeDoGetChildTableMeta(SMnodeMsg *pMsg, STableMetaMsg *pMeta) {
   }
 
   for (int32_t i = 0; i < pMsg->pVgroup->numOfVnodes; ++i) {
-    SDnodeObj *pDnode = mnodeGetDnode(pMsg->pVgroup->vnodeGid[i].dnodeId);
+    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pMsg->pVgroup->vnodeGid[i].dnodeId));
     if (pDnode == NULL) break;
     strcpy(pMeta->vgroup.epAddr[i].fqdn, pDnode->dnodeFqdn);
     pMeta->vgroup.epAddr[i].port = htons(pDnode->dnodePort + TSDB_PORT_DNODESHELL);
@@ -2364,7 +2352,7 @@ static int32_t mnodeDoGetChildTableMeta(SMnodeMsg *pMsg, STableMetaMsg *pMeta) {
 }
 
 static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg) {
-  STableInfoMsg *pInfo = pMsg->rpcMsg.pCont;
+  STableInfoMsg *pInfo = static_cast<STableInfoMsg *>(pMsg->rpcMsg.pCont);
 
   if (pMsg->rpcMsg.contLen <= sizeof(*pInfo)) {
     mError("msg:%p, app:%p table:%s, failed to auto create child table, tags not exist", pMsg, pMsg->rpcMsg.ahandle,
@@ -2388,7 +2376,7 @@ static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg) {
   }
 
   int32_t contLen = sizeof(SCMCreateTableMsg) + sizeof(SCreateTableMsg) + totalLen;
-  SCMCreateTableMsg *pCreateMsg = calloc(1, contLen);
+  SCMCreateTableMsg *pCreateMsg = static_cast<SCMCreateTableMsg *>(calloc(1, contLen));
   if (pCreateMsg == NULL) {
     mError("msg:%p, app:%p table:%s, failed to create table while get meta info, no enough memory", pMsg,
            pMsg->rpcMsg.ahandle, pInfo->tableFname);
@@ -2426,7 +2414,7 @@ static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg) {
 
 static int32_t mnodeGetChildTableMeta(SMnodeMsg *pMsg) {
   STableMetaMsg *pMeta =
-      rpcMallocCont(sizeof(STableMetaMsg) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16));
+      static_cast<STableMetaMsg *>(rpcMallocCont(sizeof(STableMetaMsg) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16)));
   if (pMeta == NULL) {
     mError("msg:%p, app:%p table:%s, failed to get table meta, no enough memory", pMsg, pMsg->rpcMsg.ahandle,
            pMsg->pTable->tableId);
@@ -2454,11 +2442,10 @@ void mnodeDropAllChildTablesInVgroups(SVgObj *pVgroup) {
     if (pTable == NULL) break;
 
     if (pTable->vgId == pVgroup->vgId) {
-      SSdbRow row = {
-        .type   = SDB_OPER_LOCAL,
-        .pTable = tsChildTableSdb,
-        .pObj   = pTable,
-      };
+      SSdbRow row;
+      row.type = SDB_OPER_LOCAL;
+      row.pTable = tsChildTableSdb;
+      row.pObj = pTable;
       sdbDeleteRow(&row);
       numOfTables++;
     }
@@ -2485,11 +2472,10 @@ void mnodeDropAllChildTables(SDbObj *pDropDb) {
     if (pTable == NULL) break;
 
     if (strncmp(prefix, pTable->info.tableId, prefixLen) == 0) {
-      SSdbRow row = {
-        .type   = SDB_OPER_LOCAL,
-        .pTable = tsChildTableSdb,
-        .pObj   = pTable,
-      };
+      SSdbRow row;
+      row.type = SDB_OPER_LOCAL;
+      row.pTable = tsChildTableSdb;
+      row.pObj = pTable;
       sdbDeleteRow(&row);
       numOfTables++;
     }
@@ -2512,11 +2498,10 @@ static void mnodeDropAllChildTablesInStable(SSTableObj *pStable) {
     if (pTable == NULL) break;
 
     if (pTable->superTable == pStable) {
-      SSdbRow row = {
-        .type   = SDB_OPER_LOCAL,
-        .pTable = tsChildTableSdb,
-        .pObj   = pTable,
-      };
+      SSdbRow row;
+      row.type = SDB_OPER_LOCAL;
+      row.pTable = tsChildTableSdb;
+      row.pObj = pTable;
       sdbDeleteRow(&row);
       numOfTables++;
     }
@@ -2573,7 +2558,7 @@ static int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg) {
 static void mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
-  SMnodeMsg *pMsg = rpcMsg->ahandle;
+  SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
   pMsg->received++;
 
   SCTableObj *pTable = (SCTableObj *)pMsg->pTable;
@@ -2613,7 +2598,7 @@ static void mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg) {
 static void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
-  SMnodeMsg *pMsg = rpcMsg->ahandle;
+  SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
   pMsg->received++;
 
   SCTableObj *pTable = (SCTableObj *)pMsg->pTable;
@@ -2695,7 +2680,10 @@ static void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
              pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId, pTable->vgId, pTable->tid, pTable->uid,
              tstrerror(rpcMsg->code), pMsg->rpcMsg.handle, pMsg->incomingTs, sec, pMsg->retry);
 
-      SSdbRow row = {.type = SDB_OPER_GLOBAL, .pTable = tsChildTableSdb, .pObj = pTable};
+      SSdbRow row;
+      row.type = SDB_OPER_GLOBAL;
+      row.pTable = tsChildTableSdb;
+      row.pObj = pTable;
       sdbDeleteRow(&row);
 
       if (rpcMsg->code == TSDB_CODE_APP_NOT_READY) {
@@ -2723,7 +2711,7 @@ static void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
 static void mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
-  SMnodeMsg *pMsg = rpcMsg->ahandle;
+  SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
   pMsg->received++;
 
   SCTableObj *pTable = (SCTableObj *)pMsg->pTable;
@@ -2750,11 +2738,11 @@ static void mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg) {
 }
 
 static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg) {
-  SMultiTableInfoMsg *pInfo = pMsg->rpcMsg.pCont;
+  SMultiTableInfoMsg *pInfo = static_cast<SMultiTableInfoMsg *>(pMsg->rpcMsg.pCont);
   pInfo->numOfTables = htonl(pInfo->numOfTables);
 
   int32_t totalMallocLen = 4 * 1024 * 1024;  // first malloc 4 MB, subsequent reallocation as twice
-  SMultiTableMeta *pMultiMeta = rpcMallocCont(totalMallocLen);
+  SMultiTableMeta *pMultiMeta = static_cast<SMultiTableMeta *>(rpcMallocCont(totalMallocLen));
   if (pMultiMeta == NULL) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
@@ -2764,7 +2752,7 @@ static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg) {
 
   for (int32_t t = 0; t < pInfo->numOfTables; ++t) {
     char * tableId = (char *)(pInfo->tableIds + t * TSDB_TABLE_FNAME_LEN);
-    SCTableObj *pTable = mnodeGetChildTable(tableId);
+    SCTableObj *pTable = static_cast<SCTableObj *>(mnodeGetChildTable(tableId));
     if (pTable == NULL) continue;
 
     if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDbByTableId(tableId);
@@ -2776,7 +2764,7 @@ static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg) {
     int availLen = totalMallocLen - pMultiMeta->contLen;
     if (availLen <= sizeof(STableMetaMsg) + sizeof(SSchema) * (TSDB_MAX_TAGS + TSDB_MAX_COLUMNS + 16)) {
       totalMallocLen *= 2;
-      pMultiMeta = rpcReallocCont(pMultiMeta, totalMallocLen);
+      pMultiMeta = static_cast<SMultiTableMeta *>(rpcReallocCont(pMultiMeta, totalMallocLen));
       if (pMultiMeta == NULL) {
         mnodeDecTableRef(pTable);
         return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -2984,7 +2972,7 @@ static int32_t mnodeRetrieveShowTables(SShowObj *pShow, char *data, int32_t rows
 }
 
 static int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg) {
-  SAlterTableMsg *pAlter = pMsg->rpcMsg.pCont;
+  SAlterTableMsg *pAlter = static_cast<SAlterTableMsg * >(pMsg->rpcMsg.pCont);
   mDebug("msg:%p, app:%p table:%s, alter table msg is received from thandle:%p", pMsg, pMsg->rpcMsg.ahandle,
          pAlter->tableFname, pMsg->rpcMsg.handle);
 
@@ -3004,7 +2992,7 @@ static int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_MONITOR_DB_FORBIDDEN;
   }
 
-  if (pMsg->pTable == NULL) pMsg->pTable = mnodeGetTable(pAlter->tableFname);
+  if (pMsg->pTable == NULL) pMsg->pTable = static_cast<STableObj *>(mnodeGetTable(pAlter->tableFname));
   if (pMsg->pTable == NULL) {
     mError("msg:%p, app:%p table:%s, failed to alter table, table not exist", pMsg, pMsg->rpcMsg.ahandle, pAlter->tableFname);
     return TSDB_CODE_MND_INVALID_TABLE_NAME;

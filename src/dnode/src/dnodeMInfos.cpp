@@ -19,10 +19,11 @@
 #include "mnode.h"
 #include "dnodeMInfos.h"
 #include "defer.h"
+#include <mutex>
 
 static SMInfos   tsMInfos;
 static SRpcEpSet tsMEpSet;
-static pthread_mutex_t tsMInfosMutex;
+static std::mutex tsMInfosMutex;
 
 static void    dnodeResetMInfos(SMInfos *minfos);
 static void    dnodePrintMInfos(SMInfos *minfos);
@@ -30,7 +31,6 @@ static int32_t dnodeReadMInfos();
 static int32_t dnodeWriteMInfos();
 
 int32_t dnodeInitMInfos() {
-  pthread_mutex_init(&tsMInfosMutex, NULL);
   dnodeResetMInfos(NULL);
   int32_t ret = dnodeReadMInfos();
   if (ret == 0) {
@@ -39,8 +39,6 @@ int32_t dnodeInitMInfos() {
 
   return ret;
 }
-
-void dnodeCleanupMInfos() { pthread_mutex_destroy(&tsMInfosMutex); }
 
 void dnodeUpdateMInfos(SMInfos *pMinfos) {
   if (pMinfos->mnodeNum <= 0 || pMinfos->mnodeNum > 3) {
@@ -57,7 +55,7 @@ void dnodeUpdateMInfos(SMInfos *pMinfos) {
     }
   }
 
-  pthread_mutex_lock(&tsMInfosMutex);
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
   if (pMinfos->mnodeNum != tsMInfos.mnodeNum) {
     dnodeResetMInfos(pMinfos);
     dnodeWriteMInfos();
@@ -70,7 +68,6 @@ void dnodeUpdateMInfos(SMInfos *pMinfos) {
       sdbUpdateAsync();
     }
   }
-  pthread_mutex_unlock(&tsMInfosMutex);
 }
 
 void dnodeUpdateEpSetForPeer(SRpcEpSet *ep) {
@@ -79,46 +76,39 @@ void dnodeUpdateEpSetForPeer(SRpcEpSet *ep) {
     return;
   }
 
-  pthread_mutex_lock(&tsMInfosMutex);
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
   dInfo("minfos is changed, numOfEps:%d inUse:%d", ep->numOfEps, ep->inUse);
   for (int i = 0; i < ep->numOfEps; ++i) {
     ep->port[i] -= TSDB_PORT_DNODEDNODE;
     dInfo("minfo:%d %s:%u", i, ep->fqdn[i], ep->port[i]);
   }
   tsMEpSet = *ep;
-  pthread_mutex_unlock(&tsMInfosMutex);
 }
 
 bool dnodeIsMasterEp(char *ep) {
-  pthread_mutex_lock(&tsMInfosMutex);
-  bool isMaster = strcmp(ep, tsMInfos.mnodeInfos[tsMEpSet.inUse].mnodeEp) == 0;
-  pthread_mutex_unlock(&tsMInfosMutex);
-
-  return isMaster;
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
+  return strcmp(ep, tsMInfos.mnodeInfos[tsMEpSet.inUse].mnodeEp) == 0;
 }
 
 void dnodeGetMInfos(SMInfos *pMinfos) {
-  pthread_mutex_lock(&tsMInfosMutex);
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
   memcpy(pMinfos, &tsMInfos, sizeof(SMInfos));
   for (int32_t i = 0; i < tsMInfos.mnodeNum; ++i) {
     pMinfos->mnodeInfos[i].mnodeId = htonl(tsMInfos.mnodeInfos[i].mnodeId);
   }
-  pthread_mutex_unlock(&tsMInfosMutex);
 }
 
 void dnodeGetEpSetForPeer(SRpcEpSet *epSet) {
-  pthread_mutex_lock(&tsMInfosMutex);
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
   *epSet = tsMEpSet;
   for (int i = 0; i < epSet->numOfEps; ++i) {
     epSet->port[i] += TSDB_PORT_DNODEDNODE;
   }
-  pthread_mutex_unlock(&tsMInfosMutex);
 }
 
 void dnodeGetEpSetForShell(SRpcEpSet *epSet) {
-  pthread_mutex_lock(&tsMInfosMutex);
+  std::lock_guard<std::mutex> lock(tsMInfosMutex);
   *epSet = tsMEpSet;
-  pthread_mutex_unlock(&tsMInfosMutex);
 }
 
 static void dnodePrintMInfos(SMInfos *pMinfos) {
