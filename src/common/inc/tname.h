@@ -21,7 +21,7 @@ typedef struct SColumnInfoData {
   void* pData;    // the corresponding block data in memory
 } SColumnInfoData;
 
-#ifdef __cpluplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -57,7 +57,7 @@ SSchema tscGetTbnameColumnSchema();
  */
 bool isValidSchema(struct SSchema* pSchema, int32_t numOfCols, int32_t numOfTags);
 
-#ifdef __cpluplus
+#ifdef __cplusplus
 }
 #endif
 #endif  // TDENGINE_NAME_H
