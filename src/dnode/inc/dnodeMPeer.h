@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_MPEER_H
 #define TDENGINE_DNODE_MPEER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitMPeer();
@@ -26,9 +23,5 @@ void    dnodeCleanupMPeer();
 int32_t dnodeAllocateMPeerQueue();
 void    dnodeFreeMPeerQueue();
 void    dnodeDispatchToMPeerQueue(SRpcMsg *pMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

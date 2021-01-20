@@ -16,16 +16,9 @@
 #ifndef TDENGINE_DNODE_TELEMETRY_H
 #define TDENGINE_DNODE_TELEMETRY_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitTelemetry();
 void    dnodeCleanupTelemetry();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

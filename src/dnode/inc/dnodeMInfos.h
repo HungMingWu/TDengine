@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_MINFOS_H
 #define TDENGINE_DNODE_MINFOS_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitMInfos();
@@ -31,9 +28,5 @@ bool    dnodeIsMasterEp(char *ep);
 void    dnodeSendRedirectMsg(SRpcMsg *rpcMsg, bool forShell);
 void    dnodeGetEpSetForPeer(SRpcEpSet *epSet);
 void    dnodeGetEpSetForShell(SRpcEpSet *epSet);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

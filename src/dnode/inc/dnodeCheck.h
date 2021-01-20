@@ -16,16 +16,9 @@
 #ifndef TDENGINE_DNODE_CHECK_H
 #define TDENGINE_DNODE_CHECK_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitCheck();
 void    dnodeCleanupCheck();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

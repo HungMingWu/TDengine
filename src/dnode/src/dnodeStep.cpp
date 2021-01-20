@@ -28,12 +28,15 @@ void dnodeReportStep(char *name, char *desc, int8_t finished) {
 void dnodeSendStartupStep(SRpcMsg *pMsg) {
   dInfo("nettest msg is received, cont:%s", (char *)pMsg->pCont);
 
-  SStartupStep *pStep = rpcMallocCont(sizeof(SStartupStep));
+  SStartupStep *pStep = static_cast<SStartupStep *>(rpcMallocCont(sizeof(SStartupStep)));
   memcpy(pStep, &tsStartupStep, sizeof(SStartupStep));
 
   dDebug("startup msg is sent, step:%s desc:%s finished:%d", pStep->name, pStep->desc, pStep->finished);
 
-  SRpcMsg rpcRsp = {.handle = pMsg->handle, .pCont = pStep, .contLen = sizeof(SStartupStep)};
+  SRpcMsg rpcRsp;
+  rpcRsp.handle = pMsg->handle;
+  rpcRsp.pCont = pStep;
+  rpcRsp.contLen = sizeof(SStartupStep);
   rpcSendResponse(&rpcRsp);
   rpcFreeCont(pMsg->pCont);
 }

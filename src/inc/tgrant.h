@@ -17,7 +17,7 @@
 #define TDENGINE_GTANT_H
 
 #ifdef __cplusplus
-"C" {
+extern "C" {
 #endif
 
 typedef enum {

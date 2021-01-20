@@ -16,18 +16,11 @@
 #ifndef TDENGINE_DNODE_PEER_H
 #define TDENGINE_DNODE_PEER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitServer();
 void    dnodeCleanupServer();
 int32_t dnodeInitClient();
 void    dnodeCleanupClient();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

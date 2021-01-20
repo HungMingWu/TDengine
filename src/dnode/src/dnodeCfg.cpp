@@ -17,9 +17,11 @@
 #include "os.h"
 #include "cJSON.h"
 #include "dnodeCfg.h"
+#include "defer.h"
+#include <mutex>
 
 static SDnodeCfg tsCfg = {0};
-static pthread_mutex_t tsCfgMutex;
+static std::mutex tsCfgMutex;
 
 static int32_t dnodeReadCfg();
 static int32_t dnodeWriteCfg();
@@ -27,7 +29,6 @@ static void    dnodeResetCfg(SDnodeCfg *cfg);
 static void    dnodePrintCfg(SDnodeCfg *cfg);
 
 int32_t dnodeInitCfg() {
-  pthread_mutex_init(&tsCfgMutex, NULL);
   dnodeResetCfg(NULL);
   int32_t ret = dnodeReadCfg();
   if (ret == 0) {
@@ -36,44 +37,36 @@ int32_t dnodeInitCfg() {
   return ret;
 }
 
-void dnodeCleanupCfg() { pthread_mutex_destroy(&tsCfgMutex); }
-
 void dnodeUpdateCfg(SDnodeCfg *cfg) {
   if (tsCfg.dnodeId != 0) return;
   dnodeResetCfg(cfg);
 }
 
 int32_t dnodeGetDnodeId() {
-  int32_t dnodeId = 0;
-  pthread_mutex_lock(&tsCfgMutex);
-  dnodeId = tsCfg.dnodeId;
-  pthread_mutex_unlock(&tsCfgMutex);
-  return dnodeId;
+  std::lock_guard<std::mutex> lock(tsCfgMutex);
+  return tsCfg.dnodeId;
 }
 
 void dnodeGetClusterId(char *clusterId) {
-  pthread_mutex_lock(&tsCfgMutex);
+  std::lock_guard<std::mutex> lock(tsCfgMutex);
   tstrncpy(clusterId, tsCfg.clusterId, TSDB_CLUSTER_ID_LEN);
-  pthread_mutex_unlock(&tsCfgMutex);
 }
 
 void dnodeGetCfg(int32_t *dnodeId, char *clusterId) {
-  pthread_mutex_lock(&tsCfgMutex);
+  std::lock_guard<std::mutex> lock(tsCfgMutex);
   *dnodeId = tsCfg.dnodeId;
   tstrncpy(clusterId, tsCfg.clusterId, TSDB_CLUSTER_ID_LEN);
-  pthread_mutex_unlock(&tsCfgMutex);
 }
 
 static void dnodeResetCfg(SDnodeCfg *cfg) {
   if (cfg == NULL) return;
   if (cfg->dnodeId == 0) return;
 
-  pthread_mutex_lock(&tsCfgMutex);
+  std::lock_guard<std::mutex> lock(tsCfgMutex);
   tsCfg.dnodeId = cfg->dnodeId;
   tstrncpy(tsCfg.clusterId, cfg->clusterId, TSDB_CLUSTER_ID_LEN);
   dnodePrintCfg(cfg);
   dnodeWriteCfg();
-  pthread_mutex_unlock(&tsCfgMutex);
 }
 
 static void dnodePrintCfg(SDnodeCfg *cfg) {
@@ -83,10 +76,24 @@ static void dnodePrintCfg(SDnodeCfg *cfg) {
 static int32_t dnodeReadCfg() {
   int32_t   len = 0;
   int32_t   maxLen = 200;
-  char *    content = calloc(1, maxLen + 1);
+  char *    content = new char[maxLen + 1];
+  auto _1 = defer([&] {
+    if (content != NULL) delete[] content;
+  });
   cJSON *   root = NULL;
+  auto _2 = defer([&] {
+    if (root != NULL) cJSON_Delete(root);
+  });
   FILE *    fp = NULL;
+  auto _3 = defer([&] {
+    if (fp != NULL) fclose(fp);
+  });
   SDnodeCfg cfg = {0};
+  auto _4 = defer([&] {
+    terrno = 0;
+
+    dnodeResetCfg(&cfg);
+  });
 
   char file[TSDB_FILENAME_LEN + 20] = {0};
   sprintf(file, "%s/dnodeCfg.json", tsDnodeDir);
@@ -94,45 +101,38 @@ static int32_t dnodeReadCfg() {
   fp = fopen(file, "r");
   if (!fp) {
     dDebug("failed to read %s, file not exist", file);
-    goto PARSE_CFG_OVER;
+    return 0;
   }
 
   len = fread(content, 1, maxLen, fp);
   if (len <= 0) {
     dError("failed to read %s, content is null", file);
-    goto PARSE_CFG_OVER;
+    return 0;
   }
 
   content[len] = 0;
   root = cJSON_Parse(content);
   if (root == NULL) {
     dError("failed to read %s, invalid json format", file);
-    goto PARSE_CFG_OVER;
+    return 0;
   }
 
   cJSON *dnodeId = cJSON_GetObjectItem(root, "dnodeId");
   if (!dnodeId || dnodeId->type != cJSON_Number) {
     dError("failed to read %s, dnodeId not found", file);
-    goto PARSE_CFG_OVER;
+    return 0;
   }
   cfg.dnodeId = dnodeId->valueint;
 
   cJSON *clusterId = cJSON_GetObjectItem(root, "clusterId");
   if (!clusterId || clusterId->type != cJSON_String) {
     dError("failed to read %s, clusterId not found", file);
-    goto PARSE_CFG_OVER;
+    return 0;
   }
   tstrncpy(cfg.clusterId, clusterId->valuestring, TSDB_CLUSTER_ID_LEN);
 
   dInfo("read file %s successed", file);
 
-PARSE_CFG_OVER:
-  if (content != NULL) free(content);
-  if (root != NULL) cJSON_Delete(root);
-  if (fp != NULL) fclose(fp);
-  terrno = 0;
-
-  dnodeResetCfg(&cfg);
   return 0;
 }
 
@@ -148,7 +148,7 @@ static int32_t dnodeWriteCfg() {
 
   int32_t len = 0;
   int32_t maxLen = 200;
-  char *  content = calloc(1, maxLen + 1);
+  char *  content = new char[maxLen + 1];
 
   len += snprintf(content + len, maxLen - len, "{\n");
   len += snprintf(content + len, maxLen - len, "  \"dnodeId\": %d,\n", tsCfg.dnodeId);
@@ -158,7 +158,7 @@ static int32_t dnodeWriteCfg() {
   fwrite(content, 1, len, fp);
   fflush(fp);
   fclose(fp);
-  free(content);
+  delete [] content;
   terrno = 0;
 
   dInfo("successed to write %s", file);

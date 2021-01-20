@@ -77,7 +77,7 @@ void dnodeCleanupMWrite() {
 
   dDebug("dnode mwrite is closed, qset:%p", tsMWriteQset);
 
-  taosCloseQset(tsMWriteQset);
+  taosCloseQset();
   tsMWriteQset = NULL;
   tfree(tsMWriteWP.worker);
 }
@@ -119,7 +119,7 @@ void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
   if (!mnodeIsRunning() || tsMWriteQueue == NULL) {
     dnodeSendRedirectMsg(pMsg, true);
   } else {
-    SMnodeMsg *pWrite = mnodeCreateMsg(pMsg);
+    SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(mnodeCreateMsg(pMsg));
     dTrace("msg:%p, app:%p type:%s is put into mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
            taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue);
     taosWriteQitem(tsMWriteQueue, TAOS_QTYPE_RPC, pWrite);
@@ -137,7 +137,7 @@ static void dnodeFreeMWriteMsg(SMnodeMsg *pWrite) {
 }
 
 void dnodeSendRpcMWriteRsp(void *pMsg, int32_t code) {
-  SMnodeMsg *pWrite = pMsg;
+  SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(pMsg);
   if (pWrite == NULL) return;
   if (code == TSDB_CODE_MND_ACTION_IN_PROGRESS) return;
   if (code == TSDB_CODE_MND_ACTION_NEED_REPROCESSED) {
@@ -145,12 +145,11 @@ void dnodeSendRpcMWriteRsp(void *pMsg, int32_t code) {
     return;
   }
 
-  SRpcMsg rpcRsp = {
-    .handle  = pWrite->rpcMsg.handle,
-    .pCont   = pWrite->rpcRsp.rsp,
-    .contLen = pWrite->rpcRsp.len,
-    .code    = code,
-  };
+  SRpcMsg rpcRsp;
+  rpcRsp.handle = pWrite->rpcMsg.handle;
+  rpcRsp.pCont = pWrite->rpcRsp.rsp;
+  rpcRsp.contLen = pWrite->rpcRsp.len;
+  rpcRsp.code = code;
 
   rpcSendResponse(&rpcRsp);
   dnodeFreeMWriteMsg(pWrite);
@@ -178,7 +177,7 @@ static void *dnodeProcessMWriteQueue(void *param) {
 }
 
 void dnodeReprocessMWriteMsg(void *pMsg) {
-  SMnodeMsg *pWrite = pMsg;
+  SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(pMsg);
 
   if (!mnodeIsRunning() || tsMWriteQueue == NULL) {
     dDebug("msg:%p, app:%p type:%s is redirected for mnode not running, retry times:%d", pWrite, pWrite->rpcMsg.ahandle,
@@ -211,7 +210,7 @@ static void dnodeDoDelayReprocessMWriteMsg(void *param, void *tmrId) {
 }
 
 void dnodeDelayReprocessMWriteMsg(void *pMsg) {
-  SMnodeMsg *mnodeMsg = pMsg;
+  SMnodeMsg *mnodeMsg = static_cast<SMnodeMsg *>(pMsg);
   void *unUsed = NULL;
   taosTmrReset(dnodeDoDelayReprocessMWriteMsg, 300, mnodeMsg, tsDnodeTmr, &unUsed);
 }

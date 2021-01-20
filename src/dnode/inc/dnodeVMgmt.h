@@ -16,17 +16,10 @@
 #ifndef TDENGINE_DNODE_VMGMT_H
 #define TDENGINE_DNODE_VMGMT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitVMgmt();
 void    dnodeCleanupVMgmt();
 void    dnodeDispatchToVMgmtQueue(SRpcMsg *rpcMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

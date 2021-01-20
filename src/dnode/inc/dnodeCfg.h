@@ -16,20 +16,12 @@
 #ifndef TDENGINE_DNODE_CFG_H
 #define TDENGINE_DNODE_CFG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitCfg();
-void    dnodeCleanupCfg();
 void    dnodeUpdateCfg(SDnodeCfg *cfg);
 int32_t dnodeGetDnodeId();
 void    dnodeGetClusterId(char *clusterId);
 void    dnodeGetCfg(int32_t *dnodeId, char *clusterId);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

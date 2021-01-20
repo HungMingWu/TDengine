@@ -16,17 +16,10 @@
 #ifndef TDENGINE_DNODE_MODULE_H
 #define TDENGINE_DNODE_MODULE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitModules();
 void    dnodeCleanupModules();
 int32_t dnodeStartMnode(SMInfos *pMinfos);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

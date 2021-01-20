@@ -229,7 +229,7 @@ static void dnodeAllocCheckItem() {
 }
 
 void dnodeCleanupCheck() {
-  for (ECheckItemType index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
+  for (size_t index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
     if (tsCheckItem[index].enable && tsCheckItem[index].stopFp) {
       (*tsCheckItem[index].stopFp)();
     }
@@ -242,7 +242,7 @@ void dnodeCleanupCheck() {
 int32_t dnodeInitCheck() {
   dnodeAllocCheckItem();
 
-  for (ECheckItemType index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
+  for (size_t index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
     if (tsCheckItem[index].initFp) {
       if ((*tsCheckItem[index].initFp)() != 0) {
         dError("failed to init check item:%s", tsCheckItem[index].name);
@@ -251,7 +251,7 @@ int32_t dnodeInitCheck() {
     }
   }
 
-  for (ECheckItemType index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
+  for (size_t index = 0; index < TSDB_CHECK_ITEM_MAX; ++index) {
     if (tsCheckItem[index].enable && tsCheckItem[index].startFp) {
       if ((*tsCheckItem[index].startFp)() != 0) {
         dError("failed to check item:%s", tsCheckItem[index].name);

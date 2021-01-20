@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_MREAD_H
 #define TDENGINE_DNODE_MREAD_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitMRead();
@@ -26,9 +23,5 @@ void    dnodeCleanupMRead();
 int32_t dnodeAllocMReadQueue();
 void    dnodeFreeMReadQueue();
 void    dnodeDispatchToMReadQueue(SRpcMsg *rpcMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

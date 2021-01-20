@@ -104,11 +104,10 @@ void dnodeCleanupShell() {
 }
 
 static void dnodeProcessMsgFromShell(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
-  SRpcMsg rpcMsg = {
-    .handle  = pMsg->handle,
-    .pCont   = NULL,
-    .contLen = 0
-  };
+  SRpcMsg rpcMsg;
+  rpcMsg.handle = pMsg->handle;
+  rpcMsg.pCont = NULL;
+  rpcMsg.contLen = 0;
 
   if (pMsg->pCont == NULL) return;
 
@@ -157,7 +156,7 @@ static int dnodeRetrieveUserAuthInfo(char *user, char *spi, char *encrypt, char 
   int code = mnodeRetriveAuth(user, spi, encrypt, secret, ckey);
   if (code != TSDB_CODE_APP_NOT_READY) return code;
 
-  SAuthMsg *pMsg = rpcMallocCont(sizeof(SAuthMsg));
+  SAuthMsg *pMsg = static_cast<SAuthMsg *>(rpcMallocCont(sizeof(SAuthMsg)));
   tstrncpy(pMsg->user, user, sizeof(pMsg->user));
 
   SRpcMsg rpcMsg = {0};
@@ -172,7 +171,7 @@ static int dnodeRetrieveUserAuthInfo(char *user, char *spi, char *encrypt, char 
   if (rpcRsp.code != 0) {
     dError("user:%s, auth msg received from mnodes, error:%s", user, tstrerror(rpcRsp.code));
   } else {
-    SAuthRsp *pRsp = rpcRsp.pCont;
+    SAuthRsp *pRsp = static_cast<SAuthRsp *>(rpcRsp.pCont);
     dDebug("user:%s, auth msg received from mnodes", user);
     memcpy(secret, pRsp->secret, TSDB_KEY_LEN);
     memcpy(ckey, pRsp->ckey, TSDB_KEY_LEN);
@@ -188,7 +187,7 @@ void *dnodeSendCfgTableToRecv(int32_t vgId, int32_t tid) {
   dDebug("vgId:%d, tid:%d send config table msg to mnode", vgId, tid);
 
   int32_t contLen = sizeof(SConfigTableMsg);
-  SConfigTableMsg *pMsg = rpcMallocCont(contLen);
+  SConfigTableMsg *pMsg = static_cast<SConfigTableMsg *>(rpcMallocCont(contLen));
 
   pMsg->dnodeId = htonl(dnodeGetDnodeId());
   pMsg->vgId = htonl(vgId);
@@ -211,7 +210,7 @@ void *dnodeSendCfgTableToRecv(int32_t vgId, int32_t tid) {
     dInfo("vgId:%d, tid:%d config table msg is received", vgId, tid);
     
     // delete this after debug finished
-    SMDCreateTableMsg *pTable = rpcRsp.pCont;
+    SMDCreateTableMsg *pTable = static_cast<SMDCreateTableMsg *>(rpcRsp.pCont);
     int16_t   numOfColumns = htons(pTable->numOfColumns);
     int16_t   numOfTags = htons(pTable->numOfTags);
     int32_t   tableId = htonl(pTable->tid);

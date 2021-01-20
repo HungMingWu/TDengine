@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_VNODES_H
 #define TDENGINE_DNODE_VNODES_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitVnodes();
@@ -26,9 +23,5 @@ void    dnodeCleanupVnodes();
 int32_t dnodeInitStatusTimer();
 void    dnodeCleanupStatusTimer();
 void    dnodeSendStatusMsgToMnode();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

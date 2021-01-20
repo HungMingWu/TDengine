@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_VWRITE_H
 #define TDENGINE_DNODE_VWRITE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitVWrite();
@@ -27,9 +24,5 @@ void    dnodeDispatchToVWriteQueue(SRpcMsg *pMsg);
 void *  dnodeAllocVWriteQueue(void *pVnode);
 void    dnodeFreeVWriteQueue(void *pWqueue);
 void    dnodeSendRpcVWriteRsp(void *pVnode, void *pWrite, int32_t code);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

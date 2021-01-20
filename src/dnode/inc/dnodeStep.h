@@ -16,18 +16,11 @@
 #ifndef TDENGINE_DNODE_STEP_H
 #define TDENGINE_DNODE_STEP_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeStepInit(SStep *pSteps, int32_t stepSize);
 void    dnodeStepCleanup(SStep *pSteps, int32_t stepSize);
 void    dnodeReportStep(char *name, char *desc, int8_t finished);
 void    dnodeSendStartupStep(SRpcMsg *pMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

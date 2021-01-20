@@ -69,7 +69,7 @@ void dnodeCleanupVMgmt() {
 
 static int32_t dnodeWriteToMgmtQueue(SRpcMsg *pMsg) {
   int32_t   size = sizeof(SMgmtMsg) + pMsg->contLen;
-  SMgmtMsg *pMgmt = taosAllocateQitem(size);
+  SMgmtMsg *pMgmt = static_cast<SMgmtMsg *>(taosAllocateQitem(size));
   if (pMgmt == NULL) return TSDB_CODE_DND_OUT_OF_MEMORY;
 
   pMgmt->rpcMsg = *pMsg;
@@ -83,7 +83,9 @@ static int32_t dnodeWriteToMgmtQueue(SRpcMsg *pMsg) {
 void dnodeDispatchToVMgmtQueue(SRpcMsg *pMsg) {
   int32_t code = dnodeWriteToMgmtQueue(pMsg);
   if (code != TSDB_CODE_SUCCESS) {
-    SRpcMsg rsp = {.handle = pMsg->handle, .code = code};
+    SRpcMsg rsp;
+    rsp.handle = pMsg->handle;
+    rsp.code = code;
     rpcSendResponse(&rsp);
   }
 
@@ -91,7 +93,7 @@ void dnodeDispatchToVMgmtQueue(SRpcMsg *pMsg) {
 }
 
 static void *dnodeProcessMgmtQueue(void *wparam) {
-  SWorker *    pWorker = wparam;
+  SWorker *    pWorker = static_cast<SWorker *>(wparam);
   SWorkerPool *pPool = pWorker->pPool;
   SMgmtMsg *   pMgmt;
   SRpcMsg *    pMsg;
@@ -127,7 +129,7 @@ static void *dnodeProcessMgmtQueue(void *wparam) {
 }
 
 static SCreateVnodeMsg* dnodeParseVnodeMsg(SRpcMsg *rpcMsg) {
-  SCreateVnodeMsg *pCreate = rpcMsg->pCont;
+  SCreateVnodeMsg *pCreate = static_cast<SCreateVnodeMsg *>(rpcMsg->pCont);
   pCreate->cfg.vgId                = htonl(pCreate->cfg.vgId);
   pCreate->cfg.dbCfgVersion        = htonl(pCreate->cfg.dbCfgVersion);
   pCreate->cfg.vgCfgVersion        = htonl(pCreate->cfg.vgCfgVersion);
@@ -180,7 +182,7 @@ static int32_t dnodeProcessAlterVnodeMsg(SRpcMsg *rpcMsg) {
 }
 
 static int32_t dnodeProcessDropVnodeMsg(SRpcMsg *rpcMsg) {
-  SDropVnodeMsg *pDrop = rpcMsg->pCont;
+  SDropVnodeMsg *pDrop = static_cast<SDropVnodeMsg *>(rpcMsg->pCont);
   pDrop->vgId = htonl(pDrop->vgId);
 
   return vnodeDrop(pDrop->vgId);
@@ -191,12 +193,12 @@ static int32_t dnodeProcessAlterStreamMsg(SRpcMsg *pMsg) {
 }
 
 static int32_t dnodeProcessConfigDnodeMsg(SRpcMsg *pMsg) {
-  SCfgDnodeMsg *pCfg = pMsg->pCont;
+  SCfgDnodeMsg *pCfg = static_cast<SCfgDnodeMsg *>(pMsg->pCont);
   return taosCfgDynamicOptions(pCfg->config);
 }
 
 static int32_t dnodeProcessCreateMnodeMsg(SRpcMsg *pMsg) {
-  SCreateMnodeMsg *pCfg = pMsg->pCont;
+  SCreateMnodeMsg *pCfg = static_cast<SCreateMnodeMsg *>(pMsg->pCont);
   pCfg->dnodeId = htonl(pCfg->dnodeId);
   if (pCfg->dnodeId != dnodeGetDnodeId()) {
     dDebug("dnode:%d, in create mnode msg is not equal with saved dnodeId:%d", pCfg->dnodeId, dnodeGetDnodeId());

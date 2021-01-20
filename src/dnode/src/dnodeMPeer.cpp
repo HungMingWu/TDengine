@@ -77,7 +77,7 @@ void dnodeCleanupMPeer() {
 
   dDebug("dnode mpeer is closed, qset:%p", tsMPeerQset);
 
-  taosCloseQset(tsMPeerQset);
+  taosCloseQset();
   tsMPeerQset = NULL;
   tfree(tsMPeerWP.worker);
 }
@@ -120,7 +120,7 @@ void dnodeDispatchToMPeerQueue(SRpcMsg *pMsg) {
   if (!mnodeIsRunning() || tsMPeerQueue == NULL) {
     dnodeSendRedirectMsg(pMsg, false);
   } else {
-    SMnodeMsg *pPeer = mnodeCreateMsg(pMsg);
+    SMnodeMsg *pPeer = static_cast<SMnodeMsg *>(mnodeCreateMsg(pMsg));
     taosWriteQitem(tsMPeerQueue, TAOS_QTYPE_RPC, pPeer);
   }
 
@@ -135,12 +135,11 @@ static void dnodeFreeMPeerMsg(SMnodeMsg *pPeer) {
 static void dnodeSendRpcMPeerRsp(SMnodeMsg *pPeer, int32_t code) {
   if (code == TSDB_CODE_MND_ACTION_IN_PROGRESS) return;
 
-  SRpcMsg rpcRsp = {
-    .handle  = pPeer->rpcMsg.handle,
-    .pCont   = pPeer->rpcRsp.rsp,
-    .contLen = pPeer->rpcRsp.len,
-    .code    = code,
-  };
+  SRpcMsg rpcRsp;
+  rpcRsp.handle = pPeer->rpcMsg.handle;
+  rpcRsp.pCont = pPeer->rpcRsp.rsp;
+  rpcRsp.contLen = pPeer->rpcRsp.len;
+  rpcRsp.code = code;
 
   rpcSendResponse(&rpcRsp);
   dnodeFreeMPeerMsg(pPeer);

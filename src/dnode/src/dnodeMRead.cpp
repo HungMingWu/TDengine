@@ -77,7 +77,7 @@ void dnodeCleanupMRead() {
 
   dDebug("dnode mread is closed, qset:%p", tsMReadQset);
 
-  taosCloseQset(tsMReadQset);
+  taosCloseQset();
   tsMReadQset = NULL;
   free(tsMReadWP.worker);
 }
@@ -119,7 +119,7 @@ void dnodeDispatchToMReadQueue(SRpcMsg *pMsg) {
   if (!mnodeIsRunning() || tsMReadQueue == NULL) {
     dnodeSendRedirectMsg(pMsg, true);
   } else {
-    SMnodeMsg *pRead = mnodeCreateMsg(pMsg);
+    SMnodeMsg *pRead = static_cast<SMnodeMsg * >(mnodeCreateMsg(pMsg));
     taosWriteQitem(tsMReadQueue, TAOS_QTYPE_RPC, pRead);
   }
 
@@ -139,12 +139,11 @@ static void dnodeSendRpcMReadRsp(SMnodeMsg *pRead, int32_t code) {
     return;
   }
 
-  SRpcMsg rpcRsp = {
-    .handle  = pRead->rpcMsg.handle,
-    .pCont   = pRead->rpcRsp.rsp,
-    .contLen = pRead->rpcRsp.len,
-    .code    = code,
-  };
+  SRpcMsg rpcRsp;
+  rpcRsp.handle = pRead->rpcMsg.handle;
+  rpcRsp.pCont = pRead->rpcRsp.rsp;
+  rpcRsp.contLen = pRead->rpcRsp.len;
+  rpcRsp.code = code;
 
   rpcSendResponse(&rpcRsp);
   dnodeFreeMReadMsg(pRead);

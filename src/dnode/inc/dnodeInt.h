@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_LOG_H
 #define TDENGINE_DNODE_LOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "taoserror.h"
 #include "taosmsg.h"
 #include "tlog.h"
@@ -43,9 +40,5 @@ typedef enum {
 } SRunStatus;
 
 SRunStatus dnodeGetRunStatus();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

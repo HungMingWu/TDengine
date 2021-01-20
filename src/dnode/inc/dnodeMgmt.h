@@ -16,10 +16,6 @@
 #ifndef TDENGINE_DNODE_MGMT_H
 #define TDENGINE_DNODE_MGMT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "trpc.h"
 
 int32_t dnodeInitMgmt();
@@ -39,9 +35,5 @@ void    dnodeReleaseVnode(void *pVnode);
 void    dnodeSendRedirectMsg(SRpcMsg *rpcMsg, bool forShell);
 void    dnodeGetEpSetForPeer(SRpcEpSet *epSet);
 void    dnodeGetEpSetForShell(SRpcEpSet *epSet);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

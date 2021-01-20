@@ -83,11 +83,10 @@ void dnodeCleanupServer() {
 }
 
 static void dnodeProcessReqMsgFromDnode(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
-  SRpcMsg rspMsg = {
-    .handle  = pMsg->handle,
-    .pCont   = NULL,
-    .contLen = 0
-  };
+  SRpcMsg rspMsg;
+  rspMsg.handle = pMsg->handle;
+  rspMsg.pCont = NULL;
+  rspMsg.contLen = 0;
 
   if (pMsg->pCont == NULL) return;
   if (pMsg->msgType == TSDB_MSG_TYPE_NETWORK_TEST) return dnodeSendStartupStep(pMsg);

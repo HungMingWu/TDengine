@@ -18,6 +18,7 @@
 #include "cJSON.h"
 #include "mnode.h"
 #include "dnodeMInfos.h"
+#include "defer.h"
 
 static SMInfos   tsMInfos;
 static SRpcEpSet tsMEpSet;
@@ -156,58 +157,79 @@ static void dnodeResetMInfos(SMInfos *pMinfos) {
 static int32_t dnodeReadMInfos() {
   int32_t len = 0;
   int32_t maxLen = 2000;
-  char *  content = calloc(1, maxLen + 1);
+  char *content = new char[maxLen + 1];
+  auto  _1 = defer([&] {
+    if (content != NULL) delete[] content;
+  });
   cJSON * root = NULL;
-  FILE *  fp = NULL;
+  auto _2 = defer([&] {
+    if (root != NULL) cJSON_Delete(root);
+  });
+  FILE * fp = NULL;
+  auto _3 = defer([&] {
+    if (fp != NULL) fclose(fp);
+  });
   SMInfos minfos = {0};
   bool    nodeChanged = false;
+  auto _4 = defer([&] {
+    terrno = 0;
 
+    for (int32_t i = 0; i < minfos.mnodeNum; ++i) {
+      SMInfo *mInfo = &minfos.mnodeInfos[i];
+      dnodeUpdateEp(mInfo->mnodeId, mInfo->mnodeEp, NULL, NULL);
+    }
+    dnodeResetMInfos(&minfos);
+
+    if (nodeChanged) {
+      dnodeWriteMInfos();
+    }
+  });
   char file[TSDB_FILENAME_LEN + 20] = {0};
   sprintf(file, "%s/mnodeEpSet.json", tsDnodeDir);
 
   fp = fopen(file, "r");
   if (!fp) {
     dDebug("failed to read %s, file not exist", file);
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
 
   len = fread(content, 1, maxLen, fp);
   if (len <= 0) {
     dError("failed to read %s, content is null", file);
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
 
   content[len] = 0;
   root = cJSON_Parse(content);
   if (root == NULL) {
     dError("failed to read %s, invalid json format", file);
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
 
   cJSON *inUse = cJSON_GetObjectItem(root, "inUse");
   if (!inUse || inUse->type != cJSON_Number) {
     dError("failed to read mnodeEpSet.json, inUse not found");
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
   tsMInfos.inUse = inUse->valueint;
 
   cJSON *nodeNum = cJSON_GetObjectItem(root, "nodeNum");
   if (!nodeNum || nodeNum->type != cJSON_Number) {
     dError("failed to read mnodeEpSet.json, nodeNum not found");
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
   minfos.mnodeNum = nodeNum->valueint;
 
   cJSON *nodeInfos = cJSON_GetObjectItem(root, "nodeInfos");
   if (!nodeInfos || nodeInfos->type != cJSON_Array) {
     dError("failed to read mnodeEpSet.json, nodeInfos not found");
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
 
   int size = cJSON_GetArraySize(nodeInfos);
   if (size != minfos.mnodeNum) {
     dError("failed to read mnodeEpSet.json, nodeInfos size not matched");
-    goto PARSE_MINFOS_OVER;
+    return 0;
   }
 
   for (int i = 0; i < size; ++i) {
@@ -217,13 +239,13 @@ static int32_t dnodeReadMInfos() {
     cJSON *nodeId = cJSON_GetObjectItem(nodeInfo, "nodeId");
     if (!nodeId || nodeId->type != cJSON_Number) {
       dError("failed to read mnodeEpSet.json, nodeId not found");
-      goto PARSE_MINFOS_OVER;
+      return 0;
     }
 
     cJSON *nodeEp = cJSON_GetObjectItem(nodeInfo, "nodeEp");
     if (!nodeEp || nodeEp->type != cJSON_String || nodeEp->valuestring == NULL) {
       dError("failed to read mnodeEpSet.json, nodeName not found");
-      goto PARSE_MINFOS_OVER;
+      return 0;
     }
 
     SMInfo *pMinfo = &minfos.mnodeInfos[i];
@@ -236,22 +258,6 @@ static int32_t dnodeReadMInfos() {
 
   dInfo("read file %s successed", file);
   dnodePrintMInfos(&minfos);
-
-PARSE_MINFOS_OVER:
-  if (content != NULL) free(content);
-  if (root != NULL) cJSON_Delete(root);
-  if (fp != NULL) fclose(fp);
-  terrno = 0;
-
-  for (int32_t i = 0; i < minfos.mnodeNum; ++i) {
-    SMInfo *mInfo = &minfos.mnodeInfos[i];
-    dnodeUpdateEp(mInfo->mnodeId, mInfo->mnodeEp, NULL, NULL);
-  }
-  dnodeResetMInfos(&minfos);
-
-  if (nodeChanged) {
-    dnodeWriteMInfos();
-  }
 
   return 0;
 }
@@ -268,7 +274,7 @@ static int32_t dnodeWriteMInfos() {
 
   int32_t len = 0;
   int32_t maxLen = 2000;
-  char *  content = calloc(1, maxLen + 1);
+  char *  content = new char[maxLen + 1];
 
   len += snprintf(content + len, maxLen - len, "{\n");
   len += snprintf(content + len, maxLen - len, "  \"inUse\": %d,\n", tsMInfos.inUse);
@@ -288,7 +294,7 @@ static int32_t dnodeWriteMInfos() {
   fwrite(content, 1, len, fp);
   fflush(fp);
   fclose(fp);
-  free(content);
+  delete [] content;
   terrno = 0;
 
   dInfo("successed to write %s", file);

@@ -16,16 +16,9 @@
 #ifndef TDENGINE_DNODE_SHELL_H
 #define TDENGINE_DNODE_SHELL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitShell();
 void    dnodeCleanupShell();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

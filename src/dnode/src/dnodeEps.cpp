@@ -18,6 +18,7 @@
 #include "cJSON.h"
 #include "hash.h"
 #include "dnodeEps.h"
+#include "defer.h"
 
 static SDnodeEps *tsEps = NULL;
 static SHashObj * tsEpsHash = NULL;
@@ -79,7 +80,7 @@ void dnodeUpdateEps(SDnodeEps *eps) {
 bool dnodeCheckEpChanged(int32_t dnodeId, char *epstr) {
   bool changed = false;
   pthread_mutex_lock(&tsEpsMutex);
-  SDnodeEp *ep = taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t));
+  SDnodeEp *ep = static_cast<SDnodeEp*>(taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t)));
   if (ep != NULL) {
     char epSaved[TSDB_EP_LEN + 1];
     snprintf(epSaved, TSDB_EP_LEN, "%s:%u", ep->dnodeFqdn, ep->dnodePort);
@@ -92,7 +93,7 @@ bool dnodeCheckEpChanged(int32_t dnodeId, char *epstr) {
 
 void dnodeUpdateEp(int32_t dnodeId, char *epstr, char *fqdn, uint16_t *port) {
   pthread_mutex_lock(&tsEpsMutex);
-  SDnodeEp *ep = taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t));
+  SDnodeEp *ep = static_cast< SDnodeEp *>(taosHashGet(tsEpsHash, &dnodeId, sizeof(int32_t)));
   if (ep != NULL) {
     if (port) *port = ep->dnodePort;
     if (fqdn) tstrncpy(fqdn, ep->dnodeFqdn, TSDB_FQDN_LEN);
@@ -105,7 +106,7 @@ static void dnodeResetEps(SDnodeEps *eps) {
   if (eps == NULL) {
     int32_t size = sizeof(SDnodeEps) + sizeof(SDnodeEp);
     if (tsEps == NULL) {
-      tsEps = calloc(1, size);
+      tsEps = static_cast<SDnodeEps*>(calloc(1, size));
     } else {
       tsEps->dnodeNum = 0;
     }
@@ -114,7 +115,7 @@ static void dnodeResetEps(SDnodeEps *eps) {
 
     int32_t size = sizeof(SDnodeEps) + sizeof(SDnodeEp) * eps->dnodeNum;
     if (eps->dnodeNum > tsEps->dnodeNum) {
-      tsEps = realloc(tsEps, size);
+      tsEps = static_cast<SDnodeEps *>(realloc(tsEps, size));
     }
     memcpy(tsEps, eps, size);
     dnodePrintEps(eps);
@@ -134,58 +135,92 @@ static void dnodePrintEps(SDnodeEps *eps) {
   }
 }
 
+static int32_t dnodeCheckEp() 
+{
+#if 0
+  dnodeUpdateEp(dnodeGetDnodeId(), tsLocalEp, tsLocalFqdn, &tsServerPort);
+#else
+  if (dnodeCheckEpChanged(dnodeGetDnodeId(), tsLocalEp)) {
+    dError("dnode:%d, localEp is different from %s in dnodeEps.json and need reconfigured", dnodeGetDnodeId(),
+           tsLocalEp);
+    return -1;
+  }
+#endif
+  return 0;
+}
+
 static int32_t dnodeReadEps() {
   int32_t    ret = -1;
   int32_t    len = 0;
   int32_t    maxLen = 30000;
-  char *     content = calloc(1, maxLen + 1);
+  char *     content = new char[maxLen + 1];
+  auto  _1 = defer([&] {
+    if (content != NULL) delete[] content;
+  });
   cJSON *    root = NULL;
+  auto _2 = defer([&] {
+    if (root != NULL) cJSON_Delete(root);
+  });
   FILE *     fp = NULL;
+  auto _3 = defer([&] {
+    if (fp != NULL) fclose(fp);
+  });
   SDnodeEps *eps = NULL;
+  auto _4 = defer([&] {
+    if (ret != 0) {
+      if (eps) free(eps);
+      eps = NULL;
+    }
 
+    dnodeResetEps(eps);
+    if (eps) free(eps);
+  });
+  auto _5 = defer([&] {
+    terrno = 0;
+  });
   char file[TSDB_FILENAME_LEN + 20] = {0};
   sprintf(file, "%s/dnodeEps.json", tsDnodeDir);
 
   fp = fopen(file, "r");
   if (!fp) {
     dDebug("failed to read %s, file not exist", file);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   len = fread(content, 1, maxLen, fp);
   if (len <= 0) {
     dError("failed to read %s, content is null", file);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   content[len] = 0;
   root = cJSON_Parse(content);
   if (root == NULL) {
     dError("failed to read %s, invalid json format", file);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   cJSON *dnodeNum = cJSON_GetObjectItem(root, "dnodeNum");
   if (!dnodeNum || dnodeNum->type != cJSON_Number) {
     dError("failed to read %s, dnodeNum not found", file);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   cJSON *dnodeInfos = cJSON_GetObjectItem(root, "dnodeInfos");
   if (!dnodeInfos || dnodeInfos->type != cJSON_Array) {
     dError("failed to read %s, dnodeInfos not found", file);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   int32_t dnodeInfosSize = cJSON_GetArraySize(dnodeInfos);
   if (dnodeInfosSize != dnodeNum->valueint) {
     dError("failed to read %s, dnodeInfos size:%d not matched dnodeNum:%d", file, dnodeInfosSize,
            (int32_t)dnodeNum->valueint);
-    goto PRASE_EPS_OVER;
+    return dnodeCheckEp();
   }
 
   int32_t epsSize = sizeof(SDnodeEps) + dnodeInfosSize * sizeof(SDnodeEp);
-  eps = calloc(1, epsSize);
+  eps = static_cast<SDnodeEps *>(calloc(1, epsSize));
   eps->dnodeNum = dnodeInfosSize;
 
   for (int32_t i = 0; i < dnodeInfosSize; ++i) {
@@ -197,21 +232,21 @@ static int32_t dnodeReadEps() {
     cJSON *dnodeId = cJSON_GetObjectItem(dnodeInfo, "dnodeId");
     if (!dnodeId || dnodeId->type != cJSON_Number) {
       dError("failed to read %s, dnodeId not found", file);
-      goto PRASE_EPS_OVER;
+      return dnodeCheckEp();
     }
     ep->dnodeId = dnodeId->valueint;
 
     cJSON *dnodeFqdn = cJSON_GetObjectItem(dnodeInfo, "dnodeFqdn");
     if (!dnodeFqdn || dnodeFqdn->type != cJSON_String || dnodeFqdn->valuestring == NULL) {
       dError("failed to read %s, dnodeFqdn not found", file);
-      goto PRASE_EPS_OVER;
+      return dnodeCheckEp();
     }
     strncpy(ep->dnodeFqdn, dnodeFqdn->valuestring, TSDB_FQDN_LEN);
 
     cJSON *dnodePort = cJSON_GetObjectItem(dnodeInfo, "dnodePort");
     if (!dnodePort || dnodePort->type != cJSON_Number) {
       dError("failed to read %s, dnodePort not found", file);
-      goto PRASE_EPS_OVER;
+      return dnodeCheckEp();
     }
     ep->dnodePort = (uint16_t)dnodePort->valueint;
   }
@@ -221,29 +256,7 @@ static int32_t dnodeReadEps() {
   dInfo("read file %s successed", file);
   dnodePrintEps(eps);
 
-PRASE_EPS_OVER:
-  if (content != NULL) free(content);
-  if (root != NULL) cJSON_Delete(root);
-  if (fp != NULL) fclose(fp);
-  if (ret != 0) {
-    if (eps) free(eps);
-    eps = NULL;
-  }
-
-  dnodeResetEps(eps);
-  if (eps) free(eps);
-
-#if 0
-  dnodeUpdateEp(dnodeGetDnodeId(), tsLocalEp, tsLocalFqdn, &tsServerPort);
-#else
-  if (dnodeCheckEpChanged(dnodeGetDnodeId(), tsLocalEp)) {
-    dError("dnode:%d, localEp is different from %s in dnodeEps.json and need reconfigured", dnodeGetDnodeId(), tsLocalEp);
-    return -1;
-  }
-#endif
-
-  terrno = 0;
-  return 0;
+  return dnodeCheckEp();
 }
 
 static int32_t dnodeWriteEps() {
@@ -258,7 +271,7 @@ static int32_t dnodeWriteEps() {
 
   int32_t len = 0;
   int32_t maxLen = 30000;
-  char *  content = calloc(1, maxLen + 1);
+  char *  content = new char[maxLen + 1];
 
   len += snprintf(content + len, maxLen - len, "{\n");
   len += snprintf(content + len, maxLen - len, "  \"dnodeNum\": %d,\n", tsEps->dnodeNum);
@@ -279,7 +292,7 @@ static int32_t dnodeWriteEps() {
   fwrite(content, 1, len, fp);
   fflush(fp);
   fclose(fp);
-  free(content);
+  delete [] content;
   terrno = 0;
 
   dInfo("successed to write %s", file);

@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_VREAD_H
 #define TDENGINE_DNODE_VREAD_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitVRead();
@@ -28,9 +25,5 @@ void *  dnodeAllocVQueryQueue(void *pVnode);
 void *  dnodeAllocVFetchQueue(void *pVnode);
 void    dnodeFreeVQueryQueue(void *pQqueue);
 void    dnodeFreeVFetchQueue(void *pFqueue);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

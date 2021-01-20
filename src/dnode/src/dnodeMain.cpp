@@ -54,7 +54,7 @@ static SStep tsDnodeSteps[] = {
   {"dnode-rpc",       rpcInit,             rpcCleanup},
   {"dnode-globalcfg", taosCheckGlobalCfg,  NULL},
   {"dnode-storage",   dnodeInitStorage,    dnodeCleanupStorage},
-  {"dnode-cfg",       dnodeInitCfg,        dnodeCleanupCfg},
+  {"dnode-cfg",       dnodeInitCfg,        NULL},
   {"dnode-eps",       dnodeInitEps,        dnodeCleanupEps},
   {"dnode-minfos",    dnodeInitMInfos,     dnodeCleanupMInfos},
   {"dnode-wal",       walInit,             walCleanUp},

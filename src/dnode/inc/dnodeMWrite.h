@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_MWRITE_H
 #define TDENGINE_DNODE_MWRITE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitMWrite();
@@ -26,9 +23,5 @@ void    dnodeCleanupMWrite();
 int32_t dnodeAllocMWritequeue();
 void    dnodeFreeMWritequeue();
 void    dnodeDispatchToMWriteQueue(SRpcMsg *pMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

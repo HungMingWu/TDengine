@@ -16,9 +16,6 @@
 #ifndef TDENGINE_DNODE_EP_H
 #define TDENGINE_DNODE_EP_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "dnodeInt.h"
 
 int32_t dnodeInitEps();
@@ -26,9 +23,5 @@ void    dnodeCleanupEps();
 void    dnodeUpdateEps(SDnodeEps *eps);
 void    dnodeUpdateEp(int32_t dnodeId, char *epstr, char *fqdn, uint16_t *port);
 bool    dnodeCheckEpChanged(int32_t dnodeId, char *epstr);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
