@@ -32,14 +32,14 @@ static int32_t tsAcctUpdateSize;
 static int32_t mnodeCreateRootAcct();
 
 static int32_t mnodeAcctActionDestroy(SSdbRow *pRow) {
-  SAcctObj *pAcct = pRow->pObj;
+  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
   pthread_mutex_destroy(&pAcct->mutex);
   tfree(pRow->pObj);
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeAcctActionInsert(SSdbRow *pRow) {
-  SAcctObj *pAcct = pRow->pObj;
+  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
   memset(&pAcct->acctInfo, 0, sizeof(SAcctInfo));
   pAcct->acctInfo.accessState = TSDB_VN_ALL_ACCCESS;
   pthread_mutex_init(&pAcct->mutex, NULL);
@@ -47,15 +47,15 @@ static int32_t mnodeAcctActionInsert(SSdbRow *pRow) {
 }
 
 static int32_t mnodeAcctActionDelete(SSdbRow *pRow) {
-  SAcctObj *pAcct = pRow->pObj;
+  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
   mnodeDropAllUsers(pAcct);
   mnodeDropAllDbs(pAcct);
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeAcctActionUpdate(SSdbRow *pRow) {
-  SAcctObj *pAcct = pRow->pObj;
-  SAcctObj *pSaved = mnodeGetAcct(pAcct->user);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
+  SAcctObj *pSaved = static_cast<SAcctObj *>(mnodeGetAcct(pAcct->user));
   if (pAcct != pSaved) {
     memcpy(pSaved, pAcct, tsAcctUpdateSize);
     free(pAcct);
@@ -65,7 +65,7 @@ static int32_t mnodeAcctActionUpdate(SSdbRow *pRow) {
 }
 
 static int32_t mnodeAcctActionEncode(SSdbRow *pRow) {
-  SAcctObj *pAcct = pRow->pObj;
+  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
   memcpy(pRow->rowData, pAcct, tsAcctUpdateSize);
   pRow->rowSize = tsAcctUpdateSize;
   return TSDB_CODE_SUCCESS;
@@ -99,21 +99,20 @@ int32_t mnodeInitAccts() {
   SAcctObj tObj;
   tsAcctUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj;
 
-  SSdbTableDesc desc = {
-    .id           = SDB_TABLE_ACCOUNT,
-    .name         = "accounts",
-    .hashSessions = TSDB_DEFAULT_ACCOUNTS_HASH_SIZE,
-    .maxRowSize   = tsAcctUpdateSize,
-    .refCountPos  = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj,
-    .keyType      = SDB_KEY_STRING,
-    .fpInsert     = mnodeAcctActionInsert,
-    .fpDelete     = mnodeAcctActionDelete,
-    .fpUpdate     = mnodeAcctActionUpdate,
-    .fpEncode     = mnodeAcctActionEncode,
-    .fpDecode     = mnodeAcctActionDecode,
-    .fpDestroy    = mnodeAcctActionDestroy,
-    .fpRestored   = mnodeAcctActionRestored
-  };
+  SSdbTableDesc desc;
+  desc.id = SDB_TABLE_ACCOUNT;
+  desc.name = "accounts";
+  desc.hashSessions = TSDB_DEFAULT_ACCOUNTS_HASH_SIZE;
+  desc.maxRowSize = tsAcctUpdateSize;
+  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
+  desc.keyType = SDB_KEY_STRING;
+  desc.fpInsert = mnodeAcctActionInsert;
+  desc.fpDelete = mnodeAcctActionDelete;
+  desc.fpUpdate = mnodeAcctActionUpdate;
+  desc.fpEncode = mnodeAcctActionEncode;
+  desc.fpDecode = mnodeAcctActionDecode;
+  desc.fpDestroy = mnodeAcctActionDestroy;
+  desc.fpRestored = mnodeAcctActionRestored;
 
   tsAcctRid = sdbOpenTable(&desc);
   tsAcctSdb = sdbGetTableByRid(tsAcctRid);
@@ -209,31 +208,28 @@ static int32_t mnodeCreateRootAcct() {
   int32_t numOfAccts = sdbGetNumOfRows(tsAcctSdb);
   if (numOfAccts != 0) return TSDB_CODE_SUCCESS;
 
-  SAcctObj *pAcct = malloc(sizeof(SAcctObj));
+  SAcctObj *pAcct = static_cast<SAcctObj *>(malloc(sizeof(SAcctObj)));
   memset(pAcct, 0, sizeof(SAcctObj));
   strcpy(pAcct->user, TSDB_DEFAULT_USER);
   taosEncryptPass((uint8_t *)TSDB_DEFAULT_PASS, strlen(TSDB_DEFAULT_PASS), pAcct->pass);
-  pAcct->cfg = (SAcctCfg){
-    .maxUsers           = 128,
-    .maxDbs             = 128,
-    .maxTimeSeries      = INT32_MAX,
-    .maxConnections     = 1024,
-    .maxStreams         = 1000,
-    .maxPointsPerSecond = 10000000,
-    .maxStorage         = INT64_MAX,
-    .maxQueryTime       = INT64_MAX,
-    .maxInbound         = 0,
-    .maxOutbound        = 0,
-    .accessState        = TSDB_VN_ALL_ACCCESS
-  };
+  pAcct->cfg.maxUsers = 128;
+  pAcct->cfg.maxDbs = 128;
+  pAcct->cfg.maxTimeSeries = INT32_MAX;
+  pAcct->cfg.maxConnections = 1024;
+  pAcct->cfg.maxStreams = 1000;
+  pAcct->cfg.maxPointsPerSecond = 10000000;
+  pAcct->cfg.maxStorage = INT64_MAX;
+  pAcct->cfg.maxQueryTime = INT64_MAX;
+  pAcct->cfg.maxInbound = 0;
+  pAcct->cfg.maxOutbound = 0;
+  pAcct->cfg.accessState = TSDB_VN_ALL_ACCCESS;
   pAcct->acctId = sdbGetId(tsAcctSdb);
   pAcct->createdTime = taosGetTimestampMs();
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsAcctSdb,
-    .pObj   = pAcct,
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsAcctSdb;
+  row.pObj = pAcct;
 
   return sdbInsertRow(&row);
 }

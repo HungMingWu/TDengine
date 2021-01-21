@@ -16,17 +16,9 @@
 #ifndef TDENGINE_MNODE_CLUSTER_H
 #define TDENGINE_MNODE_CLUSTER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t mnodeInitCluster();
 void    mnodeCleanupCluster();
 void    mnodeUpdateClusterId();
 const char* mnodeGetClusterId();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

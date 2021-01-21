@@ -16,10 +16,6 @@
 #ifndef TBASE_MNODE_TABLE_H
 #define TBASE_MNODE_TABLE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "mnodeDef.h"
 
 int32_t mnodeInitTables();
@@ -36,9 +32,5 @@ void    mnodeCancelGetNextSuperTable(void *pIter);
 void    mnodeDropAllChildTables(SDbObj *pDropDb);
 void    mnodeDropAllSuperTables(SDbObj *pDropDb);
 void    mnodeDropAllChildTablesInVgroups(SVgObj *pVgroup);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

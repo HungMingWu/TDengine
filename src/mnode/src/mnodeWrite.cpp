@@ -37,7 +37,6 @@
 
 static int32_t (*tsMnodeProcessWriteMsgFp[TSDB_MSG_TYPE_MAX])(SMnodeMsg *);
 
-extern "C"
 void mnodeAddWriteMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg)) {
   tsMnodeProcessWriteMsgFp[msgType] = fp;
 }

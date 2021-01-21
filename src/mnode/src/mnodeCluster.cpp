@@ -52,7 +52,7 @@ static int32_t mnodeClusterActionUpdate(SSdbRow *pRow) {
 }
 
 static int32_t mnodeClusterActionEncode(SSdbRow *pRow) {
-  SClusterObj *pCluster = pRow->pObj;
+  SClusterObj *pCluster = static_cast<SClusterObj *>(pRow->pObj);
   memcpy(pRow->rowData, pCluster, tsClusterUpdateSize);
   pRow->rowSize = tsClusterUpdateSize;
   return TSDB_CODE_SUCCESS;
@@ -86,21 +86,20 @@ int32_t mnodeInitCluster() {
   SClusterObj tObj;
   tsClusterUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj;
 
-  SSdbTableDesc desc = {
-    .id           = SDB_TABLE_CLUSTER,
-    .name         = "cluster",
-    .hashSessions = TSDB_DEFAULT_CLUSTER_HASH_SIZE,
-    .maxRowSize   = tsClusterUpdateSize,
-    .refCountPos  = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj,
-    .keyType      = SDB_KEY_STRING,
-    .fpInsert     = mnodeClusterActionInsert,
-    .fpDelete     = mnodeClusterActionDelete,
-    .fpUpdate     = mnodeClusterActionUpdate,
-    .fpEncode     = mnodeClusterActionEncode,
-    .fpDecode     = mnodeClusterActionDecode,
-    .fpDestroy    = mnodeClusterActionDestroy,
-    .fpRestored   = mnodeClusterActionRestored
-  };
+  SSdbTableDesc desc;
+  desc.id = SDB_TABLE_CLUSTER;
+  desc.name = "cluster";
+  desc.hashSessions = TSDB_DEFAULT_CLUSTER_HASH_SIZE;
+  desc.maxRowSize = tsClusterUpdateSize;
+  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
+  desc.keyType = SDB_KEY_STRING;
+  desc.fpInsert = mnodeClusterActionInsert;
+  desc.fpDelete = mnodeClusterActionDelete;
+  desc.fpUpdate = mnodeClusterActionUpdate;
+  desc.fpEncode = mnodeClusterActionEncode;
+  desc.fpDecode = mnodeClusterActionDecode;
+  desc.fpDestroy = mnodeClusterActionDestroy;
+  desc.fpRestored = mnodeClusterActionRestored;
 
   tsClusterRid = sdbOpenTable(&desc);
   tsClusterSdb = sdbGetTableByRid(tsClusterRid);
@@ -142,7 +141,7 @@ static int32_t mnodeCreateCluster() {
   int32_t numOfClusters = sdbGetNumOfRows(tsClusterSdb);
   if (numOfClusters != 0) return TSDB_CODE_SUCCESS;
 
-  SClusterObj *pCluster = malloc(sizeof(SClusterObj));
+  SClusterObj *pCluster = static_cast<SClusterObj *>(malloc(sizeof(SClusterObj)));
   memset(pCluster, 0, sizeof(SClusterObj));
   pCluster->createdTime = taosGetTimestampMs();
   bool getuid = taosGetSystemUid(pCluster->uid);
@@ -153,11 +152,10 @@ static int32_t mnodeCreateCluster() {
     mDebug("uid is %s", pCluster->uid);
   }
 
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsClusterSdb,
-    .pObj   = pCluster,
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsClusterSdb;
+  row.pObj = pCluster;
 
   return sdbInsertRow(&row);
 }

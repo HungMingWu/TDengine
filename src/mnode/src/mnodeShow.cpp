@@ -39,6 +39,7 @@
 #include "mnodeVgroup.h"
 #include "mnodeWrite.h"
 #include "mnodeRead.h"
+#include "defer.h"
 
 static int32_t mnodeProcessShowMsg(SMnodeMsg *mnodeMsg);
 static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *mnodeMsg);
@@ -72,7 +73,7 @@ int32_t mnodeInitShow() {
 void mnodeCleanUpShow() {
   if (tsMnodeShowCache != NULL) {
     mInfo("show cache is cleanup");
-    taosCacheCleanup(tsMnodeShowCache);
+    taosCacheCleanup(static_cast<SCacheObj *>(tsMnodeShowCache));
     tsMnodeShowCache = NULL;
   }
 }
@@ -114,7 +115,7 @@ static char *mnodeGetShowType(int32_t showType) {
 }
 
 static int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
-  SShowMsg *pShowMsg = pMsg->rpcMsg.pCont;
+  SShowMsg *pShowMsg = static_cast<SShowMsg *>(pMsg->rpcMsg.pCont);
   if (pShowMsg->type >= TSDB_MGMT_TABLE_MAX) {
     return TSDB_CODE_MND_INVALID_MSG_TYPE;
   }
@@ -125,19 +126,19 @@ static int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
   }
 
   int32_t showObjSize = sizeof(SShowObj) + htons(pShowMsg->payloadLen);
-  SShowObj *pShow = calloc(1, showObjSize);
+  SShowObj *pShow = static_cast<SShowObj *>(calloc(1, showObjSize));
   pShow->type       = pShowMsg->type;
   pShow->payloadLen = htons(pShowMsg->payloadLen);
   tstrncpy(pShow->db, pShowMsg->db, TSDB_DB_NAME_LEN);
   memcpy(pShow->payload, pShowMsg->payload, pShow->payloadLen);
 
-  pShow = mnodePutShowObj(pShow);
+  pShow = static_cast<SShowObj *>(mnodePutShowObj(pShow));
   if (pShow == NULL) {    
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
 
   int32_t size = sizeof(SShowRsp) + sizeof(SSchema) * TSDB_MAX_COLUMNS + TSDB_EXTRA_PAYLOAD_SIZE;
-  SShowRsp *pShowRsp = rpcMallocCont(size);
+  SShowRsp *pShowRsp = static_cast<SShowRsp *>(rpcMallocCont(size));
   if (pShowRsp == NULL) {
     mnodeReleaseShowObj(pShow, true);
     return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -164,7 +165,7 @@ static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
   int32_t rowsToRead = 0;
   int32_t size = 0;
   int32_t rowsRead = 0;
-  SRetrieveTableMsg *pRetrieve = pMsg->rpcMsg.pCont;
+  SRetrieveTableMsg *pRetrieve = static_cast<SRetrieveTableMsg *>(pMsg->rpcMsg.pCont);
   pRetrieve->qhandle = htobe64(pRetrieve->qhandle);
 
   SShowObj *pShow = (SShowObj *)pRetrieve->qhandle;
@@ -201,7 +202,7 @@ static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
   size = pShow->rowSize * rowsToRead;
 
   size += 100;
-  SRetrieveTableRsp *pRsp = rpcMallocCont(size);
+  SRetrieveTableRsp *pRsp = static_cast<SRetrieveTableRsp *>(rpcMallocCont(size));
 
   // if free flag is set, client wants to clean the resources
   if ((pRetrieve->free & TSDB_QUERY_TYPE_FREE_RESOURCE) != TSDB_QUERY_TYPE_FREE_RESOURCE)
@@ -241,7 +242,7 @@ static int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
 
-  SHeartBeatMsg *pHBMsg = pMsg->rpcMsg.pCont;
+  SHeartBeatMsg *pHBMsg = static_cast<SHeartBeatMsg *>(pMsg->rpcMsg.pCont);
   if (taosCheckVersion(pHBMsg->clientVer, version, 3) != TSDB_CODE_SUCCESS) {
     rpcFreeCont(pRsp);
     return TSDB_CODE_TSC_INVALID_VERSION;  // todo change the error code
@@ -292,20 +293,29 @@ static int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
-  SConnectMsg *pConnectMsg = pMsg->rpcMsg.pCont;
+  SConnectMsg *pConnectMsg = static_cast<SConnectMsg *>(pMsg->rpcMsg.pCont);
   SConnectRsp *pConnectRsp = NULL;
   int32_t code = TSDB_CODE_SUCCESS;
-
   SRpcConnInfo connInfo = {0};
+  auto _ = defer([&] {
+    if (code != TSDB_CODE_SUCCESS) {
+      if (pConnectRsp) rpcFreeCont(pConnectRsp);
+      mLError("user:%s login from %s, result:%s", connInfo.user, taosIpStr(connInfo.clientIp), tstrerror(code));
+    } else {
+      mLInfo("user:%s login from %s, result:%s", connInfo.user, taosIpStr(connInfo.clientIp), tstrerror(code));
+      pMsg->rpcRsp.rsp = pConnectRsp;
+      pMsg->rpcRsp.len = sizeof(SConnectRsp);
+    }
+  });
   if (rpcGetConnInfo(pMsg->rpcMsg.handle, &connInfo) != 0) {
     mError("thandle:%p is already released while process connect msg", pMsg->rpcMsg.handle);
     code = TSDB_CODE_MND_INVALID_CONNECTION;
-    goto connect_over;
+    return code;
   }
 
   code = taosCheckVersion(pConnectMsg->clientVersion, version, 3);
   if (code != TSDB_CODE_SUCCESS) {
-    goto connect_over;
+    return code;
   }
 
   SUserObj *pUser = pMsg->pUser;
@@ -317,22 +327,22 @@ static int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
     SDbObj *pDb = mnodeGetDb(dbName);
     if (pDb == NULL) {
       code = TSDB_CODE_MND_INVALID_DB;
-      goto connect_over;
+      return code;
     }
     
     if (pDb->status != TSDB_DB_STATUS_READY) {
       mError("db:%s, status:%d, in dropping", pDb->name, pDb->status);
       code = TSDB_CODE_MND_DB_IN_DROPPING;
       mnodeDecDbRef(pDb);
-      goto connect_over;
+      return code;
     }
     mnodeDecDbRef(pDb);
   }
 
-  pConnectRsp = rpcMallocCont(sizeof(SConnectRsp));
+  pConnectRsp = static_cast<SConnectRsp *>(rpcMallocCont(sizeof(SConnectRsp)));
   if (pConnectRsp == NULL) {
     code = TSDB_CODE_MND_OUT_OF_MEMORY;
-    goto connect_over;
+    return code;
   }
 
   pConnectMsg->pid = htonl(pConnectMsg->pid);
@@ -353,21 +363,11 @@ static int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
 
   dnodeGetClusterId(pConnectRsp->clusterId);
 
-connect_over:
-  if (code != TSDB_CODE_SUCCESS) {
-    if (pConnectRsp) rpcFreeCont(pConnectRsp);
-    mLError("user:%s login from %s, result:%s", connInfo.user, taosIpStr(connInfo.clientIp), tstrerror(code));
-  } else {
-    mLInfo("user:%s login from %s, result:%s", connInfo.user, taosIpStr(connInfo.clientIp), tstrerror(code));
-    pMsg->rpcRsp.rsp = pConnectRsp;
-    pMsg->rpcRsp.len = sizeof(SConnectRsp);
-  }
-
   return code;
 }
 
 static int32_t mnodeProcessUseMsg(SMnodeMsg *pMsg) {
-  SUseDbMsg *pUseDbMsg = pMsg->rpcMsg.pCont;
+  SUseDbMsg *pUseDbMsg = static_cast<SUseDbMsg *>(pMsg->rpcMsg.pCont);
 
   int32_t code = TSDB_CODE_SUCCESS;
   if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(pUseDbMsg->db);
@@ -392,7 +392,7 @@ static bool mnodeCheckShowFinished(SShowObj *pShow) {
 
 static bool mnodeAccquireShowObj(SShowObj *pShow) {
   TSDB_CACHE_PTR_TYPE handleVal = (TSDB_CACHE_PTR_TYPE)pShow;
-  SShowObj **ppShow = taosCacheAcquireByKey(tsMnodeShowCache, &handleVal, sizeof(TSDB_CACHE_PTR_TYPE));
+  SShowObj **ppShow = static_cast<SShowObj **>(taosCacheAcquireByKey(static_cast<SCacheObj *>(tsMnodeShowCache), &handleVal, sizeof(TSDB_CACHE_PTR_TYPE)));
   if (ppShow) {
     mDebug("%p, show is accquired from cache, data:%p, index:%d", pShow, ppShow, pShow->index);
     return true;
@@ -407,7 +407,7 @@ static void* mnodePutShowObj(SShowObj *pShow) {
   if (tsMnodeShowCache != NULL) {
     pShow->index = atomic_add_fetch_32(&tsShowObjIndex, 1);
     TSDB_CACHE_PTR_TYPE handleVal = (TSDB_CACHE_PTR_TYPE)pShow;
-    SShowObj **ppShow = taosCachePut(tsMnodeShowCache, &handleVal, sizeof(TSDB_CACHE_PTR_TYPE), &pShow, sizeof(TSDB_CACHE_PTR_TYPE), DEFAULT_SHOWHANDLE_LIFE_SPAN);
+    SShowObj **ppShow = static_cast<SShowObj **>(taosCachePut(static_cast<SCacheObj*>(tsMnodeShowCache), &handleVal, sizeof(TSDB_CACHE_PTR_TYPE), &pShow, sizeof(TSDB_CACHE_PTR_TYPE), DEFAULT_SHOWHANDLE_LIFE_SPAN));
     pShow->ppShow = (void**)ppShow;
     mDebug("%p, show is put into cache, data:%p index:%d", pShow, ppShow, pShow->index);
     return pShow;
@@ -431,7 +431,7 @@ static void mnodeReleaseShowObj(SShowObj *pShow, bool forceRemove) {
   mDebug("%p, show is released, force:%s data:%p index:%d", pShow, forceRemove ? "true" : "false", ppShow,
          pShow->index);
 
-  taosCacheRelease(tsMnodeShowCache, (void **)(&ppShow), forceRemove);
+  taosCacheRelease(static_cast<SCacheObj*>(tsMnodeShowCache), (void **)(&ppShow), forceRemove);
 }
 
 void mnodeVacuumResult(char *data, int32_t numOfCols, int32_t rows, int32_t capacity, SShowObj *pShow) {

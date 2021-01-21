@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_DEF_H
 #define TDENGINE_MNODE_DEF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "taosdef.h"
 #include "taosmsg.h"
 
@@ -263,9 +259,5 @@ typedef struct {
   uint16_t payloadLen;
   char     payload[];
 } SShowObj;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

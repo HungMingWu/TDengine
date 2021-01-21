@@ -58,7 +58,7 @@ static void mnodeDestroyDb(SDbObj *pDb) {
 }
 
 static int32_t mnodeDbActionDestroy(SSdbRow *pRow) {
-  mnodeDestroyDb(pRow->pObj);
+  mnodeDestroyDb(static_cast<SDbObj *>(pRow->pObj));
   return TSDB_CODE_SUCCESS;
 }
 
@@ -67,13 +67,13 @@ int64_t mnodeGetDbNum() {
 }
 
 static int32_t mnodeDbActionInsert(SSdbRow *pRow) {
-  SDbObj *pDb = pRow->pObj;
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
 
   pthread_mutex_init(&pDb->mutex, NULL);
   pthread_mutex_lock(&pDb->mutex);
   pDb->vgListSize = VG_LIST_SIZE;
-  pDb->vgList = calloc(pDb->vgListSize, sizeof(SVgObj *));
+  pDb->vgList = static_cast<SVgObj **>(calloc(pDb->vgListSize, sizeof(SVgObj *)));
   pDb->numOfVgroups = 0;
   pthread_mutex_unlock(&pDb->mutex);
 
@@ -93,8 +93,8 @@ static int32_t mnodeDbActionInsert(SSdbRow *pRow) {
 }
 
 static int32_t mnodeDbActionDelete(SSdbRow *pRow) {
-  SDbObj *pDb = pRow->pObj;
-  SAcctObj *pAcct = mnodeGetAcct(pDb->acct);
+  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
 
   mnodeDropAllChildTables(pDb);
   mnodeDropAllSuperTables(pDb);
@@ -109,7 +109,7 @@ static int32_t mnodeDbActionDelete(SSdbRow *pRow) {
 }
 
 static int32_t mnodeDbActionUpdate(SSdbRow *pRow) {
-  SDbObj *pNew = pRow->pObj;
+  SDbObj *pNew = static_cast<SDbObj *>(pRow->pObj);
   SDbObj *pDb = mnodeGetDb(pNew->name);
   if (pDb != NULL && pNew != pDb) {
     memcpy(pDb, pNew, pRow->rowSize);
@@ -122,7 +122,7 @@ static int32_t mnodeDbActionUpdate(SSdbRow *pRow) {
 }
 
 static int32_t mnodeDbActionEncode(SSdbRow *pRow) {
-  SDbObj *pDb = pRow->pObj;
+  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
   memcpy(pRow->rowData, pDb, tsDbUpdateSize);
   pRow->rowSize = tsDbUpdateSize;
   return TSDB_CODE_SUCCESS;
@@ -145,21 +145,20 @@ int32_t mnodeInitDbs() {
   SDbObj tObj;
   tsDbUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj;
 
-  SSdbTableDesc desc = {
-    .id           = SDB_TABLE_DB,
-    .name         = "dbs",
-    .hashSessions = TSDB_DEFAULT_DBS_HASH_SIZE,
-    .maxRowSize   = tsDbUpdateSize,
-    .refCountPos  = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj,
-    .keyType      = SDB_KEY_STRING,
-    .fpInsert     = mnodeDbActionInsert,
-    .fpDelete     = mnodeDbActionDelete,
-    .fpUpdate     = mnodeDbActionUpdate,
-    .fpEncode     = mnodeDbActionEncode,
-    .fpDecode     = mnodeDbActionDecode,
-    .fpDestroy    = mnodeDbActionDestroy,
-    .fpRestored   = mnodeDbActionRestored
-  };
+  SSdbTableDesc desc;
+  desc.id = SDB_TABLE_DB;
+  desc.name = "dbs";
+  desc.hashSessions = TSDB_DEFAULT_DBS_HASH_SIZE;
+  desc.maxRowSize = tsDbUpdateSize;
+  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
+  desc.keyType = SDB_KEY_STRING;
+  desc.fpInsert = mnodeDbActionInsert;
+  desc.fpDelete = mnodeDbActionDelete;
+  desc.fpUpdate = mnodeDbActionUpdate;
+  desc.fpEncode = mnodeDbActionEncode;
+  desc.fpDecode = mnodeDbActionDecode;
+  desc.fpDestroy = mnodeDbActionDestroy;
+  desc.fpRestored = mnodeDbActionRestored;
 
   tsDbRid = sdbOpenTable(&desc);
   tsDbSdb = sdbGetTableByRid(tsDbRid);
@@ -391,30 +390,28 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
   code = grantCheck(TSDB_GRANT_DB);
   if (code != 0) return code;
 
-  pDb = calloc(1, sizeof(SDbObj));
+  pDb = static_cast<SDbObj *>(calloc(1, sizeof(SDbObj)));
   tstrncpy(pDb->name, pCreate->db, sizeof(pDb->name));
   tstrncpy(pDb->acct, pAcct->user, sizeof(pDb->acct)); 
   pDb->createdTime = taosGetTimestampMs(); 
-  pDb->cfg = (SDbCfg) {
-    .cacheBlockSize      = pCreate->cacheBlockSize,
-    .totalBlocks         = pCreate->totalBlocks,
-    .maxTables           = pCreate->maxTables,
-    .daysPerFile         = pCreate->daysPerFile,
-    .daysToKeep          = pCreate->daysToKeep,
-    .daysToKeep1         = pCreate->daysToKeep1,
-    .daysToKeep2         = pCreate->daysToKeep2,
-    .minRowsPerFileBlock = pCreate->minRowsPerFileBlock,
-    .maxRowsPerFileBlock = pCreate->maxRowsPerFileBlock,
-    .fsyncPeriod         = pCreate->fsyncPeriod,
-    .commitTime          = pCreate->commitTime,
-    .precision           = pCreate->precision,
-    .compression         = pCreate->compression,
-    .walLevel            = pCreate->walLevel,
-    .replications        = pCreate->replications,
-    .quorum              = pCreate->quorum,
-    .update              = pCreate->update,
-    .cacheLastRow        = pCreate->cacheLastRow
-  };
+  pDb->cfg.cacheBlockSize = pCreate->cacheBlockSize;
+  pDb->cfg.totalBlocks = pCreate->totalBlocks;
+  pDb->cfg.maxTables = pCreate->maxTables;
+  pDb->cfg.daysPerFile = pCreate->daysPerFile;
+  pDb->cfg.daysToKeep = pCreate->daysToKeep;
+  pDb->cfg.daysToKeep1 = pCreate->daysToKeep1;
+  pDb->cfg.daysToKeep2 = pCreate->daysToKeep2;
+  pDb->cfg.minRowsPerFileBlock = pCreate->minRowsPerFileBlock;
+  pDb->cfg.maxRowsPerFileBlock = pCreate->maxRowsPerFileBlock;
+  pDb->cfg.fsyncPeriod = pCreate->fsyncPeriod;
+  pDb->cfg.commitTime = pCreate->commitTime;
+  pDb->cfg.precision = pCreate->precision;
+  pDb->cfg.compression = pCreate->compression;
+  pDb->cfg.walLevel = pCreate->walLevel;
+  pDb->cfg.replications = pCreate->replications;
+  pDb->cfg.quorum = pCreate->quorum;
+  pDb->cfg.update = pCreate->update;
+  pDb->cfg.cacheLastRow = pCreate->cacheLastRow;
 
   mnodeSetDefaultDbCfg(&pDb->cfg);
 
@@ -427,14 +424,13 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
   pMsg->pDb = pDb;
   mnodeIncDbRef(pDb);
 
-  SSdbRow row = {
-    .type     = SDB_OPER_GLOBAL,
-    .pTable   = tsDbSdb,
-    .pObj     = pDb,
-    .rowSize  = sizeof(SDbObj),
-    .pMsg     = pMsg,
-    .fpRsp    = mnodeCreateDbCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsDbSdb;
+  row.pObj = pDb;
+  row.rowSize = sizeof(SDbObj);
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeCreateDbCb;
 
   code = sdbInsertRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -478,7 +474,7 @@ void mnodeAddVgroupIntoDb(SVgObj *pVgroup) {
   pthread_mutex_lock(&pDb->mutex);
   int32_t vgPos = pDb->numOfVgroups++;
   if (vgPos >= pDb->vgListSize) {
-    pDb->vgList = realloc(pDb->vgList, pDb->vgListSize * 2 * sizeof(SVgObj *));
+    pDb->vgList = static_cast<SVgObj **>(realloc(pDb->vgList, pDb->vgListSize * 2 * sizeof(SVgObj *)));
     memset(pDb->vgList + pDb->vgListSize, 0, pDb->vgListSize * sizeof(SVgObj *));
     pDb->vgListSize *= 2;
   }
@@ -782,7 +778,7 @@ static int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void 
 #endif
 
     pWrite = data + pShow->offset[cols] * rows + pShow->bytes[cols] * numOfRows;
-    char *prec = (pDb->cfg.precision == TSDB_TIME_PRECISION_MILLI) ? TSDB_TIME_PRECISION_MILLI_STR
+    const char *prec = (pDb->cfg.precision == TSDB_TIME_PRECISION_MILLI) ? TSDB_TIME_PRECISION_MILLI_STR
                                                                    : TSDB_TIME_PRECISION_MICRO_STR;
     STR_WITH_SIZE_TO_VARSTR(pWrite, prec, 2);
     cols++;
@@ -832,11 +828,10 @@ static int32_t mnodeSetDbDropping(SDbObj *pDb) {
   if (pDb->status) return TSDB_CODE_SUCCESS;
 
   pDb->status = true;
-  SSdbRow row = {
-    .type   = SDB_OPER_GLOBAL,
-    .pTable = tsDbSdb,
-    .pObj   = pDb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsDbSdb;
+  row.pObj = pDb;
 
   int32_t code = sdbUpdateRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -847,7 +842,7 @@ static int32_t mnodeSetDbDropping(SDbObj *pDb) {
 }
 
 static int32_t mnodeProcessCreateDbMsg(SMnodeMsg *pMsg) {
-  SCreateDbMsg *pCreate    = pMsg->rpcMsg.pCont;  
+  SCreateDbMsg *pCreate = static_cast<SCreateDbMsg *>(pMsg->rpcMsg.pCont);  
   pCreate->maxTables       = htonl(pCreate->maxTables);
   pCreate->cacheBlockSize  = htonl(pCreate->cacheBlockSize);
   pCreate->totalBlocks     = htonl(pCreate->totalBlocks);
@@ -1049,13 +1044,12 @@ static int32_t mnodeAlterDb(SDbObj *pDb, SAlterDbMsg *pAlter, void *pMsg) {
   if (memcmp(&newCfg, &pDb->cfg, sizeof(SDbCfg)) != 0) {
     pDb->cfg = newCfg;
     pDb->dbCfgVersion++;
-    SSdbRow row = {
-      .type    = SDB_OPER_GLOBAL,
-      .pTable  = tsDbSdb,
-      .pObj    = pDb,
-      .pMsg    = pMsg,
-      .fpRsp   = mnodeAlterDbCb
-    };
+    SSdbRow row;
+    row.type = SDB_OPER_GLOBAL;
+    row.pTable = tsDbSdb;
+    row.pObj = pDb;
+    row.pMsg = static_cast<SMnodeMsg *>(pMsg);
+    row.fpRsp = mnodeAlterDbCb;
 
     code = sdbUpdateRow(&row);
     if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -1067,7 +1061,7 @@ static int32_t mnodeAlterDb(SDbObj *pDb, SAlterDbMsg *pAlter, void *pMsg) {
 }
 
 static int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg) {
-  SAlterDbMsg *pAlter = pMsg->rpcMsg.pCont;
+  SAlterDbMsg *pAlter = static_cast<SAlterDbMsg *>(pMsg->rpcMsg.pCont);
   mDebug("db:%s, alter db msg is received from thandle:%p", pAlter->db, pMsg->rpcMsg.handle);
 
   if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(pAlter->db);
@@ -1101,13 +1095,12 @@ static int32_t mnodeDropDb(SMnodeMsg *pMsg) {
   SDbObj *pDb = pMsg->pDb;
   mInfo("db:%s, drop db from sdb", pDb->name);
 
-  SSdbRow row = {
-    .type    = SDB_OPER_GLOBAL,
-    .pTable  = tsDbSdb,
-    .pObj    = pDb,
-    .pMsg    = pMsg,
-    .fpRsp   = mnodeDropDbCb
-  };
+  SSdbRow row;
+  row.type = SDB_OPER_GLOBAL;
+  row.pTable = tsDbSdb;
+  row.pObj = pDb;
+  row.pMsg = pMsg;
+  row.fpRsp = mnodeDropDbCb;
 
   int32_t code = sdbDeleteRow(&row);
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -1118,7 +1111,7 @@ static int32_t mnodeDropDb(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg) {
-  SDropDbMsg *pDrop = pMsg->rpcMsg.pCont;
+  SDropDbMsg *pDrop = static_cast<SDropDbMsg *>(pMsg->rpcMsg.pCont);
   mDebug("db:%s, drop db msg is received from thandle:%p", pDrop->db, pMsg->rpcMsg.handle);
 
   if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(pDrop->db);
@@ -1164,11 +1157,10 @@ void  mnodeDropAllDbs(SAcctObj *pAcct)  {
 
     if (pDb->pAcct == pAcct) {
       mInfo("db:%s, drop db from sdb for acct:%s is dropped", pDb->name, pAcct->user);
-      SSdbRow row = {
-        .type   = SDB_OPER_LOCAL,
-        .pTable = tsDbSdb,
-        .pObj   = pDb
-      };
+      SSdbRow row;
+      row.type = SDB_OPER_LOCAL;
+      row.pTable = tsDbSdb;
+      row.pObj = pDb;
       
       sdbDeleteRow(&row);
       numOfDbs++;

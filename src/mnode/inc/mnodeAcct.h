@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_ACCT_H
 #define TDENGINE_MNODE_ACCT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tacct.h"
 
 int32_t mnodeInitAccts();
@@ -34,9 +30,5 @@ void    mnodeAddDbToAcct(SAcctObj *pAcct, SDbObj *pDb);
 void    mnodeDropDbFromAcct(SAcctObj *pAcct, SDbObj *pDb);
 void    mnodeAddUserToAcct(SAcctObj *pAcct, SUserObj *pUser);
 void    mnodeDropUserFromAcct(SAcctObj *pAcct, SUserObj *pUser);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

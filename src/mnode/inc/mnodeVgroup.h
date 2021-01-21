@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_VGROUP_H
 #define TDENGINE_MNODE_VGROUP_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct SMnodeMsg;
 
 int32_t mnodeInitVgroups();
@@ -56,8 +52,5 @@ SRpcEpSet mnodeGetEpSetFromIp(char *ep);
 int32_t mnodeGetVgidVer(int8_t *vver);
 void    mnodeSetVgidVer(int8_t *cver, uint64_t iver);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

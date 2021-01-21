@@ -16,16 +16,9 @@
 #ifndef TDENGINE_MNODE_WRITE_H
 #define TDENGINE_MNODE_WRITE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "mnodeDef.h"
 
 void    mnodeAddWriteMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg));
 int32_t mnodeProcessRead(SMnodeMsg *pMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

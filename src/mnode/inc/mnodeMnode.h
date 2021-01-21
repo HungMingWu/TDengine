@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_MNODE_H
 #define TDENGINE_MNODE_MNODE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct SMnodeObj;
 
 typedef enum {
@@ -49,9 +45,5 @@ char*   mnodeGetMnodeMasterEp();
 
 void    mnodeGetMnodeInfos(void *mnodes);
 void    mnodeUpdateMnodeEpSet(SMInfos *pMnodes);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

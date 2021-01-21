@@ -49,7 +49,7 @@ int32_t mnodeProcessRead(SMnodeMsg *pMsg) {
 
   if (!sdbIsMaster()) {
     SMnodeRsp *rpcRsp = &pMsg->rpcRsp;
-    SRpcEpSet *epSet = rpcMallocCont(sizeof(SRpcEpSet));
+    SRpcEpSet *epSet = static_cast<SRpcEpSet *>(rpcMallocCont(sizeof(SRpcEpSet)));
     mnodeGetMnodeEpSetForShell(epSet, true);
     rpcRsp->rsp = epSet;
     rpcRsp->len = sizeof(SRpcEpSet);

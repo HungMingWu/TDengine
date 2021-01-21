@@ -16,9 +16,6 @@
 #ifndef TDENGINE_MNODE_SHELL_H
 #define TDENGINE_MNODE_SHELL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "mnodeDef.h"
 
 int32_t mnodeInitShow();
@@ -32,8 +29,5 @@ void mnodeAddShowRetrieveHandle(uint8_t showType, SShowRetrieveFp fp);
 void mnodeAddShowFreeIterHandle(uint8_t msgType, SShowFreeIterFp fp);
 void mnodeVacuumResult(char *data, int32_t numOfCols, int32_t rows, int32_t capacity, SShowObj *pShow);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

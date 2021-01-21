@@ -36,7 +36,7 @@
 
 void *mnodeCreateMsg(SRpcMsg *pRpcMsg) {
   int32_t    size = sizeof(SMnodeMsg) + pRpcMsg->contLen;
-  SMnodeMsg *pMsg = taosAllocateQitem(size);
+  SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(taosAllocateQitem(size));
 
   pMsg->rpcMsg = *pRpcMsg;
   pMsg->rpcMsg.pCont = pMsg->pCont;

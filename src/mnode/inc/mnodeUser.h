@@ -16,9 +16,6 @@
 #ifndef TDENGINE_MNODE_USER_H
 #define TDENGINE_MNODE_USER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "mnodeDef.h"
 
 int32_t   mnodeInitUsers();
@@ -32,9 +29,5 @@ SUserObj *mnodeGetUserFromConn(void *pConn);
 char *    mnodeGetUserFromMsg(void *pMnodeMsg);
 int32_t   mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg);
 void      mnodeDropAllUsers(SAcctObj *pAcct);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

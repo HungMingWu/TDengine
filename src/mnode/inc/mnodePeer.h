@@ -16,18 +16,11 @@
 #ifndef TDENGINE_MNODE_PEER_H
 #define TDENGINE_MNODE_PEER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "mnodeDef.h"
 
 void    mnodeAddPeerRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg));
 void    mnodeAddPeerMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg));
 int32_t mnodeProcessPeerReq(SMnodeMsg *pMsg);
 void    mnodeProcessPeerRsp(SRpcMsg *pMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

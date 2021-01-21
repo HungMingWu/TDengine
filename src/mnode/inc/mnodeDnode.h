@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_DNODE_H
 #define TDENGINE_MNODE_DNODE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
   TAOS_DN_STATUS_OFFLINE,
   TAOS_DN_STATUS_DROPPING,
@@ -58,8 +54,8 @@ typedef enum EDnodeOfflineReason {
   TAOS_DN_OFF_OTHERS
 } EDnodeOfflineReason;
 
-extern char* dnodeStatus[];
-extern char* dnodeRoles[];
+extern const char* dnodeStatus[];
+extern const char* dnodeRoles[];
 
 int32_t mnodeInitDnodes();
 void    mnodeCleanupDnodes();
@@ -77,9 +73,5 @@ void    mnodeUpdateDnode(SDnodeObj *pDnode);
 int32_t mnodeDropDnode(SDnodeObj *pDnode, void *pMsg);
 
 extern int32_t tsAccessSquence;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

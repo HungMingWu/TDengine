@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_DB_H
 #define TDENGINE_MNODE_DB_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "mnodeDef.h"
 
 enum _TSDB_DB_STATUS {
@@ -47,9 +43,5 @@ void mnodeAddTableIntoDb(SDbObj *pDb);
 void mnodeRemoveTableFromDb(SDbObj *pDb);
 void mnodeAddVgroupIntoDb(SVgObj *pVgroup);
 void mnodeRemoveVgroupFromDb(SVgObj *pVgroup);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
