@@ -104,7 +104,7 @@ static void *taosNetBindTcpPort(void *sarg) {
   struct sockaddr_in server_addr;
   struct sockaddr_in clientAddr;
 
-  STestInfo *pinfo = sarg;
+  STestInfo *pinfo = static_cast<STestInfo *>(sarg);
   int32_t    port = pinfo->port;
   SOCKET     serverSocket;
   int32_t    addr_len = sizeof(clientAddr);
@@ -355,7 +355,7 @@ static int32_t taosNetCheckRpc(const char* serverFqdn, uint16_t port, uint16_t p
   reqMsg.code = 0;
   reqMsg.handle = NULL;   // rpc handle returned to app
   reqMsg.ahandle = NULL;  // app handle set by client
-  strcpy(reqMsg.pCont, "nettest");
+  strcpy(static_cast<char *>(reqMsg.pCont), "nettest");
 
   rpcSendRecv(pRpcConn, &epSet, &reqMsg, &rspMsg);
 
@@ -389,7 +389,7 @@ static int32_t taosNetParseStartup(SStartupStep *pCont) {
 static void taosNetTestStartup(char *host, int32_t port) {
   uInfo("check startup, host:%s port:%d\n", host, port);
 
-  SStartupStep *pStep = malloc(sizeof(SStartupStep));
+  SStartupStep *pStep = new SStartupStep{};
   while (1) {
     int32_t code = taosNetCheckRpc(host, port + TSDB_PORT_DNODEDNODE, 20, 0, pStep);
     if (code > 0) {
@@ -406,7 +406,7 @@ static void taosNetTestStartup(char *host, int32_t port) {
     }
   }
 
-  free(pStep);
+  delete pStep;
 }
 
 static void taosNetTestRpc(char *host, int32_t startPort, int32_t pkgLen) {
@@ -467,9 +467,9 @@ static void taosNetTestServer(char *host, int32_t startPort, int32_t pkgLen) {
   int32_t num = endPort - startPort + 1;
   if (num < 0) num = 1;
 
-  pthread_t *pids = malloc(2 * num * sizeof(pthread_t));
-  STestInfo *tinfos = malloc(num * sizeof(STestInfo));
-  STestInfo *uinfos = malloc(num * sizeof(STestInfo));
+  pthread_t *pids = new pthread_t[2 * num];
+  STestInfo *tinfos = new STestInfo[num];
+  STestInfo *uinfos = new STestInfo[num];
 
   for (int32_t i = 0; i < num; i++) {
     STestInfo *tcpInfo = tinfos + i;

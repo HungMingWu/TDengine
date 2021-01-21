@@ -284,7 +284,7 @@ void *rpcOpen(const SRpcInit *pInit) {
   }
 
   if (pRpc->connType == TAOS_CONN_SERVER) {
-    pRpc->hash = taosHashInit(pRpc->sessions, taosGetDefaultHashFunction(TSDB_DATA_TYPE_BINARY), true, true);
+    pRpc->hash = taosHashInit(pRpc->sessions, taosGetDefaultHashFunction(TSDB_DATA_TYPE_BINARY), true, HASH_ENTRY_LOCK);
     if (pRpc->hash == NULL) {
       tError("%s failed to init string hash", pRpc->label);
       rpcClose(pRpc);
@@ -302,9 +302,9 @@ void *rpcOpen(const SRpcInit *pInit) {
   pthread_mutex_init(&pRpc->mutex, NULL);
 
   pRpc->tcphandle = (*taosInitConn[pRpc->connType|RPC_CONN_TCP])(0, pRpc->localPort, pRpc->label, 
-                                                  pRpc->numOfThreads, rpcProcessMsgFromPeer, pRpc);
+                                                  pRpc->numOfThreads, (void *)rpcProcessMsgFromPeer, pRpc);
   pRpc->udphandle = (*taosInitConn[pRpc->connType])(0, pRpc->localPort, pRpc->label, 
-                                                  pRpc->numOfThreads, rpcProcessMsgFromPeer, pRpc);
+                                                  pRpc->numOfThreads, (void *)rpcProcessMsgFromPeer, pRpc);
 
   if (pRpc->tcphandle == NULL || pRpc->udphandle == NULL) {
     tError("%s failed to init network, port:%d", pRpc->label, pRpc->localPort);
@@ -371,7 +371,7 @@ void *rpcReallocCont(void *ptr, int contLen) {
   }
 
   int size = contLen + RPC_MSG_OVERHEAD;
-  start = realloc(start, size);
+  start = (char *)realloc(start, size);
   if (start == NULL) {
     tError("failed to realloc cont, size:%d", size);
     return NULL;
@@ -384,13 +384,13 @@ void rpcSendRequest(void *shandle, const SRpcEpSet *pEpSet, SRpcMsg *pMsg, int64
   SRpcInfo       *pRpc = (SRpcInfo *)shandle;
   SRpcReqContext *pContext;
 
-  int contLen = rpcCompressRpcMsg(pMsg->pCont, pMsg->contLen);
+  int contLen = rpcCompressRpcMsg((char *)pMsg->pCont, pMsg->contLen);
   pContext = (SRpcReqContext *) ((char*)pMsg->pCont-sizeof(SRpcHead)-sizeof(SRpcReqContext));
   pContext->ahandle = pMsg->ahandle;
   pContext->pRpc = (SRpcInfo *)shandle;
   pContext->epSet = *pEpSet;
   pContext->contLen = contLen;
-  pContext->pCont = pMsg->pCont;
+  pContext->pCont = (uint8_t *)pMsg->pCont;
   pContext->msgType = pMsg->msgType;
   pContext->oldInUse = pEpSet->inUse;
 
@@ -427,7 +427,7 @@ void rpcSendResponse(const SRpcMsg *pRsp) {
   SRpcHead  *pHead = rpcHeadFromCont(pMsg->pCont);
   char      *msg = (char *)pHead;
 
-  pMsg->contLen = rpcCompressRpcMsg(pMsg->pCont, pMsg->contLen);
+  pMsg->contLen = rpcCompressRpcMsg((char *)pMsg->pCont, pMsg->contLen);
   msgLen = rpcMsgLenFromCont(pMsg->contLen);
 
   rpcLockConn(pConn);
@@ -556,7 +556,7 @@ int rpcReportProgress(void *handle, char *pCont, int contLen) {
 
 void rpcCancelRequest(int64_t rid) {
 
-  SRpcReqContext *pContext = taosAcquireRef(tsRpcRefId, rid);
+  SRpcReqContext *pContext = (SRpcReqContext*)taosAcquireRef(tsRpcRefId, rid);
   if (pContext == NULL) return;
 
   rpcCloseConn(pContext->pConn);
@@ -795,7 +795,7 @@ static SRpcConn *rpcSetupConnToServer(SRpcReqContext *pContext) {
   SRpcInfo   *pRpc = pContext->pRpc;
   SRpcEpSet  *pEpSet = &pContext->epSet;
 
-  pConn = rpcGetConnFromCache(pRpc->pCache, pEpSet->fqdn[pEpSet->inUse], pEpSet->port[pEpSet->inUse], pContext->connType);
+  pConn = (SRpcConn*)rpcGetConnFromCache(pRpc->pCache, pEpSet->fqdn[pEpSet->inUse], pEpSet->port[pEpSet->inUse], pContext->connType);
   if ( pConn == NULL || pConn->user[0] == 0) {
     pConn = rpcOpenConn(pRpc, pEpSet->fqdn[pEpSet->inUse], pEpSet->port[pEpSet->inUse], pContext->connType);
   } 
@@ -1318,7 +1318,7 @@ static void rpcSendMsgToPeer(SRpcConn *pConn, void *msg, int msgLen) {
   int        writtenLen = 0;
   SRpcHead  *pHead = (SRpcHead *)msg;
 
-  msgLen = rpcAddAuthPart(pConn, msg, msgLen);
+  msgLen = rpcAddAuthPart(pConn, (char *)msg, msgLen);
 
   if ( rpcIsReq(pHead->msgType)) {
     tDebug("%s, %s is sent to %s:%hu, len:%d sig:0x%08x:0x%08x:%d",
@@ -1443,7 +1443,7 @@ static int32_t rpcCompressRpcMsg(char* pCont, int32_t contLen) {
     return contLen;
   }
   
-  char *buf = malloc (contLen + overhead + 8);  // 8 extra bytes
+  char *buf = (char *)malloc (contLen + overhead + 8);  // 8 extra bytes
   if (buf == NULL) {
     tError("failed to allocate memory for rpc msg compression, contLen:%d", contLen);
     return contLen;

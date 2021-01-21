@@ -26,26 +26,25 @@ STsdbBufPool *tsdbNewBufPool() {
   STsdbBufPool *pBufPool = (STsdbBufPool *)calloc(1, sizeof(*pBufPool));
   if (pBufPool == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    tsdbFreeBufPool(pBufPool);
+    return NULL;
   }
 
   int code = pthread_cond_init(&(pBufPool->poolNotEmpty), NULL);
   if (code != 0) {
     terrno = TAOS_SYSTEM_ERROR(code);
-    goto _err;
+    tsdbFreeBufPool(pBufPool);
+    return NULL;
   }
 
   pBufPool->bufBlockList = tdListNew(sizeof(STsdbBufBlock *));
   if (pBufPool->bufBlockList == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    tsdbFreeBufPool(pBufPool);
+    return NULL;
   }
 
   return pBufPool;
-
-_err:
-  tsdbFreeBufPool(pBufPool);
-  return NULL;
 }
 
 void tsdbFreeBufPool(STsdbBufPool *pBufPool) {

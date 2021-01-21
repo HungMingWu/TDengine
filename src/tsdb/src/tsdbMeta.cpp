@@ -19,6 +19,7 @@
 #include "tsdb.h"
 #include "tsdbMain.h"
 #include "tskiplist.h"
+#include "defer.h"
 
 #define TSDB_SUPER_TABLE_SL_LEVEL 5
 #define DEFAULT_TAG_INDEX_COLUMN 0
@@ -61,17 +62,20 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
   int        newSuper = 0;
   int        tid = pCfg->tableId.tid;
   STable *   pTable = NULL;
-
+  auto _1 = defer([&] { tsdbFreeTable(super); });
+  auto _2 = defer([&] { tsdbFreeTable(table); });
   if (tid < 1 || tid > TSDB_MAX_TABLES) {
     tsdbError("vgId:%d failed to create table since invalid tid %d", REPO_ID(pRepo), tid);
     terrno = TSDB_CODE_TDB_IVD_CREATE_TABLE_INFO;
-    goto _err;
+    return -1;
   }
 
   if (tid < pMeta->maxTables && pMeta->tables[tid] != NULL) {
     if (TABLE_UID(pMeta->tables[tid]) == pCfg->tableId.uid) {
       tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(pRepo),
                 TABLE_CHAR_NAME(pMeta->tables[tid]), TABLE_TID(pMeta->tables[tid]), TABLE_UID(pMeta->tables[tid]));
+      _1.cancel();
+      _2.cancel();
       return 0;
     } else {
       tsdbError("vgId:%d table %s at tid %d uid %" PRIu64
@@ -87,7 +91,7 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
     tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(pRepo), TABLE_CHAR_NAME(pTable),
               TABLE_TID(pTable), TABLE_UID(pTable));
     terrno = TSDB_CODE_TDB_TABLE_ALREADY_EXIST;
-    goto _err;
+    return -1;
   }
 
   if (pCfg->type == TSDB_CHILD_TABLE) {
@@ -95,29 +99,29 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
     if (super == NULL) {  // super table not exists, try to create it
       newSuper = 1;
       super = tsdbCreateTableFromCfg(pCfg, true);
-      if (super == NULL) goto _err;
+      if (super == NULL) return -1;
     } else {
       if (TABLE_TYPE(super) != TSDB_SUPER_TABLE || TABLE_UID(super) != pCfg->superUid) {
         terrno = TSDB_CODE_TDB_IVD_CREATE_TABLE_INFO;
-        goto _err;
+        return -1;
       }
     }
   }
 
   table = tsdbCreateTableFromCfg(pCfg, false);
-  if (table == NULL) goto _err;
+  if (table == NULL) return -1;
 
   // Register to meta
   tsdbWLockRepoMeta(pRepo);
   if (newSuper) {
     if (tsdbAddTableToMeta(pRepo, super, true, false) < 0) {
       tsdbUnlockRepoMeta(pRepo);
-      goto _err;
+      return -1;
     }
   }
   if (tsdbAddTableToMeta(pRepo, table, true, false) < 0) {
     tsdbUnlockRepoMeta(pRepo);
-    goto _err;
+    return -1;
   }
   tsdbUnlockRepoMeta(pRepo);
 
@@ -128,24 +132,20 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
   if (newSuper) {
     tlen = tsdbGetTableEncodeSize(TSDB_UPDATE_META, super);
     pBuf = tsdbAllocBytes(pRepo, tlen);
-    if (pBuf == NULL) goto _err;
+    if (pBuf == NULL) return -1;
     void *tBuf = tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, pBuf, super);
     ASSERT(POINTER_DISTANCE(tBuf, pBuf) == tlen);
   }
   tlen = tsdbGetTableEncodeSize(TSDB_UPDATE_META, table);
   pBuf = tsdbAllocBytes(pRepo, tlen);
-  if (pBuf == NULL) goto _err;
+  if (pBuf == NULL) return -1;
   void *tBuf = tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, pBuf, table);
   ASSERT(POINTER_DISTANCE(tBuf, pBuf) == tlen);
 
   if (tsdbCheckCommit(pRepo) < 0) return -1;
-
+  _1.cancel();
+  _2.cancel();
   return 0;
-
-_err:
-  tsdbFreeTable(super);
-  tsdbFreeTable(table);
-  return -1;
 }
 
 int tsdbDropTable(TSDB_REPO_T *repo, STableId tableId) {
@@ -205,7 +205,7 @@ void *tsdbGetTableTagVal(const void* pTable, int32_t colId, int16_t type, int16_
     return NULL;  // No matched tag volumn
   }
 
-  char *val = tdGetKVRowValOfCol(((STable*)pTable)->tagVal, colId);
+  char *val = (char *)tdGetKVRowValOfCol(((STable*)pTable)->tagVal, colId);
   assert(type == pCol->type && bytes == pCol->bytes);
 
   if (val != NULL && IS_VAR_DATA_TYPE(type)) {
@@ -240,7 +240,7 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
     return NULL;
   }
 
-  if (tsdbInitTableCfg(pCfg, pMsg->tableType, htobe64(pMsg->uid), htonl(pMsg->tid)) < 0) goto _err;
+  if (tsdbInitTableCfg(pCfg, (ETableType)pMsg->tableType, htobe64(pMsg->uid), htonl(pMsg->tid)) < 0) goto _err;
   if (tdInitTSchemaBuilder(&schemaBuilder, htonl(pMsg->sversion)) < 0) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     goto _err;
@@ -420,42 +420,41 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
 // ------------------ INTERNAL FUNCTIONS ------------------
 STsdbMeta *tsdbNewMeta(STsdbCfg *pCfg) {
   STsdbMeta *pMeta = (STsdbMeta *)calloc(1, sizeof(*pMeta));
+  auto _1 = defer([&] { tsdbFreeMeta(pMeta); });
   if (pMeta == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
 
   int code = pthread_rwlock_init(&pMeta->rwLock, NULL);
   if (code != 0) {
     tsdbError("vgId:%d failed to init TSDB meta r/w lock since %s", pCfg->tsdbId, strerror(code));
     terrno = TAOS_SYSTEM_ERROR(code);
-    goto _err;
+    return nullptr;
   }
 
   pMeta->maxTables = TSDB_INIT_NTABLES + 1;
   pMeta->tables = (STable **)calloc(pMeta->maxTables, sizeof(STable *));
   if (pMeta->tables == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
 
   pMeta->superList = tdListNew(sizeof(STable *));
   if (pMeta->superList == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
 
-  pMeta->uidMap = taosHashInit((size_t)(TSDB_INIT_NTABLES * 1.1), taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT), true, false);
+  pMeta->uidMap = taosHashInit((size_t)(TSDB_INIT_NTABLES * 1.1), taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT),
+                               true, HASH_NO_LOCK);
   if (pMeta->uidMap == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
 
+  _1.cancel();
   return pMeta;
-
-_err:
-  tsdbFreeMeta(pMeta);
-  return NULL;
 }
 
 void tsdbFreeMeta(STsdbMeta *pMeta) {
@@ -653,7 +652,7 @@ static char *getTagIndexKey(const void *pData) {
     // treat the column as NULL if we cannot find it
     res = getNullValue(pCol->type);
   }
-  return res;
+  return (char *)res;
 }
 
 static STable *tsdbNewTable() {
@@ -678,7 +677,7 @@ static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
   if (isSuper) {
     pTable->type = TSDB_SUPER_TABLE;
     tsize = strnlen(pCfg->sname, TSDB_TABLE_NAME_LEN - 1);
-    pTable->name = calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
+    pTable->name = (tstr*)calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
     if (pTable->name == NULL) {
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
       goto _err;
@@ -709,7 +708,7 @@ static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
   } else {
     pTable->type = pCfg->type;
     tsize = strnlen(pCfg->name, TSDB_TABLE_NAME_LEN - 1);
-    pTable->name = calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
+    pTable->name = (tstr*)calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
     if (pTable->name == NULL) {
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
       goto _err;
@@ -917,14 +916,14 @@ static int tsdbRemoveTableFromIndex(STsdbMeta *pMeta, STable *pTable) {
   STSchema *pSchema = tsdbGetTableTagSchema(pTable);
   STColumn *pCol = schemaColAt(pSchema, DEFAULT_TAG_INDEX_COLUMN);
 
-  char *  key = tdGetKVRowValOfCol(pTable->tagVal, pCol->colId);
+  char *  key = (char *)tdGetKVRowValOfCol(pTable->tagVal, pCol->colId);
   SArray *res = tSkipListGet(pSTable->pIndex, key);
 
   size_t size = taosArrayGetSize(res);
   ASSERT(size > 0);
 
   for (int32_t i = 0; i < size; ++i) {
-    SSkipListNode *pNode = taosArrayGetP(res, i);
+    SSkipListNode *pNode = (SSkipListNode *)taosArrayGetP(res, i);
 
     // STableIndexElem* pElem = (STableIndexElem*) SL_GET_NODE_DATA(pNode);
     if ((STable *)SL_GET_NODE_DATA(pNode) == pTable) {  // this is the exact what we need
@@ -1091,7 +1090,7 @@ static void *tsdbDecodeTableName(void *buf, tstr **name) {
   VarDataLenT len = 0;
 
   buf = taosDecodeFixedI16(buf, &len);
-  *name = calloc(1, sizeof(tstr) + len + 1);
+  *name = (tstr*)calloc(1, sizeof(tstr) + len + 1);
   if (*name == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     return NULL;
@@ -1140,7 +1139,7 @@ static void *tsdbDecodeTable(void *buf, STable **pRTable) {
   uint8_t type = 0;
 
   buf = taosDecodeFixedU8(buf, &type);
-  pTable->type = type;
+  pTable->type = (ETableType)type;
   buf = tsdbDecodeTableName(buf, &(pTable->name));
   buf = taosDecodeFixedU64(buf, &TABLE_UID(pTable));
   buf = taosDecodeFixedI32(buf, &TABLE_TID(pTable));

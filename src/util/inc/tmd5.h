@@ -25,6 +25,10 @@
 #ifndef _taos_md5_header_
 #define _taos_md5_header_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 typedef struct {
@@ -37,5 +41,9 @@ typedef struct {
 void MD5Init(MD5_CTX *mdContext);
 void MD5Update(MD5_CTX *mdContext, uint8_t *inBuf, unsigned int inLen);
 void MD5Final(MD5_CTX *mdContext);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

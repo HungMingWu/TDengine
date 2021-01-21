@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TAOSMSG_H
 #define TDENGINE_TAOSMSG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -578,13 +574,14 @@ typedef struct {
   int8_t   accessState;
 } SVgroupAccess;
 
-typedef struct {
+struct SDnodeCfg {
   int32_t  dnodeId;
   uint32_t moduleStatus;
   uint32_t numOfVnodes;
   char     clusterId[TSDB_CLUSTER_ID_LEN];
   char     reserved[16];
-} SDnodeCfg;
+  void Update();
+};
 
 typedef struct {
   int32_t  dnodeId;
@@ -644,11 +641,11 @@ typedef struct {
   SVnodeLoad  load[];
 } SStatusMsg;
 
-typedef struct {
+struct SStatusRsp {
   SMInfos       mnodes;
   SDnodeCfg     dnodeCfg;
   SVgroupAccess vgAccess[];
-} SStatusRsp;
+};
 
 typedef struct {
   uint32_t vgId;
@@ -868,9 +865,5 @@ typedef struct {
 } SStartupStep;
 
 #pragma pack(pop)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -22,6 +22,7 @@
 #include "tscompression.h"
 #include "tsdb.h"
 #include "tulog.h"
+#include "defer.h"
 
 #define TSDB_CFG_FILE_NAME "config"
 #define TSDB_DATA_DIR_NAME "data"
@@ -197,7 +198,7 @@ uint32_t tsdbGetFileInfo(TSDB_REPO_T *repo, char *name, uint32_t *index, uint32_
       }
     } else {
       SFileGroup *pFGroup =
-          taosbsearch(&fid, pFileH->pFGroup, pFileH->nFGroups, sizeof(SFileGroup), keyFGroupCompFunc, TD_GE);
+          (SFileGroup *)taosbsearch(&fid, pFileH->pFGroup, pFileH->nFGroups, sizeof(SFileGroup), keyFGroupCompFunc, TD_GE);
       if (pFGroup->fileId == fid) {
         fname = strdup(pFGroup->files[(*index) % TSDB_FILE_TYPE_MAX].fname);
         magic = pFGroup->files[(*index) % TSDB_FILE_TYPE_MAX].info.magic;
@@ -213,7 +214,7 @@ uint32_t tsdbGetFileInfo(TSDB_REPO_T *repo, char *name, uint32_t *index, uint32_
     }
     strcpy(name, fname + prefixLen);
   } else {  // get the named file at the specified index. If not there, return 0
-    fname = malloc(prefixLen + strlen(name) + 2);
+    fname = (char *)malloc(prefixLen + strlen(name) + 2);
     sprintf(fname, "%s/%s", prefix, name);
     if (access(fname, F_OK) != 0) {
       tfree(fname);
@@ -298,7 +299,7 @@ int32_t tsdbConfigRepo(TSDB_REPO_T *repo, STsdbCfg *pCfg) {
 
 void tsdbReportStat(void *repo, int64_t *totalPoints, int64_t *totalStorage, int64_t *compStorage) {
   ASSERT(repo != NULL);
-  STsdbRepo *pRepo = repo;
+  STsdbRepo *pRepo = (STsdbRepo *)repo;
   *totalPoints = pRepo->stat.pointsWritten;
   *totalStorage = pRepo->stat.totalStorage;
   *compStorage = pRepo->stat.compStorage;
@@ -311,7 +312,7 @@ int tsdbGetState(TSDB_REPO_T *repo) {
 // ----------------- INTERNAL FUNCTIONS -----------------
 char *tsdbGetMetaFileName(char *rootDir) {
   int   tlen = (int)(strlen(rootDir) + strlen(TSDB_META_FILE_NAME) + 2);
-  char *fname = calloc(1, tlen);
+  char *fname = (char *)calloc(1, tlen);
   if (fname == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     return NULL;
@@ -350,7 +351,7 @@ int tsdbUnlockRepo(STsdbRepo *pRepo) {
 
 char *tsdbGetDataDirName(char *rootDir) {
   int   tlen = (int)(strlen(rootDir) + strlen(TSDB_DATA_DIR_NAME) + 2);
-  char *fname = calloc(1, tlen);
+  char *fname = (char *)calloc(1, tlen);
   if (fname == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     return NULL;
@@ -530,21 +531,22 @@ static int32_t tsdbSaveConfig(char *rootDir, STsdbCfg *pCfg) {
   char *fname = NULL;
   char  buf[TSDB_FILE_HEAD_SIZE] = "\0";
   char *pBuf = buf;
-
+  auto _1 = defer([&] {   free(fname);});
+  auto _2 = defer([&] { if (fd != -1) close(fd); });
   fname = tsdbGetCfgFname(rootDir);
   if (fname == NULL) {
     tsdbError("vgId:%d failed to save configuration since %s", pCfg->tsdbId, tstrerror(terrno));
-    goto _err;
+    return -1;
   }
 
   fd = open(fname, O_WRONLY | O_CREAT, 0755);
   if (fd < 0) {
     tsdbError("vgId:%d failed to open file %s since %s", pCfg->tsdbId, fname, strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
-    goto _err;
+    return -1;
   }
 
-  int tlen = tsdbEncodeCfg((void *)(&pBuf), pCfg);
+  int tlen = tsdbEncodeCfg((void **)(&pBuf), pCfg);
   ASSERT((tlen + sizeof(TSCKSUM) <= TSDB_FILE_HEAD_SIZE) && (POINTER_DISTANCE(pBuf, buf) == tlen));
 
   taosCalcChecksumAppend(0, (uint8_t *)buf, TSDB_FILE_HEAD_SIZE);
@@ -553,23 +555,17 @@ static int32_t tsdbSaveConfig(char *rootDir, STsdbCfg *pCfg) {
     tsdbError("vgId:%d failed to write %d bytes to file %s since %s", pCfg->tsdbId, TSDB_FILE_HEAD_SIZE, fname,
               strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
-    goto _err;
+    return -1;
   }
 
   if (fsync(fd) < 0) {
     tsdbError("vgId:%d failed to fsync file %s since %s", pCfg->tsdbId, fname, strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
-    goto _err;
+    return -1;
   }
 
-  free(fname);
-  close(fd);
   return 0;
 
-_err:
-  tfree(fname);
-  if (fd >= 0) close(fd);
-  return -1;
 }
 
 static int tsdbLoadConfig(char *rootDir, STsdbCfg *pCfg) {
@@ -617,7 +613,7 @@ _err:
 
 static char *tsdbGetCfgFname(char *rootDir) {
   int   tlen = (int)(strlen(rootDir) + strlen(TSDB_CFG_FILE_NAME) + 2);
-  char *fname = calloc(1, tlen);
+  char *fname = (char *)calloc(1, tlen);
   if (fname == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     return NULL;
@@ -631,22 +627,22 @@ static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
   STsdbRepo *pRepo = (STsdbRepo *)calloc(1, sizeof(STsdbRepo));
   if (pRepo == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
-
+  auto _1 = defer([&] { tsdbFreeRepo(pRepo); });
   pRepo->state = TSDB_STATE_OK;
   pRepo->code = TSDB_CODE_SUCCESS;
 
   int code = pthread_mutex_init(&pRepo->mutex, NULL);
   if (code != 0) {
     terrno = TAOS_SYSTEM_ERROR(code);
-    goto _err;
+    return nullptr;
   }
 
   code = sem_init(&(pRepo->readyToCommit), 0, 1);
   if (code != 0) {
     terrno = TAOS_SYSTEM_ERROR(code);
-    goto _err;
+    return nullptr;
   }
 
   pRepo->repoLocked = false;
@@ -654,7 +650,7 @@ static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
   pRepo->rootDir = strdup(rootDir);
   if (pRepo->rootDir == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return nullptr;
   }
 
   pRepo->config = *pCfg;
@@ -663,26 +659,22 @@ static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
   pRepo->tsdbMeta = tsdbNewMeta(pCfg);
   if (pRepo->tsdbMeta == NULL) {
     tsdbError("vgId:%d failed to create meta since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return nullptr;
   }
 
-  pRepo->pPool = tsdbNewBufPool(pCfg);
+  pRepo->pPool = tsdbNewBufPool();
   if (pRepo->pPool == NULL) {
     tsdbError("vgId:%d failed to create buffer pool since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return nullptr;
   }
 
   pRepo->tsdbFileH = tsdbNewFileH(pCfg);
   if (pRepo->tsdbFileH == NULL) {
     tsdbError("vgId:%d failed to create file handle since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return nullptr;
   }
-
+  _1.cancel();
   return pRepo;
-
-_err:
-  tsdbFreeRepo(pRepo);
-  return NULL;
 }
 
 static void tsdbFreeRepo(STsdbRepo *pRepo) {
@@ -707,7 +699,7 @@ static int tsdbRestoreInfo(STsdbRepo *pRepo) { // TODO
   SCompBlock *pBlock = NULL;
 
   SFileGroupIter iter;
-  SRWHelper      rhelper = {0};
+  SRWHelper      rhelper = {(tsdb_rw_helper_t)0};
 
   if (tsdbInitReadHelper(&rhelper, pRepo) < 0) goto _err;
 

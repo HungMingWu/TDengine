@@ -23,6 +23,7 @@
 #include "tlosertree.h"
 #include "tsdb.h"
 #include "tsdbMain.h"
+#include "defer.h"
 
 #define EXTRA_BYTES 2
 #define ASCENDING_TRAVERSE(o)   (o == TSDB_ORDER_ASC)
@@ -161,9 +162,9 @@ static SArray* getColumnIdList(STsdbQueryHandle* pQueryHandle) {
   size_t numOfCols = QH_GET_NUM_OF_COLS(pQueryHandle);
   assert(numOfCols <= TSDB_MAX_COLUMNS);
 
-  SArray* pIdList = taosArrayInit(numOfCols, sizeof(int16_t));
+  SArray* pIdList = (SArray*)taosArrayInit(numOfCols, sizeof(int16_t));
   for (int32_t i = 0; i < numOfCols; ++i) {
-    SColumnInfoData* pCol = taosArrayGet(pQueryHandle->pColumns, i);
+    SColumnInfoData* pCol = (SColumnInfoData*)taosArrayGet(pQueryHandle->pColumns, i);
     taosArrayPush(pIdList, &pCol->info.colId);
   }
 
@@ -202,7 +203,7 @@ static void tsdbMayUnTakeMemSnapshot(STsdbQueryHandle* pQueryHandle) {
   }
 
   if (--pMemRef->ref == 0) {
-    tsdbUnTakeMemSnapShot(pQueryHandle->pTsdb, pMemRef->mem, pMemRef->imem);
+    tsdbUnTakeMemSnapShot(pQueryHandle->pTsdb, (SMemTable*)pMemRef->mem, pMemRef->imem);
     pMemRef->mem = NULL;
     pMemRef->imem = NULL;
   }
@@ -215,7 +216,7 @@ static SArray* createCheckInfoFromTableGroup(STsdbQueryHandle* pQueryHandle, STa
   assert(sizeOfGroup >= 1 && pMeta != NULL);
 
   // allocate buffer in order to load data blocks from file
-  SArray* pTableCheckInfo = taosArrayInit(pGroupList->numOfTables, sizeof(STableCheckInfo));
+  SArray* pTableCheckInfo = (SArray*)taosArrayInit(pGroupList->numOfTables, sizeof(STableCheckInfo));
   if (pTableCheckInfo == NULL) {
     return NULL;
   }
@@ -786,24 +787,29 @@ static int32_t doLoadFileDataBlock(STsdbQueryHandle* pQueryHandle, SCompBlock* p
 
   STSchema *pSchema = tsdbGetTableSchema(pCheckInfo->pTableObj);
   int32_t   code = tdInitDataCols(pQueryHandle->pDataCols, pSchema);
+  auto _1 = defer([&] {
+    pBlock->numOfRows = 0;
+    tsdbError("%p error occurs in loading file block, index:%d, brange:%" PRId64 "-%" PRId64 ", rows:%d, %p",
+              pQueryHandle, slotIndex, pBlock->keyFirst, pBlock->keyLast, pBlock->numOfRows, pQueryHandle->qinfo);
+  });
   if (code != TSDB_CODE_SUCCESS) {
     tsdbError("%p failed to malloc buf for pDataCols, %p", pQueryHandle, pQueryHandle->qinfo);
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _error;
+    return terrno;
   }
 
   code = tdInitDataCols(pQueryHandle->rhelper.pDataCols[0], pSchema);
   if (code != TSDB_CODE_SUCCESS) {
     tsdbError("%p failed to malloc buf for rhelper.pDataCols[0], %p", pQueryHandle, pQueryHandle->qinfo);
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _error;
+    return terrno;
   }
 
   code = tdInitDataCols(pQueryHandle->rhelper.pDataCols[1], pSchema);
   if (code != TSDB_CODE_SUCCESS) {
     tsdbError("%p failed to malloc buf for rhelper.pDataCols[1], %p", pQueryHandle, pQueryHandle->qinfo);
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _error;
+    return terrno;
   }
 
   int16_t* colIds = pQueryHandle->defaultLoadColumn->pData;
@@ -828,17 +834,10 @@ static int32_t doLoadFileDataBlock(STsdbQueryHandle* pQueryHandle, SCompBlock* p
 
   int64_t elapsedTime = (taosGetTimestampUs() - st);
   pQueryHandle->cost.blockLoadTime += elapsedTime;
-
+  _1.cancel();
   tsdbDebug("%p load file block into buffer, index:%d, brange:%"PRId64"-%"PRId64", rows:%d, elapsed time:%"PRId64 " us, %p",
       pQueryHandle, slotIndex, pBlock->keyFirst, pBlock->keyLast, pBlock->numOfRows, elapsedTime, pQueryHandle->qinfo);
   return TSDB_CODE_SUCCESS;
-
-_error:
-  pBlock->numOfRows = 0;
-
-  tsdbError("%p error occurs in loading file block, index:%d, brange:%"PRId64"-%"PRId64", rows:%d, %p",
-            pQueryHandle, slotIndex, pBlock->keyFirst, pBlock->keyLast, pBlock->numOfRows, pQueryHandle->qinfo);
-  return terrno;
 }
 
 static int32_t getEndPosInDataBlock(STsdbQueryHandle* pQueryHandle, SDataBlockInfo* pBlockInfo);
@@ -2529,8 +2528,8 @@ static int32_t tableGroupComparFn(const void *p1, const void *p2, const void *pa
       STColumn* pCol = schemaColAt(pTableGroupSupp->pTagSchema, colIndex);
       bytes = pCol->bytes;
       type = pCol->type;
-      f1 = tdGetKVRowValOfCol(pTable1->tagVal, pCol->colId);
-      f2 = tdGetKVRowValOfCol(pTable2->tagVal, pCol->colId);
+      f1 = (char *)tdGetKVRowValOfCol(pTable1->tagVal, pCol->colId);
+      f2 = (char *)tdGetKVRowValOfCol(pTable2->tagVal, pCol->colId);
     }
 
     // this tags value may be NULL
@@ -2570,17 +2569,17 @@ static int tsdbCheckInfoCompar(const void* key1, const void* key2) {
 
 void createTableGroupImpl(SArray* pGroups, SArray* pTableList, size_t numOfTables, TSKEY skey,
                           STableGroupSupporter* pSupp, __ext_compar_fn_t compareFn) {
-  STable* pTable = taosArrayGetP(pTableList, 0);
+  STable* pTable = (STable*)taosArrayGetP(pTableList, 0);
 
-  SArray* g = taosArrayInit(16, sizeof(STableKeyInfo));
+  SArray* g = (SArray*)taosArrayInit(16, sizeof(STableKeyInfo));
 
   STableKeyInfo info = {.pTable = pTable, .lastKey = skey};
   taosArrayPush(g, &info);
   tsdbRefTable(pTable);
 
   for (int32_t i = 1; i < numOfTables; ++i) {
-    STable** prev = taosArrayGet(pTableList, i - 1);
-    STable** p = taosArrayGet(pTableList, i);
+    STable** prev = (STable**)taosArrayGet(pTableList, i - 1);
+    STable** p = (STable**)taosArrayGet(pTableList, i);
 
     int32_t ret = compareFn(prev, p, pSupp);
     assert(ret == 0 || ret == -1);
@@ -2593,7 +2592,7 @@ void createTableGroupImpl(SArray* pGroups, SArray* pTableList, size_t numOfTable
       taosArrayPush(g, &info1);
     } else {
       taosArrayPush(pGroups, &g);  // current group is ended, start a new group
-      g = taosArrayInit(16, sizeof(STableKeyInfo));
+      g = (SArray*)taosArrayInit(16, sizeof(STableKeyInfo));
 
       STableKeyInfo info1 = {.pTable = *p, .lastKey = skey};
       taosArrayPush(g, &info1);
@@ -2723,7 +2722,7 @@ static int32_t doQueryTableList(STable* pSTable, SArray* pRes, tExprNode* pExpr)
 int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, const char* pTagCond, size_t len,
                                  int16_t tagNameRelType, const char* tbnameCond, STableGroupInfo* pGroupInfo,
                                  SColIndex* pColIndex, int32_t numOfCols) {
-  if (tsdbRLockRepoMeta(tsdb) < 0) goto _error;
+  if (tsdbRLockRepoMeta(tsdb) < 0) return terrno;
 
   STable* pTable = tsdbGetTableByUid(tsdbGetMeta(tsdb), uid);
   if (pTable == NULL) {
@@ -2731,7 +2730,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
     tsdbUnlockRepoMeta(tsdb);
 
-    goto _error;
+    return terrno;
   }
 
   if (pTable->type != TSDB_SUPER_TABLE) {
@@ -2740,7 +2739,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
     terrno = TSDB_CODE_COM_OPS_NOT_SUPPORT; //basically, this error is caused by invalid sql issued by client
 
     tsdbUnlockRepoMeta(tsdb);
-    goto _error;
+    return terrno;
   }
 
   //NOTE: not add ref count for super table
@@ -2752,7 +2751,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
     int32_t ret = getAllTableList(pTable, res);
     if (ret != TSDB_CODE_SUCCESS) {
       tsdbUnlockRepoMeta(tsdb);
-      goto _error;
+      return terrno;
     }
 
     pGroupInfo->numOfTables = taosArrayGetSize(res);
@@ -2761,7 +2760,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
     tsdbDebug("%p no table name/tag condition, all tables belong to one group, numOfTables:%" PRIzu "", tsdb, pGroupInfo->numOfTables);
     taosArrayDestroy(res);
 
-    if (tsdbUnlockRepoMeta(tsdb) < 0) goto _error;
+    if (tsdbUnlockRepoMeta(tsdb) < 0) return terrno;
     return ret;
   }
 
@@ -2795,7 +2794,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
     terrno = code;
     tsdbUnlockRepoMeta(tsdb);     // unlock tsdb in any cases
 
-    goto _error;
+    return terrno;
     // TODO: more error handling
   } END_TRY
 
@@ -2808,31 +2807,28 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
 
   taosArrayDestroy(res);
 
-  if (tsdbUnlockRepoMeta(tsdb) < 0) goto _error;
+  if (tsdbUnlockRepoMeta(tsdb) < 0) return terrno;
   return ret;
-
-  _error:
-  return terrno;
 }
 
 int32_t tsdbGetOneTableGroup(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY startKey, STableGroupInfo* pGroupInfo) {
-  if (tsdbRLockRepoMeta(tsdb) < 0) goto _error;
+  if (tsdbRLockRepoMeta(tsdb) < 0) return terrno;
 
   STable* pTable = tsdbGetTableByUid(tsdbGetMeta(tsdb), uid);
   if (pTable == NULL) {
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
     tsdbUnlockRepoMeta(tsdb);
-    goto _error;
+    return terrno;
   }
 
   assert(pTable->type == TSDB_CHILD_TABLE || pTable->type == TSDB_NORMAL_TABLE || pTable->type == TSDB_STREAM_TABLE);
   tsdbRefTable(pTable);
-  if (tsdbUnlockRepoMeta(tsdb) < 0) goto _error;
+  if (tsdbUnlockRepoMeta(tsdb) < 0) return terrno;
 
   pGroupInfo->numOfTables = 1;
-  pGroupInfo->pGroupList = taosArrayInit(1, POINTER_BYTES);
+  pGroupInfo->pGroupList = (SArray*)taosArrayInit(1, POINTER_BYTES);
 
-  SArray* group = taosArrayInit(1, sizeof(STableKeyInfo));
+  SArray* group = (SArray*)taosArrayInit(1, sizeof(STableKeyInfo));
 
   STableKeyInfo info = {.pTable = pTable, .lastKey = startKey};
   taosArrayPush(group, &info);
@@ -2840,9 +2836,6 @@ int32_t tsdbGetOneTableGroup(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY startKey, ST
   taosArrayPush(pGroupInfo->pGroupList, &group);
 
   return TSDB_CODE_SUCCESS;
-
-  _error:
-  return terrno;
 }
 
 int32_t tsdbGetTableGroupFromIdList(TSDB_REPO_T* tsdb, SArray* pTableIdList, STableGroupInfo* pGroupInfo) {
@@ -2941,11 +2934,11 @@ void tsdbDestroyTableGroup(STableGroupInfo *pGroupList) {
   size_t numOfGroup = taosArrayGetSize(pGroupList->pGroupList);
 
   for(int32_t i = 0; i < numOfGroup; ++i) {
-    SArray* p = taosArrayGetP(pGroupList->pGroupList, i);
+    SArray* p = (SArray*)taosArrayGetP(pGroupList->pGroupList, i);
 
     size_t numOfTables = taosArrayGetSize(p);
     for(int32_t j = 0; j < numOfTables; ++j) {
-      STable* pTable = taosArrayGetP(p, j);
+      STable* pTable = (STable*)taosArrayGetP(p, j);
       assert(pTable != NULL);
 
       tsdbUnRefTable(pTable);
@@ -3172,7 +3165,7 @@ void getTableListfromSkipList(tExprNode *pExpr, SSkipList *pSkipList, SArray *re
 
     param->setupInfoFn(pExpr, param->pExtInfo);
 
-    tQueryInfo *pQueryInfo = pExpr->_node.info;
+    tQueryInfo *pQueryInfo = (tQueryInfo*)pExpr->_node.info;
     if (pQueryInfo->indexed && pQueryInfo->optr != TSDB_RELATION_LIKE) {
       queryIndexedColumn(pSkipList, pQueryInfo, result);
     } else {

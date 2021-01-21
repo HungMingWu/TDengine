@@ -63,7 +63,7 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   SDataCols *  pDataCols = NULL;
   STsdbMeta *  pMeta = pRepo->tsdbMeta;
   SCommitIter *iters = NULL;
-  SRWHelper    whelper = {0};
+  SRWHelper    whelper = {(tsdb_rw_helper_t)0};
   STsdbCfg *   pCfg = &(pRepo->config);
 
   if (pMem->numOfRows <= 0) return 0;
@@ -71,19 +71,28 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   iters = tsdbCreateCommitIters(pRepo);
   if (iters == NULL) {
     tsdbError("vgId:%d failed to create commit iterator since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    tdFreeDataCols(pDataCols);
+    tsdbDestroyCommitIters(iters, pMem->maxTables);
+    tsdbDestroyHelper(&whelper);
+    return -1;
   }
 
   if (tsdbInitWriteHelper(&whelper, pRepo) < 0) {
     tsdbError("vgId:%d failed to init write helper since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    tdFreeDataCols(pDataCols);
+    tsdbDestroyCommitIters(iters, pMem->maxTables);
+    tsdbDestroyHelper(&whelper);
+    return -1;
   }
 
   if ((pDataCols = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pCfg->maxRowsPerFileBlock)) == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     tsdbError("vgId:%d failed to init data cols with maxRowBytes %d maxCols %d maxRowsPerFileBlock %d since %s",
               REPO_ID(pRepo), pMeta->maxCols, pMeta->maxRowBytes, pCfg->maxRowsPerFileBlock, tstrerror(terrno));
-    goto _err;
+    tdFreeDataCols(pDataCols);
+    tsdbDestroyCommitIters(iters, pMem->maxTables);
+    tsdbDestroyHelper(&whelper);
+    return -1;
   }
 
   int sfid = (int)(TSDB_KEY_FILEID(pMem->keyFirst, pCfg->daysPerFile, pCfg->precision));
@@ -93,7 +102,10 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   for (int fid = sfid; fid <= efid; fid++) {
     if (tsdbCommitToFile(pRepo, fid, iters, &whelper, pDataCols) < 0) {
       tsdbError("vgId:%d failed to commit to file %d since %s", REPO_ID(pRepo), fid, tstrerror(terrno));
-      goto _err;
+      tdFreeDataCols(pDataCols);
+      tsdbDestroyCommitIters(iters, pMem->maxTables);
+      tsdbDestroyHelper(&whelper);
+      return -1;
     }
   }
 
@@ -102,13 +114,6 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   tsdbDestroyHelper(&whelper);
 
   return 0;
-
-_err:
-  tdFreeDataCols(pDataCols);
-  tsdbDestroyCommitIters(iters, pMem->maxTables);
-  tsdbDestroyHelper(&whelper);
-
-  return -1;
 }
 
 static int tsdbCommitMeta(STsdbRepo *pRepo) {
@@ -121,7 +126,7 @@ static int tsdbCommitMeta(STsdbRepo *pRepo) {
 
   if (tdKVStoreStartCommit(pMeta->pStore) < 0) {
     tsdbError("vgId:%d failed to commit data while start commit meta since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return -1;
   }
 
   SListNode *pNode = NULL;
@@ -134,14 +139,14 @@ static int tsdbCommitMeta(STsdbRepo *pRepo) {
         tsdbError("vgId:%d failed to update meta with uid %" PRIu64 " since %s", REPO_ID(pRepo), pAct->uid,
                   tstrerror(terrno));
         tdKVStoreEndCommit(pMeta->pStore);
-        goto _err;
+        return -1;
       }
     } else if (pAct->act == TSDB_DROP_META) {
       if (tdDropKVStoreRecord(pMeta->pStore, pAct->uid) < 0) {
         tsdbError("vgId:%d failed to drop meta with uid %" PRIu64 " since %s", REPO_ID(pRepo), pAct->uid,
                   tstrerror(terrno));
         tdKVStoreEndCommit(pMeta->pStore);
-        goto _err;
+        return -1;
       }
     } else {
       ASSERT(false);
@@ -150,13 +155,10 @@ static int tsdbCommitMeta(STsdbRepo *pRepo) {
 
   if (tdKVStoreEndCommit(pMeta->pStore) < 0) {
     tsdbError("vgId:%d failed to commit data while end commit meta since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return -1;
   }
 
   return 0;
-
-_err:
-  return -1;
 }
 
 static void tsdbEndCommit(STsdbRepo *pRepo, int eno) {

@@ -450,7 +450,7 @@ static void tsdbFreeTableData(STableData *pTableData) {
   }
 }
 
-static char *tsdbGetTsTupleKey(const void *data) { return dataRowTuple((SDataRow)data); }
+static char *tsdbGetTsTupleKey(const void *data) { return (char *)dataRowTuple((SDataRow)data); }
 
 void tsdbGetFidKeyRange(int daysPerFile, int8_t precision, int fileId, TSKEY *minKey, TSKEY *maxKey) {
   *minKey = fileId * daysPerFile * tsMsPerDay[precision];
@@ -617,7 +617,7 @@ static int tsdbInsertDataToTable(STsdbRepo *pRepo, SSubmitBlk *pBlock, int32_t *
   while ((row = tsdbGetSubmitBlkNext(&blkIter)) != NULL) {
     if (tsdbCopyRowToMem(pRepo, row, pTable, &(rows[rowCounter])) < 0) {
       tsdbFreeRows(pRepo, rows, rowCounter);
-      goto _err;
+      return -1;
     }
 
     (*affectedrows)++;
@@ -629,7 +629,7 @@ static int tsdbInsertDataToTable(STsdbRepo *pRepo, SSubmitBlk *pBlock, int32_t *
 
     if (rowCounter == TSDB_MAX_INSERT_BATCH) {
       if (tsdbInsertDataToTableImpl(pRepo, pTable, rows, rowCounter) < 0) {
-        goto _err;
+        return -1;
       }
 
       rowCounter = 0;
@@ -638,7 +638,7 @@ static int tsdbInsertDataToTable(STsdbRepo *pRepo, SSubmitBlk *pBlock, int32_t *
   }
 
   if (rowCounter > 0 && tsdbInsertDataToTableImpl(pRepo, pTable, rows, rowCounter) < 0) {
-    goto _err;
+    return -1;
   }
 
   STSchema *pSchema = tsdbGetTableSchemaByVersion(pTable, pBlock->sversion);
@@ -646,9 +646,6 @@ static int tsdbInsertDataToTable(STsdbRepo *pRepo, SSubmitBlk *pBlock, int32_t *
   pRepo->stat.totalStorage += points * schemaVLen(pSchema);
 
   return 0;
-
-_err:
-  return -1;
 }
 
 static int tsdbCopyRowToMem(STsdbRepo *pRepo, SDataRow row, STable *pTable, void **ppRow) {

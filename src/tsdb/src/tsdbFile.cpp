@@ -20,7 +20,7 @@
 #include "tchecksum.h"
 #include "tsdbMain.h"
 #include "tutil.h"
-
+#include "defer.h"
 
 const char *tsdbFileSuffix[] = {".head", ".data", ".last", ".stat", ".h", ".d", ".l", ".s"};
 
@@ -37,14 +37,16 @@ STsdbFileH *tsdbNewFileH(STsdbCfg *pCfg) {
   STsdbFileH *pFileH = (STsdbFileH *)calloc(1, sizeof(*pFileH));
   if (pFileH == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    tsdbFreeFileH(pFileH);
+    return NULL;
   }
 
   int code = pthread_rwlock_init(&(pFileH->fhlock), NULL);
   if (code != 0) {
     tsdbError("vgId:%d failed to init file handle lock since %s", pCfg->tsdbId, strerror(code));
     terrno = TAOS_SYSTEM_ERROR(code);
-    goto _err;
+    tsdbFreeFileH(pFileH);
+    return NULL;
   }
 
   pFileH->maxFGroups = TSDB_MAX_FILE(pCfg->keep, pCfg->daysPerFile);
@@ -52,14 +54,11 @@ STsdbFileH *tsdbNewFileH(STsdbCfg *pCfg) {
   pFileH->pFGroup = (SFileGroup *)calloc(pFileH->maxFGroups, sizeof(SFileGroup));
   if (pFileH->pFGroup == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    tsdbFreeFileH(pFileH);
+    return NULL;
   }
 
   return pFileH;
-
-_err:
-  tsdbFreeFileH(pFileH);
-  return NULL;
 }
 
 void tsdbFreeFileH(STsdbFileH *pFileH) {
@@ -78,20 +77,31 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
   int     fid = 0;
   int     vid = 0;
   regex_t regex1 = {0}, regex2 = {0};
+  SFileGroup fileGroup = {0};
+  auto _1 = defer([&] { regfree(&regex1); });
+  auto _2 = defer([&] { regfree(&regex2); });
+  auto _3 = defer([&] { tfree(tDataDir); });
+  auto    _4 = defer([&] {
+    if (dir != NULL) closedir(dir);
+  });
+  auto    _5 = defer([&] {
+    for (int type = 0; type < TSDB_FILE_TYPE_MAX; type++) tsdbDestroyFile(&fileGroup.files[type]);
+  });
+  auto _6 = defer([&] { tsdbCloseFileH(pRepo); });
   int     code = 0;
   char    fname[TSDB_FILENAME_LEN] = "\0";
 
-  SFileGroup  fileGroup = {0};
   STsdbFileH *pFileH = pRepo->tsdbFileH;
   STsdbCfg *  pCfg = &(pRepo->config);
 
   tDataDir = tsdbGetDataDirName(pRepo->rootDir);
   if (tDataDir == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return -1;
   }
 
   dir = opendir(tDataDir);
+
   if (dir == NULL) {
     if (errno == ENOENT) {
       tsdbError("vgId:%d directory %s not exist", REPO_ID(pRepo), tDataDir);
@@ -100,32 +110,32 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
       if (taosMkDir(tDataDir, 0755) < 0) {
         tsdbError("vgId:%d failed to create directory %s since %s", REPO_ID(pRepo), tDataDir, strerror(errno));
         terrno = TAOS_SYSTEM_ERROR(errno);
-        goto _err;
+        return -1;
       }
 
       dir = opendir(tDataDir);
       if (dir == NULL) {
         tsdbError("vgId:%d failed to open directory %s since %s", REPO_ID(pRepo), tDataDir, strerror(errno));
         terrno = TAOS_SYSTEM_ERROR(errno);
-        goto _err;
+        return -1;
       }
     } else {
       tsdbError("vgId:%d failed to open directory %s since %s", REPO_ID(pRepo), tDataDir, strerror(errno));
       terrno = TAOS_SYSTEM_ERROR(errno);
-      goto _err;
+      return -1;
     }
   }
 
   code = regcomp(&regex1, "^v[0-9]+f[0-9]+\\.(head|data|last|stat)$", REG_EXTENDED);
   if (code != 0) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return -1;
   }
 
   code = regcomp(&regex2, "^v[0-9]+f[0-9]+\\.(h|d|l|s)$", REG_EXTENDED);
   if (code != 0) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
+    return -1;
   }
 
   int mfid = tsdbGetCurrMinFid(pCfg->precision, pCfg->keep, pCfg->daysPerFile);
@@ -159,19 +169,19 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
       code = regexec(&regex2, dp->d_name, 0, NULL, 0);
       if (code == 0) {
         size_t tsize = strlen(tDataDir) + strlen(dp->d_name) + 2;
-        char * fname1 = malloc(tsize);
+        char * fname1 = (char *)malloc(tsize);
         if (fname1 == NULL) {
           terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-          goto _err;
+          return -1;
         }
         sprintf(fname1, "%s/%s", tDataDir, dp->d_name);
 
         tsize = tsize + 64;
-        char *fname2 = malloc(tsize);
+        char *fname2 = (char *)malloc(tsize);
         if (fname2 == NULL) {
           free(fname1);
           terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-          goto _err;
+          return -1;
         }
         sprintf(fname2, "%s/%s_back_%" PRId64, tDataDir, dp->d_name, taosGetTimestamp(TSDB_TIME_PRECISION_MILLI));
 
@@ -186,33 +196,19 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
         tsdbError("vgId:%d invalid file %s exists, ignore it", REPO_ID(pRepo), dp->d_name);
         continue;
       } else {
-        goto _err;
+        return -1;
       }
     } else {
-      goto _err;
+      return -1;
     }
 
     pFileH->pFGroup[pFileH->nFGroups++] = fileGroup;
     qsort((void *)(pFileH->pFGroup), pFileH->nFGroups, sizeof(SFileGroup), compFGroup);
     tsdbDebug("vgId:%d file group %d is restored, nFGroups %d", REPO_ID(pRepo), fileGroup.fileId, pFileH->nFGroups);
   }
-
-  regfree(&regex1);
-  regfree(&regex2);
-  tfree(tDataDir);
-  closedir(dir);
+  _5.cancel();
+  _6.cancel();
   return 0;
-
-_err:
-  for (int type = 0; type < TSDB_FILE_TYPE_MAX; type++) tsdbDestroyFile(&fileGroup.files[type]);
-
-  regfree(&regex1);
-  regfree(&regex2);
-
-  tfree(tDataDir);
-  if (dir != NULL) closedir(dir);
-  tsdbCloseFileH(pRepo);
-  return -1;
 }
 
 void tsdbCloseFileH(STsdbRepo *pRepo) {
@@ -418,8 +414,8 @@ int tsdbUpdateFileHeader(SFile *pFile) {
   char buf[TSDB_FILE_HEAD_SIZE] = "\0";
 
   void *pBuf = (void *)buf;
-  taosEncodeFixedU32((void *)(&pBuf), TSDB_FILE_VERSION);
-  tsdbEncodeSFileInfo((void *)(&pBuf), &(pFile->info));
+  taosEncodeFixedU32((void **)(&pBuf), TSDB_FILE_VERSION);
+  tsdbEncodeSFileInfo((void **)(&pBuf), &(pFile->info));
 
   taosCalcChecksumAppend(0, (uint8_t *)buf, TSDB_FILE_HEAD_SIZE);
 
@@ -521,22 +517,28 @@ void tsdbGetFileInfoImpl(char *fname, uint32_t *magic, int64_t *size) {
   strncpy(pFile->fname, fname, TSDB_FILENAME_LEN - 1);
   pFile->fd = -1;
 
-  if (tsdbOpenFile(pFile, O_RDONLY) < 0) goto _err;
-  if (tsdbLoadFileHeader(pFile, &version) < 0) goto _err;
+  if (tsdbOpenFile(pFile, O_RDONLY) < 0) {
+    *magic = TSDB_FILE_INIT_MAGIC;
+    *size = 0;
+    return;
+  }
+  if (tsdbLoadFileHeader(pFile, &version) < 0) {
+    *magic = TSDB_FILE_INIT_MAGIC;
+    *size = 0;
+    return;
+  }
 
   off_t offset = lseek(pFile->fd, 0, SEEK_END);
-  if (offset < 0) goto _err;
   tsdbCloseFile(pFile);
-
-  *magic = pFile->info.magic;
-  *size = offset;
-
+  if (offset < 0) {
+    *magic = TSDB_FILE_INIT_MAGIC;
+    *size = 0;
+    return;
+  } else {
+    *magic = pFile->info.magic;
+    *size = offset;
+  }
   return;
-
-_err:
-  tsdbCloseFile(pFile);
-  *magic = TSDB_FILE_INIT_MAGIC;
-  *size = 0;
 }
 
 // ---------------- LOCAL FUNCTIONS ----------------

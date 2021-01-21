@@ -91,7 +91,7 @@ SColumnFilterInfo* tscFilterInfoClone(const SColumnFilterInfo* src, int32_t numO
     return NULL;
   }
 
-  SColumnFilterInfo* pFilter = calloc(1, numOfFilters * sizeof(SColumnFilterInfo));
+  SColumnFilterInfo* pFilter = new SColumnFilterInfo[numOfFilters];
 
   memcpy(pFilter, src, sizeof(SColumnFilterInfo) * numOfFilters);
   for (int32_t j = 0; j < numOfFilters; ++j) {
@@ -201,11 +201,10 @@ void extractTableNameFromToken(SStrToken* pToken, SStrToken* pTable) {
 }
 
 SSchema tscGetTbnameColumnSchema() {
-  struct SSchema s = {
-      .colId = TSDB_TBNAME_COLUMN_INDEX,
-      .type  = TSDB_DATA_TYPE_BINARY,
-      .bytes = TSDB_TABLE_NAME_LEN
-  };
+  struct SSchema s;
+  s.colId = TSDB_TBNAME_COLUMN_INDEX;
+  s.type  = TSDB_DATA_TYPE_BINARY;
+  s.bytes = TSDB_TABLE_NAME_LEN;
 
   strcpy(s.name, TSQL_TBNAME_L);
   return s;

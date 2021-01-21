@@ -37,6 +37,11 @@ int32_t dnodeInitCfg() {
   return ret;
 }
 
+void SDnodeCfg::Update()
+{
+
+}
+
 void dnodeUpdateCfg(SDnodeCfg *cfg) {
   if (tsCfg.dnodeId != 0) return;
   dnodeResetCfg(cfg);
