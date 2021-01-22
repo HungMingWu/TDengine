@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCPROFILE_H
 #define TDENGINE_TSCPROFILE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tsclient.h"
 
 void tscAddIntoSqlList(SSqlObj *pSql);
@@ -30,9 +26,5 @@ int  tscBuildQueryStreamDesc(void *pMsg, STscObj *pObj);
 void tscKillQuery(STscObj *pObj, uint32_t killId);
 void tscKillStream(STscObj *pObj, uint32_t killId);
 void tscKillConnection(STscObj *pObj);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCPROFILE_H

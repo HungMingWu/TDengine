@@ -378,7 +378,7 @@ typedef struct SSqlStream {
   SInterval interval;
   void *  pTimer;
 
-  void (*fp)();
+  void (*fp)(void *param, TAOS_RES *, TAOS_ROW row);
   void *param;
 
   void (*callback)(void *);  // Callback function when stream is stopped from client level

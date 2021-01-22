@@ -16,6 +16,7 @@ class Deferred {
     if (called) fn();
   }
   void cancel() { called = false; }
+
  private:
   F    fn;
   bool called{true};

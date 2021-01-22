@@ -22,10 +22,8 @@ IF (${PAGMODE} MATCHES "lite")
   MESSAGE(STATUS "Build with pagmode lite")
 ENDIF ()
 
-IF (${SOMODE} MATCHES "static")
-  SET(TD_SOMODE_STATIC TRUE)
-  MESSAGE(STATUS "Link so using static mode")
-ENDIF ()
+SET(TD_SOMODE_STATIC TRUE)
+MESSAGE(STATUS "Force Link so using static mode")
 
 IF (${DBNAME} MATCHES "power")
   SET(TD_POWER TRUE)

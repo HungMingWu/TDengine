@@ -36,25 +36,25 @@ typedef struct SShellHistory {
   int   hend;
 } SShellHistory;
 
-typedef struct SShellArguments {
-  char* host;
-  char* password;
-  char* user;
+struct SShellArguments {
+  char* host = nullptr;
+  char* password = nullptr;
+  char* user = nullptr;
   char* auth;
-  char* database;
-  char* timezone;
-  bool  is_raw_time;
-  bool  is_use_passwd;
-  bool  dump_config;
-  char  file[TSDB_FILENAME_LEN];
-  char  dir[TSDB_FILENAME_LEN];
-  int   threadNum;
-  char* commands;
+  char* database = nullptr;
+  char* timezone = nullptr;
+  bool  is_raw_time = false;
+  bool  is_use_passwd = false;
+  bool  dump_config = false;
+  char  file[TSDB_FILENAME_LEN] = {'\0'};
+  char  dir[TSDB_FILENAME_LEN] = {'\0'};
+  int   threadNum = 5;
+  char* commands = nullptr;
   int   abort;
   int   port;
-  int   pktLen;
-  char* netTestRole;
-} SShellArguments;
+  int   pktLen = 1000;
+  char* netTestRole = nullptr;
+};
 
 /**************** Function declarations ****************/
 extern void shellParseArgument(int argc, char* argv[], SShellArguments* arguments);

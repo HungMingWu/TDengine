@@ -16,14 +16,6 @@
 #ifndef TDENGINE_TNETTEST_H
 #define TDENGINE_TNETTEST_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void taosNetTest(char *role, char *host, int port, int pkgLen);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TNETTEST_H
