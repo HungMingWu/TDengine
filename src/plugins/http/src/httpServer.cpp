@@ -56,6 +56,7 @@ static void httpStopThread(HttpThread* pThread) {
   pthread_mutex_destroy(&(pThread->threadMutex));
 }
 
+extern "C"
 void httpCleanUpConnect() {
   HttpServer *pServer = &tsHttpServer;
   if (pServer->pThreads == NULL) return;
@@ -103,42 +104,42 @@ static void httpProcessHttpData(void *param) {
 
       if (events[i].events & EPOLLPRI) {
         httpDebug("context:%p, fd:%d, state:%s, EPOLLPRI events occured, accessed:%d, close connect", pContext,
-                  pContext->fd, httpContextStateStr(pContext->state), pContext->accessTimes);
+                  pContext->fd, httpContextStateStr((HttpContextState)pContext->state), pContext->accessTimes);
         httpCloseContextByServer(pContext);
         continue;
       }
 
       if (events[i].events & EPOLLRDHUP) {
         httpDebug("context:%p, fd:%d, state:%s, EPOLLRDHUP events occured, accessed:%d, close connect", pContext,
-                  pContext->fd, httpContextStateStr(pContext->state), pContext->accessTimes);
+                  pContext->fd, httpContextStateStr((HttpContextState)pContext->state), pContext->accessTimes);
         httpCloseContextByServer(pContext);
         continue;
       }
 
       if (events[i].events & EPOLLERR) {
         httpDebug("context:%p, fd:%d, state:%s, EPOLLERR events occured, accessed:%d, close connect", pContext,
-                  pContext->fd, httpContextStateStr(pContext->state), pContext->accessTimes);
+                  pContext->fd, httpContextStateStr((HttpContextState)pContext->state), pContext->accessTimes);
         httpCloseContextByServer(pContext);
         continue;
       }
 
       if (events[i].events & EPOLLHUP) {
         httpDebug("context:%p, fd:%d, state:%s, EPOLLHUP events occured, accessed:%d, close connect", pContext,
-                  pContext->fd, httpContextStateStr(pContext->state), pContext->accessTimes);
+                  pContext->fd, httpContextStateStr((HttpContextState)pContext->state), pContext->accessTimes);
         httpCloseContextByServer(pContext);
         continue;
       }
 
       if (!httpAlterContextState(pContext, HTTP_CONTEXT_STATE_READY, HTTP_CONTEXT_STATE_READY)) {
         httpDebug("context:%p, fd:%d, state:%s, not in ready state, ignore read events", pContext, pContext->fd,
-                  httpContextStateStr(pContext->state));
+                  httpContextStateStr((HttpContextState)pContext->state));
         httpReleaseContext(pContext, true);
         continue;
       }
 
       if (pServer->status != HTTP_SERVER_RUNNING) {
         httpDebug("context:%p, fd:%d, state:%s, server is not running, accessed:%d, close connect", pContext,
-                  pContext->fd, httpContextStateStr(pContext->state), pContext->accessTimes);
+                  pContext->fd, httpContextStateStr((HttpContextState)pContext->state), pContext->accessTimes);
         httpSendErrorResp(pContext, TSDB_CODE_HTTP_SERVER_OFFLINE);
         httpNotifyContextClose(pContext);
       } else {
@@ -246,9 +247,10 @@ static void *httpAcceptHttpConnection(void *arg) {
   return NULL;
 }
 
+extern "C"
 bool httpInitConnect() {
   HttpServer *pServer = &tsHttpServer;
-  pServer->pThreads = calloc(pServer->numOfThreads, sizeof(HttpThread));
+  pServer->pThreads = (HttpThread*)calloc(pServer->numOfThreads, sizeof(HttpThread));
   if (pServer->pThreads == NULL) {
     httpError("init error no enough memory");
     return false;
@@ -275,7 +277,7 @@ bool httpInitConnect() {
     pthread_attr_t thattr;
     pthread_attr_init(&thattr);
     pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_JOINABLE);
-    if (pthread_create(&(pThread->thread), &thattr, (void *)httpProcessHttpData, (void *)(pThread)) != 0) {
+    if (pthread_create(&(pThread->thread), &thattr, (void* (*)(void*))httpProcessHttpData, (void *)(pThread)) != 0) {
       httpError("http thread:%s, failed to create HTTP process data thread, reason:%s", pThread->label,
                 strerror(errno));
       pthread_mutex_destroy(&(pThread->threadMutex));        
@@ -290,7 +292,7 @@ bool httpInitConnect() {
   pthread_attr_t thattr;
   pthread_attr_init(&thattr);
   pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_JOINABLE);
-  if (pthread_create(&(pServer->thread), &thattr, (void *)httpAcceptHttpConnection, (void *)(pServer)) != 0) {
+  if (pthread_create(&(pServer->thread), &thattr, (void *(*)(void *))httpAcceptHttpConnection, (void *)(pServer)) != 0) {
     httpError("http server:%s, failed to create Http accept thread, reason:%s", pServer->label, strerror(errno));
     httpCleanUpConnect();
     return false;

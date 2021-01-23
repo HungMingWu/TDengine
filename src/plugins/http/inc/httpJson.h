@@ -44,6 +44,10 @@ typedef struct {
   struct  HttpContext* pContext;
 } JsonBuf;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // http response
 int32_t httpWriteBuf(struct HttpContext* pContext, const char* buf, int32_t sz);
 int32_t httpWriteBufNoTrace(struct HttpContext* pContext, const char* buf, int32_t sz);
@@ -100,5 +104,7 @@ void httpJsonPairStatus(JsonBuf* buf, int32_t code);
 // http json printer
 JsonBuf* httpMallocJsonBuf(struct HttpContext* pContext);
 void     httpFreeJsonBuf(struct HttpContext* pContext);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -210,12 +210,12 @@ static void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
   pCfg->numOfVnodes = htonl(pCfg->numOfVnodes);
   pCfg->moduleStatus = htonl(pCfg->moduleStatus);
   pCfg->dnodeId = htonl(pCfg->dnodeId);
-  dnodeUpdateCfg(pCfg);
+  pCfg->update();
 
   vnodeSetAccess(pStatusRsp->vgAccess, pCfg->numOfVnodes);
 
   SDnodeEps *pEps = (SDnodeEps *)((char *)pStatusRsp->vgAccess + pCfg->numOfVnodes * sizeof(SVgroupAccess));
-  dnodeUpdateEps(pEps);
+  pEps->update();
 
   taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
 }

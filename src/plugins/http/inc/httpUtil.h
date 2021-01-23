@@ -15,7 +15,9 @@
 
 #ifndef TDENGINE_HTTP_UTIL_H
 #define TDENGINE_HTTP_UTIL_H
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 bool httpCheckUsedbSql(char *sql);
 void httpTimeToString(time_t t, char *buf, int32_t buflen);
 
@@ -31,5 +33,7 @@ int32_t httpGzipCompress(HttpContext *pContext, char *inSrcData, int32_t inSrcDa
 
 // http request parser
 void httpAddMethod(HttpServer *pServer, HttpDecodeMethod *pMethod);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -34,7 +34,7 @@ static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno);
 int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
   int32_t code;
 
-  SVnodeObj *pVnode = vnodeAcquire(pVnodeCfg->cfg.vgId);
+  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(pVnodeCfg->cfg.vgId);
   if (pVnode != NULL) {
     vDebug("vgId:%d, vnode already exist, refCount:%d pVnode:%p", pVnodeCfg->cfg.vgId, pVnode->refCount, pVnode);
     vnodeRelease(pVnode);
@@ -103,7 +103,7 @@ int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
 }
 
 int32_t vnodeDrop(int32_t vgId) {
-  SVnodeObj *pVnode = vnodeAcquire(vgId);
+  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(vgId);
   if (pVnode == NULL) {
     vDebug("vgId:%d, failed to drop, vnode not find", vgId);
     return TSDB_CODE_VND_INVALID_VGROUP_ID;
@@ -113,7 +113,7 @@ int32_t vnodeDrop(int32_t vgId) {
   pVnode->dropped = 1;
 
   // remove from hash, so new messages wont be consumed
-  vnodeRemoveFromHash(pVnode);
+  pVnode->RemoveFromHash();
   vnodeRelease(pVnode);
   vnodeCleanupInMWorker(pVnode);
 
@@ -151,8 +151,7 @@ static int32_t vnodeAlterImp(SVnodeObj *pVnode, SCreateVnodeMsg *pVnodeCfg) {
   return 0;
 }
 
-int32_t vnodeAlter(void *vparam, SCreateVnodeMsg *pVnodeCfg) {
-  SVnodeObj *pVnode = vparam;
+int32_t vnodeAlter(SVnodeObj *pVnode, SCreateVnodeMsg *pVnodeCfg) {
   if (pVnode->dbCfgVersion == pVnodeCfg->cfg.dbCfgVersion && pVnode->vgCfgVersion == pVnodeCfg->cfg.vgCfgVersion) {
     vDebug("vgId:%d, dbCfgVersion:%d and vgCfgVersion:%d not change", pVnode->vgId, pVnode->dbCfgVersion,
            pVnode->vgCfgVersion);
@@ -161,13 +160,13 @@ int32_t vnodeAlter(void *vparam, SCreateVnodeMsg *pVnodeCfg) {
 
   // vnode in non-ready state and still needs to return success instead of TSDB_CODE_VND_INVALID_STATUS
   // dbCfgVersion can be corrected by status msg
-  if (!vnodeSetUpdatingStatus(pVnode)) {
+  if (!pVnode->SetStatus(TAOS_VN_STATUS_UPDATING)) {
     vDebug("vgId:%d, vnode is not ready, do alter operation later", pVnode->vgId);
     return TSDB_CODE_SUCCESS;
   }
 
   int32_t code = vnodeAlterImp(pVnode, pVnodeCfg);
-  vnodeSetReadyStatus(pVnode);
+  pVnode->SetStatus(TAOS_VN_STATUS_READY);
 
   if (code != 0) {
     vError("vgId:%d, failed to alter vnode, code:0x%x", pVnode->vgId, code);
@@ -183,7 +182,7 @@ int32_t vnodeOpen(int32_t vgId) {
   char rootDir[TSDB_FILENAME_LEN * 2];
   snprintf(rootDir, TSDB_FILENAME_LEN * 2, "%s/vnode%d", tsVnodeDir, vgId);
 
-  SVnodeObj *pVnode = calloc(sizeof(SVnodeObj), 1);
+  auto pVnode = new (std::nothrow) SVnodeObj{};
   if (pVnode == NULL) {
     vError("vgId:%d, failed to open vnode since no enough memory", vgId);
     return TAOS_SYSTEM_ERROR(errno);
@@ -192,14 +191,10 @@ int32_t vnodeOpen(int32_t vgId) {
   atomic_add_fetch_32(&pVnode->refCount, 1);
 
   pVnode->vgId     = vgId;
-  pVnode->fversion = 0;
-  pVnode->version  = 0;  
   pVnode->tsdbCfg.tsdbId = pVnode->vgId;
   pVnode->rootDir = strdup(rootDir);
   pVnode->accessState = TSDB_VN_ALL_ACCCESS;
   tsem_init(&pVnode->sem, 0, 0);
-  pthread_mutex_init(&pVnode->statusMutex, NULL);
-  vnodeSetInitStatus(pVnode);
 
   int32_t code = vnodeReadCfg(pVnode);
   if (code != TSDB_CODE_SUCCESS) {
@@ -299,7 +294,7 @@ int32_t vnodeOpen(int32_t vgId) {
   vDebug("vgId:%d, vnode is opened in %s, pVnode:%p", pVnode->vgId, rootDir, pVnode);
   tsdbIncCommitRef(pVnode->vgId);
 
-  vnodeAddIntoHash(pVnode);
+  pVnode->AddIntoHash();
 
   SSyncInfo syncInfo;
   syncInfo.vgId = pVnode->vgId;
@@ -319,87 +314,79 @@ int32_t vnodeOpen(int32_t vgId) {
   if (pVnode->sync <= 0) {
     vError("vgId:%d, failed to open sync, replica:%d reason:%s", pVnode->vgId, pVnode->syncCfg.replica,
            tstrerror(terrno));
-    vnodeRemoveFromHash(pVnode);
+    pVnode->RemoveFromHash();
     vnodeCleanUp(pVnode);
     return terrno;
   }
 
-  vnodeSetReadyStatus(pVnode);
+  pVnode->SetStatus(TAOS_VN_STATUS_READY);
   return TSDB_CODE_SUCCESS;
 }
 
 int32_t vnodeClose(int32_t vgId) {
-  SVnodeObj *pVnode = vnodeAcquire(vgId);
+  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(vgId);
   if (pVnode == NULL) return 0;
 
   vDebug("vgId:%d, vnode will be closed, pVnode:%p", pVnode->vgId, pVnode);
-  vnodeRemoveFromHash(pVnode);
+  pVnode->RemoveFromHash();
   vnodeRelease(pVnode);
   vnodeCleanUp(pVnode);
 
   return 0;
 }
 
-void vnodeDestroy(SVnodeObj *pVnode) {
+void SVnodeObj::Destroy() {
   int32_t code = 0;
-  int32_t vgId = pVnode->vgId;
+  int32_t vgId = vgId;
 
-  if (pVnode->qMgmt) {
-    qCleanupQueryMgmt(pVnode->qMgmt);
-    pVnode->qMgmt = NULL;
+  if (qMgmt) {
+    qCleanupQueryMgmt(qMgmt);
   }
 
-  if (pVnode->wal) {
-    walStop(pVnode->wal);
+  if (wal) {
+    walStop(wal);
   }
 
-  if (pVnode->tsdb) {
-    code = tsdbCloseRepo(pVnode->tsdb, 1);
-    pVnode->tsdb = NULL;
+  if (tsdb) {
+    code = tsdbCloseRepo(tsdb, 1);
   }
 
   // stop continuous query
-  if (pVnode->cq) {
-    void *cq = pVnode->cq;
-    pVnode->cq = NULL;
+  if (cq) {
     cqClose(cq);
   }
 
-  if (pVnode->wal) {
+  if (wal) {
     if (code != 0) {
-      vError("vgId:%d, failed to commit while close tsdb repo, keep wal", pVnode->vgId);
+      vError("vgId:%d, failed to commit while close tsdb repo, keep wal", vgId);
     } else {
-      walRemoveAllOldFiles(pVnode->wal);
+      walRemoveAllOldFiles(wal);
     }
-    walClose(pVnode->wal);
-    pVnode->wal = NULL;
+    walClose(wal);
   }
 
-  if (pVnode->wqueue) {
-    dnodeFreeVWriteQueue(pVnode->wqueue);
-    pVnode->wqueue = NULL;
+  if (wqueue) {
+    dnodeFreeVWriteQueue(wqueue);
   }
 
-  if (pVnode->qqueue) {
-    dnodeFreeVQueryQueue(pVnode->qqueue);
-    pVnode->qqueue = NULL;
+  if (qqueue) {
+    dnodeFreeVQueryQueue(qqueue);
   }
 
-  if (pVnode->fqueue) {
-    dnodeFreeVFetchQueue(pVnode->fqueue);
-    pVnode->fqueue = NULL;
+  if (fqueue) {
+    dnodeFreeVFetchQueue(fqueue);
   }
 
-  tfree(pVnode->rootDir);
+  tfree(rootDir);
 
-  if (pVnode->dropped) {
+  if (dropped) {
     char rootDir[TSDB_FILENAME_LEN] = {0};    
     char newDir[TSDB_FILENAME_LEN] = {0};
     sprintf(rootDir, "%s/vnode%d", tsVnodeDir, vgId);
     sprintf(newDir, "%s/vnode%d", tsVnodeBakDir, vgId);
 
     if (0 == tsEnableVnodeBak) {
-      vInfo("vgId:%d, vnode backup not enabled", pVnode->vgId);
+      vInfo("vgId:%d, vnode backup not enabled", vgId);
     } else {
       taosRemoveDir(newDir);
       taosRename(rootDir, newDir);
@@ -409,10 +396,9 @@ void vnodeDestroy(SVnodeObj *pVnode) {
     dnodeSendStatusMsgToMnode();
   }
 
-  tsem_destroy(&pVnode->sem);
-  pthread_mutex_destroy(&pVnode->statusMutex);
-  free(pVnode);
+  tsem_destroy(&sem);
   tsdbDecCommitRef(vgId);
+  delete this;
 }
 
 void vnodeCleanUp(SVnodeObj *pVnode) {
@@ -432,7 +418,7 @@ void vnodeCleanUp(SVnodeObj *pVnode) {
 }
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
-  SVnodeObj *pVnode = arg;
+  SVnodeObj *pVnode = (SVnodeObj*)arg;
 
   if (eno != TSDB_CODE_SUCCESS) {
     vError("vgId:%d, failed to commit since %s, fver:%" PRIu64 " vver:%" PRIu64, pVnode->vgId, tstrerror(eno),
@@ -446,7 +432,7 @@ static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
     pVnode->isCommiting = 1;
     pVnode->cversion = pVnode->version;
     vDebug("vgId:%d, start commit, fver:%" PRIu64 " vver:%" PRIu64, pVnode->vgId, pVnode->fversion, pVnode->version);
-    if (!vnodeInInitStatus(pVnode)) {
+    if (!pVnode->InStatus(TAOS_VN_STATUS_INIT)) {
       return walRenew(pVnode->wal);
     }
     return 0;
@@ -457,7 +443,7 @@ static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
     pVnode->isFull = 0;
     pVnode->fversion = pVnode->cversion;
     vDebug("vgId:%d, commit over, fver:%" PRIu64 " vver:%" PRIu64, pVnode->vgId, pVnode->fversion, pVnode->version);
-    if (!vnodeInInitStatus(pVnode)) {
+    if (!pVnode->InStatus(TAOS_VN_STATUS_INIT)) {
       walRemoveOneOldFile(pVnode->wal);
     }
     return vnodeSaveVersion(pVnode);
@@ -494,7 +480,7 @@ int32_t vnodeReset(SVnodeObj *pVnode) {
   appH.cqDropFunc = cqDrop;
   pVnode->tsdb = tsdbOpenRepo(rootDir, &appH);
 
-  vnodeSetReadyStatus(pVnode);
+  pVnode->SetStatus(TAOS_VN_STATUS_READY);
   vnodeRelease(pVnode);
 
   return 0;

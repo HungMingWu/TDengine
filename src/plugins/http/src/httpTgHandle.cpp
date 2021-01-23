@@ -22,6 +22,7 @@
 #include "httpTgHandle.h"
 #include "httpTgJson.h"
 #include "cJSON.h"
+#include "defer.h"
 
 /*
  * taos.telegraf.cfg formats like
@@ -132,98 +133,97 @@ void tgFreeSchemas() {
 
 void tgInitSchemas(int32_t size) {
   tgFreeSchemas();
-  tgSchemas.schemas = calloc(sizeof(STgSchema), size);
+  tgSchemas.schemas = (STgSchema*)calloc(sizeof(STgSchema), size);
   tgSchemas.size = 0;
 }
 
 void tgParseSchemaMetric(cJSON *metric) {
   STgSchema  schema = {0};
   bool       parsedOk = true;
-
+  auto       _1 = defer([&] {
+    if (parsedOk) {
+      tgSchemas.schemas[tgSchemas.size++] = schema;
+    } else {
+      tgFreeSchema(&schema);
+    }
+  });
   // name
   cJSON *name = cJSON_GetObjectItem(metric, "name");
   if (name == NULL) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   if (name->type != cJSON_String) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   if (name->valuestring == NULL) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   int32_t nameLen = (int32_t)strlen(name->valuestring);
   if (nameLen == 0) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
 
-  schema.name = calloc(nameLen + 1, 1);
+  schema.name = (char*)calloc(nameLen + 1, 1);
   strcpy(schema.name, name->valuestring);
 
   // tbname
   cJSON *tbname = cJSON_GetObjectItem(metric, "tbname");
   if (tbname == NULL) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   if (tbname->type != cJSON_String) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   if (tbname->valuestring == NULL) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
   int32_t tbnameLen = (int32_t)strlen(tbname->valuestring);
   if (tbnameLen == 0) {
     parsedOk = false;
-    goto ParseEnd;
+    return;
   }
 
-  schema.tbName = calloc(tbnameLen + 1, 1);
+  schema.tbName = (char*)calloc(tbnameLen + 1, 1);
   strcpy(schema.tbName, tbname->valuestring);
 
     // fields
   cJSON *fields = cJSON_GetObjectItem(metric, "fields");
   if (fields == NULL) {
-    goto ParseEnd;
+    return;
   }
   int32_t fieldSize = cJSON_GetArraySize(fields);
   if (fieldSize <= 0 || fieldSize > TSDB_MAX_COLUMNS) {
-    goto ParseEnd;
+    return;
   }
 
   if (fieldSize > 0) {
-    schema.fields = calloc(sizeof(STgSchema), (size_t)fieldSize);
+    schema.fields = (char**)calloc(sizeof(STgSchema), (size_t)fieldSize);
     schema.fieldNum = fieldSize;
     for (int32_t i = 0; i < fieldSize; i++) {
       cJSON *field = cJSON_GetArrayItem(fields, i);
       if (field == NULL) {
         parsedOk = false;
-        goto ParseEnd;
+        return;
       }
       if (field->valuestring == NULL) {
         parsedOk = false;
-        goto ParseEnd;
+        return;
       }
       int32_t nameLen = (int32_t)strlen(field->valuestring);
       if (nameLen == 0 || nameLen >= TSDB_TABLE_NAME_LEN) {
         parsedOk = false;
-        goto ParseEnd;
+        return;
       }
-      schema.fields[i] = calloc(nameLen + 1, 1);
+      schema.fields[i] = (char*)calloc(nameLen + 1, 1);
       strcpy(schema.fields[i], field->valuestring);
     }
-  }
-
-ParseEnd:
-  if (parsedOk) {
-    tgSchemas.schemas[tgSchemas.size++] = schema;
-  } else {
-    tgFreeSchema(&schema);
   }
 }
 

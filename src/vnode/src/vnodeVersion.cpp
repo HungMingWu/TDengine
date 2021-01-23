@@ -18,18 +18,23 @@
 #include "cJSON.h"
 #include "tglobal.h"
 #include "vnodeVersion.h"
+#include "defer.h"
 
 int32_t vnodeReadVersion(SVnodeObj *pVnode) {
   int32_t len = 0;
   int32_t maxLen = 100;
-  char *  content = calloc(1, maxLen + 1);
+  char *  content = (char*)calloc(1, maxLen + 1);
   cJSON * root = NULL;
   FILE *  fp = NULL;
 
   terrno = TSDB_CODE_VND_INVALID_VRESION_FILE;
   char file[TSDB_FILENAME_LEN + 30] = {0};
   sprintf(file, "%s/vnode%d/version.json", tsVnodeDir, pVnode->vgId);
-
+  auto _1 = defer([&] {
+    if (content != NULL) free(content);
+    if (root != NULL) cJSON_Delete(root);
+    if (fp != NULL) fclose(fp);
+  });
   fp = fopen(file, "r");
   if (!fp) {
     if (errno != ENOENT) {
@@ -38,35 +43,30 @@ int32_t vnodeReadVersion(SVnodeObj *pVnode) {
     } else {
       terrno = TSDB_CODE_SUCCESS;
     }
-    goto PARSE_VER_ERROR;
+    return terrno;
   }
 
   len = fread(content, 1, maxLen, fp);
   if (len <= 0) {
     vError("vgId:%d, failed to read %s, content is null", pVnode->vgId, file);
-    goto PARSE_VER_ERROR;
+    return terrno;
   }
 
   root = cJSON_Parse(content);
   if (root == NULL) {
     vError("vgId:%d, failed to read %s, invalid json format", pVnode->vgId, file);
-    goto PARSE_VER_ERROR;
+    return terrno;
   }
 
   cJSON *ver = cJSON_GetObjectItem(root, "version");
   if (!ver || ver->type != cJSON_Number) {
     vError("vgId:%d, failed to read %s, version not found", pVnode->vgId, file);
-    goto PARSE_VER_ERROR;
+    return terrno;
   }
   pVnode->version = (uint64_t)ver->valueint;
 
   terrno = TSDB_CODE_SUCCESS;
   vInfo("vgId:%d, read %s successfully, fver:%" PRIu64, pVnode->vgId, file, pVnode->version);
-
-PARSE_VER_ERROR:
-  if (content != NULL) free(content);
-  if (root != NULL) cJSON_Delete(root);
-  if (fp != NULL) fclose(fp);
 
   return terrno;
 }
@@ -83,7 +83,7 @@ int32_t vnodeSaveVersion(SVnodeObj *pVnode) {
 
   int32_t len = 0;
   int32_t maxLen = 100;
-  char *  content = calloc(1, maxLen + 1);
+  char *  content = (char*)calloc(1, maxLen + 1);
 
   len += snprintf(content + len, maxLen - len, "{\n");
   len += snprintf(content + len, maxLen - len, "  \"version\": %" PRIu64 "\n", pVnode->fversion);

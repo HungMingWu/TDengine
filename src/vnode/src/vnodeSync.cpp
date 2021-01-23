@@ -20,6 +20,8 @@
 #include "dnode.h"
 #include "vnodeVersion.h"
 #include "vnodeMain.h"
+#include "vnodeMgmt.h"
+#include "vnodeWrite.h"
 
 uint32_t vnodeGetFileInfo(int32_t vgId, char *name, uint32_t *index, uint32_t eindex, int64_t *size, uint64_t *fver) {
   SVnodeObj *pVnode = vnodeAcquire(vgId);
@@ -102,7 +104,7 @@ int32_t vnodeNotifyFileSynced(int32_t vgId, uint64_t fversion) {
 }
 
 void vnodeConfirmForard(int32_t vgId, void *wparam, int32_t code) {
-  void *pVnode = vnodeAcquire(vgId);
+  SVnodeObj *pVnode = vnodeAcquire(vgId);
   if (pVnode == NULL) {
     vError("vgId:%d, vnode not found while confirm forward", vgId);
     return;
@@ -146,6 +148,6 @@ int32_t vnodeGetVersion(int32_t vgId, uint64_t *fver, uint64_t *wver) {
 }
 
 void vnodeConfirmForward(void *vparam, uint64_t version, int32_t code) {
-  SVnodeObj *pVnode = vparam;
+  SVnodeObj *pVnode = (SVnodeObj*)vparam;
   syncConfirmForward(pVnode->sync, version, code);
 }

@@ -16,9 +16,7 @@
 #ifndef TDENGINE_VNODE_INT_H
 #define TDENGINE_VNODE_INT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <mutex>
 #include "tlog.h"
 #include "tsync.h"
 #include "tcq.h"
@@ -34,13 +32,21 @@ extern int32_t vDebugFlag;
 #define vDebug(...) { if (vDebugFlag & DEBUG_DEBUG) { taosPrintLog("VND ", vDebugFlag, __VA_ARGS__); }}
 #define vTrace(...) { if (vDebugFlag & DEBUG_TRACE) { taosPrintLog("VND ", vDebugFlag, __VA_ARGS__); }}
 
-typedef struct {
+typedef enum _VN_STATUS {
+  TAOS_VN_STATUS_INIT = 0,
+  TAOS_VN_STATUS_READY = 1,
+  TAOS_VN_STATUS_CLOSING = 2,
+  TAOS_VN_STATUS_UPDATING = 3,
+  TAOS_VN_STATUS_RESET = 4,
+} EVnodeStatus;
+
+struct SVnodeObj {
   int32_t  vgId;      // global vnode group ID
   int32_t  refCount;  // reference count
   int32_t  queuedWMsg;
   int32_t  queuedRMsg;
   int32_t  flowctrlLevel;
-  int8_t   status;
+  int8_t   status = TAOS_VN_STATUS_INIT;
   int8_t   role;
   int8_t   accessState;
   int8_t   isFull;
@@ -48,9 +54,9 @@ typedef struct {
   int8_t   dbReplica;
   int8_t   dropped;
   int8_t   reserved;
-  uint64_t version;   // current version
+  uint64_t version = 0;   // current version
   uint64_t cversion;  // version while commit start
-  uint64_t fversion;  // version on saved data file
+  uint64_t fversion = 0;  // version on saved data file
   void *   wqueue;    // write queue
   void *   qqueue;    // read query queue
   void *   fqueue;    // read fetch/cancel queue
@@ -68,11 +74,15 @@ typedef struct {
   char *   rootDir;
   tsem_t   sem;
   char     db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
-  pthread_mutex_t statusMutex;
-} SVnodeObj;
+  std::mutex statusMutex;
 
-#ifdef __cplusplus
-}
-#endif
+ public:
+  void AddIntoHash();
+  void RemoveFromHash();
+  bool InStatus(EVnodeStatus status);
+  bool SetStatus(EVnodeStatus status);
+  void Destroy(); // Destructor
+};
+
 
 #endif

@@ -116,7 +116,7 @@ void httpProcessMultiSqlCallBackImp(void *param, TAOS_RES *result, int32_t code,
     return;
   }
 
-  bool isUpdate = tscIsUpdateQuery(result);
+  bool isUpdate = tscIsUpdateQuery((SSqlObj*)result);
   if (isUpdate) {
     // not select or show commands
     int32_t affectRows = taos_affected_rows(result);
@@ -277,7 +277,7 @@ void httpProcessSingleSqlCallBackImp(void *param, TAOS_RES *result, int32_t code
     return;
   }
 
-  bool isUpdate = tscIsUpdateQuery(result);
+  bool isUpdate = tscIsUpdateQuery((SSqlObj*)result);
   if (isUpdate) {
     // not select or show commands
     int32_t affectRows = taos_affected_rows(result);
@@ -379,7 +379,7 @@ void httpExecCmd(HttpContext *pContext) {
 }
 
 void httpProcessRequestCb(void *param, TAOS_RES *result, int32_t code) {
-  HttpContext *pContext = param;
+  HttpContext *pContext = (HttpContext *)param;
   taos_free_result(result);
   
   if (pContext == NULL) return;
@@ -409,6 +409,7 @@ void httpProcessRequestCb(void *param, TAOS_RES *result, int32_t code) {
   }
 }
 
+extern "C"
 void httpProcessRequest(HttpContext *pContext) {
   httpGetSession(pContext);
 

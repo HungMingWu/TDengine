@@ -580,19 +580,8 @@ struct SDnodeCfg {
   uint32_t numOfVnodes;
   char     clusterId[TSDB_CLUSTER_ID_LEN];
   char     reserved[16];
-  void Update();
+  void update();
 };
-
-typedef struct {
-  int32_t  dnodeId;
-  uint16_t dnodePort;
-  char     dnodeFqdn[TSDB_FQDN_LEN];
-} SDnodeEp;
-
-typedef struct {
-  int32_t  dnodeNum;
-  SDnodeEp dnodeEps[];
-} SDnodeEps;
 
 typedef struct {
   int32_t mnodeId;

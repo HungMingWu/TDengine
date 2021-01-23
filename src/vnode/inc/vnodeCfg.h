@@ -16,16 +16,9 @@
 #ifndef TDENGINE_VNODE_CFG_H
 #define TDENGINE_VNODE_CFG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeReadCfg(SVnodeObj *pVnode);
 int32_t vnodeWriteCfg(SCreateVnodeMsg *pVnodeCfg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

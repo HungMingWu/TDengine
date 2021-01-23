@@ -16,16 +16,9 @@
 #ifndef TDENGINE_VNODE_VERSION_H
 #define TDENGINE_VNODE_VERSION_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeReadVersion(SVnodeObj *pVnode);
 int32_t vnodeSaveVersion(SVnodeObj *pVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

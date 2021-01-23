@@ -86,7 +86,7 @@ int32_t vnodeInitMWorker() {
 
   tsVMWorkerPool.maxNum = 1;
   tsVMWorkerPool.curNum = 0;
-  tsVMWorkerPool.worker = calloc(sizeof(SVMWorker), tsVMWorkerPool.maxNum);
+  tsVMWorkerPool.worker = (SVMWorker*)calloc(sizeof(SVMWorker), tsVMWorkerPool.maxNum);
 
   if (tsVMWorkerPool.worker == NULL) return -1;
   for (int32_t i = 0; i < tsVMWorkerPool.maxNum; ++i) {
@@ -126,7 +126,7 @@ void vnodeCleanupMWorker() {
 
   vDebug("vmworker is closed, qset:%p", tsVMWorkerQset);
 
-  taosCloseQset(tsVMWorkerQset);
+  taosCloseQset();
   tsVMWorkerQset = NULL;
   tfree(tsVMWorkerPool.worker);
 
@@ -134,7 +134,7 @@ void vnodeCleanupMWorker() {
 }
 
 static int32_t vnodeWriteIntoMWorker(SVnodeObj *pVnode, EVMWorkerAction action, void *rpcHandle) {
-  SVMWorkerMsg *pMsg = taosAllocateQitem(sizeof(SVMWorkerMsg));
+  SVMWorkerMsg *pMsg = (SVMWorkerMsg*)taosAllocateQitem(sizeof(SVMWorkerMsg));
   if (pMsg == NULL) return TSDB_CODE_VND_OUT_OF_MEMORY;
 
   pMsg->vgId = pVnode->vgId;
@@ -165,7 +165,10 @@ static void vnodeFreeMWorkerMsg(SVMWorkerMsg *pMsg) {
 
 static void vnodeSendVMWorkerRpcRsp(SVMWorkerMsg *pMsg) {
   if (pMsg->rpcHandle != NULL) {
-    SRpcMsg rpcRsp = {.handle = pMsg->rpcHandle, .code = pMsg->code};
+    SRpcMsg rpcRsp = {
+        .code = pMsg->code,
+        .handle = pMsg->rpcHandle
+    };
     rpcSendResponse(&rpcRsp);
   }
 
@@ -180,7 +183,7 @@ static void vnodeProcessMWorkerMsg(SVMWorkerMsg *pMsg) {
       vnodeCleanUp(pMsg->pVnode);
       break;
     case VNODE_WORKER_ACTION_DESTROUY:
-      vnodeDestroy(pMsg->pVnode);
+      pMsg->pVnode->Destroy();
       break;
     default:
       break;

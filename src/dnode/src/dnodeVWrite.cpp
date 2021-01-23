@@ -17,6 +17,8 @@
 #include "os.h"
 #include "tqueue.h"
 #include "dnodeVWrite.h"
+#include "vnodeMgmt.h"
+#include "vnodeWrite.h"
 
 typedef struct {
   taos_qall qall;
@@ -85,7 +87,7 @@ void dnodeDispatchToVWriteQueue(SRpcMsg *pRpcMsg) {
   pMsg->vgId = htonl(pMsg->vgId);
   pMsg->contLen = htonl(pMsg->contLen);
 
-  void *pVnode = vnodeAcquire(pMsg->vgId);
+  SVnodeObj *pVnode = vnodeAcquire(pMsg->vgId);
   if (pVnode == NULL) {
     code = TSDB_CODE_VND_INVALID_VGROUP_ID;
   } else {

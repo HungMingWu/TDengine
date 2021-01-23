@@ -16,21 +16,14 @@
 #ifndef TDENGINE_VNODE_READ_H
 #define TDENGINE_VNODE_READ_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeInitRead(void);
 void    vnodeCleanupRead(void);
 
 int32_t vnodeWriteToRQueue(void *pVnode, void *pCont, int32_t contLen, int8_t qtype, void *rparam);
-void    vnodeFreeFromRQueue(void *pVnode, SVReadMsg *pRead);
+void    vnodeFreeFromRQueue(SVnodeObj *pVnode, SVReadMsg *pRead);
 int32_t vnodeProcessRead(void *pVnode, SVReadMsg *pRead);
 void    vnodeWaitReadCompleted(SVnodeObj *pVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

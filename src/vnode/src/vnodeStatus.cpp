@@ -29,39 +29,27 @@ char* vnodeStatus[] = {
   "reset"
 };
 
-bool vnodeSetInitStatus(SVnodeObj* pVnode) {
-  pthread_mutex_lock(&pVnode->statusMutex);
-  pVnode->status = TAOS_VN_STATUS_INIT;
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return true;
-}
-
-bool vnodeSetReadyStatus(SVnodeObj* pVnode) {
-  bool set = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_INIT || pVnode->status == TAOS_VN_STATUS_READY ||
-      pVnode->status == TAOS_VN_STATUS_UPDATING || pVnode->status == TAOS_VN_STATUS_RESET) {
-    pVnode->status = TAOS_VN_STATUS_READY;
-    set = true;
+bool SVnodeObj::SetStatus(EVnodeStatus status) {
+  std::lock_guard<std::mutex> lock(statusMutex);
+  if (status == TAOS_VN_STATUS_READY) {
+    this->status = TAOS_VN_STATUS_READY;
+    qQueryMgmtReOpen(this->qMgmt);
+    return true;
+  } else if (status == TAOS_VN_STATUS_UPDATING) {
+    bool ret = this->status == TAOS_VN_STATUS_READY;
+    this->status = TAOS_VN_STATUS_UPDATING;
+    return ret;
   }
-
-  qQueryMgmtReOpen(pVnode->qMgmt);
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return set;
 }
 
 static bool vnodeSetClosingStatusImp(SVnodeObj* pVnode) {
   bool set = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
+  std::lock_guard<std::mutex> lock(pVnode->statusMutex);
 
   if (pVnode->status == TAOS_VN_STATUS_READY || pVnode->status == TAOS_VN_STATUS_INIT) {
     pVnode->status = TAOS_VN_STATUS_CLOSING;
     set = true;
   }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
   return set;
 }
 
@@ -78,29 +66,15 @@ bool vnodeSetClosingStatus(SVnodeObj* pVnode) {
   return true;
 }
 
-bool vnodeSetUpdatingStatus(SVnodeObj* pVnode) {
-  bool set = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_READY) {
-    pVnode->status = TAOS_VN_STATUS_UPDATING;
-    set = true;
-  }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return set;
-}
-
 static bool vnodeSetResetStatusImp(SVnodeObj* pVnode) {
   bool set = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
+  std::lock_guard<std::mutex> lock(pVnode->statusMutex);
 
   if (pVnode->status == TAOS_VN_STATUS_READY || pVnode->status == TAOS_VN_STATUS_INIT) {
     pVnode->status = TAOS_VN_STATUS_RESET;
     set = true;
   }
 
-  pthread_mutex_unlock(&pVnode->statusMutex);
   return set;
 }
 
@@ -117,50 +91,12 @@ bool vnodeSetResetStatus(SVnodeObj* pVnode) {
   return true;
 }
 
-bool vnodeInInitStatus(SVnodeObj* pVnode) {
-  bool in = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_INIT) {
-    in = true;
-  }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return in;
-}
-
-bool vnodeInReadyStatus(SVnodeObj* pVnode) {
-  bool in = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_READY) {
-    in = true;
-  }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return in;
-}
-
 bool vnodeInReadyOrUpdatingStatus(SVnodeObj* pVnode) {
-  bool in = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_READY || pVnode->status == TAOS_VN_STATUS_UPDATING) {
-    in = true;
-  }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return in;
+  std::lock_guard<std::mutex> lock(pVnode->statusMutex);
+  return (pVnode->status == TAOS_VN_STATUS_READY || pVnode->status == TAOS_VN_STATUS_UPDATING);
 }
 
-bool vnodeInResetStatus(SVnodeObj* pVnode) {
-  bool in = false;
-  pthread_mutex_lock(&pVnode->statusMutex);
-
-  if (pVnode->status == TAOS_VN_STATUS_RESET) {
-    in = true;
-  }
-
-  pthread_mutex_unlock(&pVnode->statusMutex);
-  return in;
+bool SVnodeObj::InStatus(EVnodeStatus status) {
+  std::lock_guard<std::mutex> lock(statusMutex);
+  return this->status == status;
 }

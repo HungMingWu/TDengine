@@ -26,10 +26,14 @@
 #define TG_DB_URL_POS     1
 #define TG_USER_URL_POS   2
 #define TG_PASS_URL_POS   3
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 void tgInitHandle(HttpServer *pServer);
 void tgCleanupHandle();
 
 bool tgProcessRquest(struct HttpContext *pContext);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -18,6 +18,8 @@
 #include "tqueue.h"
 #include "tworker.h"
 #include "dnodeVMgmt.h"
+#include "vnodeMgmt.h"
+#include "vnodeMain.h"
 
 typedef struct {
   SRpcMsg rpcMsg;
@@ -155,7 +157,7 @@ static SCreateVnodeMsg* dnodeParseVnodeMsg(SRpcMsg *rpcMsg) {
 static int32_t dnodeProcessCreateVnodeMsg(SRpcMsg *rpcMsg) {
   SCreateVnodeMsg *pCreate = dnodeParseVnodeMsg(rpcMsg);
 
-  void *pVnode = vnodeAcquire(pCreate->cfg.vgId);
+  SVnodeObj *pVnode = vnodeAcquire(pCreate->cfg.vgId);
   if (pVnode != NULL) {
     dDebug("vgId:%d, already exist, return success", pCreate->cfg.vgId);
     vnodeRelease(pVnode);
@@ -169,7 +171,7 @@ static int32_t dnodeProcessCreateVnodeMsg(SRpcMsg *rpcMsg) {
 static int32_t dnodeProcessAlterVnodeMsg(SRpcMsg *rpcMsg) {
   SAlterVnodeMsg *pAlter = dnodeParseVnodeMsg(rpcMsg);
 
-  void *pVnode = vnodeAcquire(pAlter->cfg.vgId);
+  SVnodeObj *pVnode = vnodeAcquire(pAlter->cfg.vgId);
   if (pVnode != NULL) {
     dDebug("vgId:%d, alter vnode msg is received", pAlter->cfg.vgId);
     int32_t code = vnodeAlter(pVnode, pAlter);

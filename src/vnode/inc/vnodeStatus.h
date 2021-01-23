@@ -16,33 +16,11 @@
 #ifndef TDENGINE_VNODE_STATUS_H
 #define TDENGINE_VNODE_STATUS_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
-typedef enum _VN_STATUS {
-  TAOS_VN_STATUS_INIT = 0,
-  TAOS_VN_STATUS_READY = 1,
-  TAOS_VN_STATUS_CLOSING = 2,
-  TAOS_VN_STATUS_UPDATING = 3,
-  TAOS_VN_STATUS_RESET = 4,
-} EVnodeStatus;
-
-bool vnodeSetInitStatus(SVnodeObj* pVnode);
-bool vnodeSetReadyStatus(SVnodeObj* pVnode);
 bool vnodeSetClosingStatus(SVnodeObj* pVnode);
-bool vnodeSetUpdatingStatus(SVnodeObj* pVnode);
 bool vnodeSetResetStatus(SVnodeObj* pVnode);
 
-bool vnodeInInitStatus(SVnodeObj* pVnode);
-bool vnodeInReadyStatus(SVnodeObj* pVnode);
 bool vnodeInReadyOrUpdatingStatus(SVnodeObj* pVnode);
-bool vnodeInClosingStatus(SVnodeObj* pVnode);
-bool vnodeInResetStatus(SVnodeObj* pVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

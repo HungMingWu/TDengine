@@ -15,9 +15,13 @@
 
 #ifndef TDENGINE_HTTP_TOKEN_H
 #define TDENGINE_HTTP_TOKEN_H
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int32_t httpParseBasicAuthToken(HttpContext *pContext, char *token, int32_t len);
 int32_t httpParseTaosdAuthToken(HttpContext *pContext, char *token, int32_t len);
 int32_t httpGenTaosdAuthToken(HttpContext *pContext, char *token, int32_t maxLen);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

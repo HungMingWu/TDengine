@@ -16,27 +16,16 @@
 #ifndef TDENGINE_VNODE_MGMT_H
 #define TDENGINE_VNODE_MGMT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeInitMgmt();
 void    vnodeCleanupMgmt();
 
-void*   vnodeAcquire(int32_t vgId);
+SVnodeObj *vnodeAcquire(int32_t vgId);
 void    vnodeRelease(void *pVnode);
 void*   vnodeGetWal(void *pVnode);
 
 int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
 void    vnodeBuildStatusMsg(void *pStatus);
 void    vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes);
-
-void    vnodeAddIntoHash(SVnodeObj* pVnode);
-void    vnodeRemoveFromHash(SVnodeObj * pVnode);
-
-#ifdef __cplusplus
-}
-#endif
-
 #endif

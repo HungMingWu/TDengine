@@ -19,7 +19,6 @@
 #include "dnodeInt.h"
 
 int32_t dnodeInitCfg();
-void    dnodeUpdateCfg(SDnodeCfg *cfg);
 int32_t dnodeGetDnodeId();
 void    dnodeGetClusterId(char *clusterId);
 void    dnodeGetCfg(int32_t *dnodeId, char *clusterId);

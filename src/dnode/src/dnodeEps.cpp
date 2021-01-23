@@ -51,23 +51,21 @@ void dnodeCleanupEps() {
   }
 }
 
-void dnodeUpdateEps(SDnodeEps *eps) {
-  if (eps == NULL) return;
-
-  eps->dnodeNum = htonl(eps->dnodeNum);
-  for (int32_t i = 0; i < eps->dnodeNum; ++i) {
-    eps->dnodeEps[i].dnodeId = htonl(eps->dnodeEps[i].dnodeId);
-    eps->dnodeEps[i].dnodePort = htons(eps->dnodeEps[i].dnodePort);
+void SDnodeEps::update() {
+  dnodeNum = htonl(dnodeNum);
+  for (int32_t i = 0; i < dnodeNum; ++i) {
+    dnodeEps[i].dnodeId = htonl(dnodeEps[i].dnodeId);
+    dnodeEps[i].dnodePort = htons(dnodeEps[i].dnodePort);
   }
 
   std::lock_guard<std::mutex> lock(tsEpsMutex);
-  if (eps->dnodeNum != tsEps->dnodeNum) {
-    dnodeResetEps(eps);
+  if (dnodeNum != tsEps->dnodeNum) {
+    dnodeResetEps(this);
     dnodeWriteEps();
   } else {
-    int32_t size = sizeof(SDnodeEps) + eps->dnodeNum * sizeof(SDnodeEp);
-    if (memcmp(eps, tsEps, size) != 0) {
-      dnodeResetEps(eps);
+    int32_t size = sizeof(SDnodeEps) + this->dnodeNum * sizeof(SDnodeEp);
+    if (memcmp(this, tsEps, size) != 0) {
+      dnodeResetEps(this);
       dnodeWriteEps();
     }
   }

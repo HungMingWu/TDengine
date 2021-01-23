@@ -18,9 +18,20 @@
 
 #include "dnodeInt.h"
 
+struct SDnodeEp {
+  int32_t  dnodeId;
+  uint16_t dnodePort;
+  char     dnodeFqdn[TSDB_FQDN_LEN];
+};
+
+struct SDnodeEps {
+  int32_t  dnodeNum;
+  SDnodeEp dnodeEps[];
+  void     update();
+};
+
 int32_t dnodeInitEps();
 void    dnodeCleanupEps();
-void    dnodeUpdateEps(SDnodeEps *eps);
 void    dnodeUpdateEp(int32_t dnodeId, char *epstr, char *fqdn, uint16_t *port);
 bool    dnodeCheckEpChanged(int32_t dnodeId, char *epstr);
 

@@ -16,18 +16,11 @@
 #ifndef TDENGINE_VNODE_WORKER_H
 #define TDENGINE_VNODE_WORKER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeInitMWorker();
 void    vnodeCleanupMWorker();
 int32_t vnodeCleanupInMWorker(SVnodeObj *pVnode);
 int32_t vnodeDestroyInMWorker(SVnodeObj *pVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

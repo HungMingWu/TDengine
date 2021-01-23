@@ -41,7 +41,7 @@ void vnodeCleanupRead() {}
 // request enters the queue
 //
 int32_t vnodeProcessRead(void *vparam, SVReadMsg *pRead) {
-  SVnodeObj *pVnode = vparam;
+  SVnodeObj *pVnode = (SVnodeObj*)vparam;
   int32_t    msgType = pRead->msgType;
 
   if (vnodeProcessReadMsgFp[msgType] == NULL) {
@@ -53,7 +53,7 @@ int32_t vnodeProcessRead(void *vparam, SVReadMsg *pRead) {
 }
 
 static int32_t vnodeCheckRead(SVnodeObj *pVnode) {
-  if (!vnodeInReadyStatus(pVnode)) {
+  if (!pVnode->InStatus(TAOS_VN_STATUS_READY)) {
     vDebug("vgId:%d, vnode status is %s, refCount:%d pVnode:%p", pVnode->vgId, vnodeStatus[pVnode->status],
            pVnode->refCount, pVnode);
     return TSDB_CODE_APP_NOT_READY;
@@ -78,9 +78,7 @@ static int32_t vnodeCheckRead(SVnodeObj *pVnode) {
   return TSDB_CODE_APP_NOT_READY;
 }
 
-void vnodeFreeFromRQueue(void *vparam, SVReadMsg *pRead) {
-  SVnodeObj *pVnode = vparam;
-
+void vnodeFreeFromRQueue(SVnodeObj *pVnode, SVReadMsg *pRead) {
   atomic_sub_fetch_32(&pVnode->queuedRMsg, 1);
   vTrace("vgId:%d, free from vrqueue, refCount:%d queued:%d", pVnode->vgId, pVnode->refCount, pVnode->queuedRMsg);
 
@@ -90,7 +88,7 @@ void vnodeFreeFromRQueue(void *vparam, SVReadMsg *pRead) {
 
 static SVReadMsg *vnodeBuildVReadMsg(SVnodeObj *pVnode, void *pCont, int32_t contLen, int8_t qtype, SRpcMsg *pRpcMsg) {
   int32_t size = sizeof(SVReadMsg) + contLen;
-  SVReadMsg *pRead = taosAllocateQitem(size);
+  SVReadMsg *pRead = (SVReadMsg*)taosAllocateQitem(size);
   if (pRead == NULL) {
     terrno = TSDB_CODE_VND_OUT_OF_MEMORY;
     return NULL;
@@ -117,13 +115,13 @@ static SVReadMsg *vnodeBuildVReadMsg(SVnodeObj *pVnode, void *pCont, int32_t con
 }
 
 int32_t vnodeWriteToRQueue(void *vparam, void *pCont, int32_t contLen, int8_t qtype, void *rparam) {
-  SVReadMsg *pRead = vnodeBuildVReadMsg(vparam, pCont, contLen, qtype, rparam);
+  SVReadMsg *pRead = (SVReadMsg*)vnodeBuildVReadMsg((SVnodeObj*)vparam, pCont, contLen, qtype, (SRpcMsg*)rparam);
   if (pRead == NULL) {
     assert(terrno != 0);
     return terrno;
   }
 
-  SVnodeObj *pVnode = vparam;
+  SVnodeObj *pVnode = (SVnodeObj*)vparam;
 
   int32_t code = vnodeCheckRead(pVnode);
   if (code != TSDB_CODE_SUCCESS) {
@@ -174,7 +172,7 @@ static int32_t vnodeDumpQueryResult(SRspRet *pRet, void *pVnode, void **handle, 
   if ((code = qDumpRetrieveResult(*handle, (SRetrieveTableRsp **)&pRet->rsp, &pRet->len, &continueExec)) == TSDB_CODE_SUCCESS) {
     if (continueExec) {
       *freeHandle = false;
-      code = vnodePutItemIntoReadQueue(pVnode, handle, ahandle);
+      code = vnodePutItemIntoReadQueue((SVnodeObj*)pVnode, handle, ahandle);
       if (code != TSDB_CODE_SUCCESS) {
         *freeHandle = true;
         return code;
@@ -203,7 +201,7 @@ static void vnodeBuildNoResultQueryRsp(SRspRet *pRet) {
   pRet->len = sizeof(SRetrieveTableRsp);
 
   memset(pRet->rsp, 0, sizeof(SRetrieveTableRsp));
-  SRetrieveTableRsp *pRsp = pRet->rsp;
+  SRetrieveTableRsp *pRsp = (SRetrieveTableRsp*)pRet->rsp;
 
   pRsp->completed = true;
 }
@@ -345,7 +343,7 @@ static int32_t vnodeProcessFetchMsg(SVnodeObj *pVnode, SVReadMsg *pRead) {
   void *   pCont = pRead->pCont;
   SRspRet *pRet = &pRead->rspRet;
 
-  SRetrieveTableMsg *pRetrieve = pCont;
+  SRetrieveTableMsg *pRetrieve = (SRetrieveTableMsg*)pCont;
   pRetrieve->free = htons(pRetrieve->free);
   pRetrieve->qhandle = htobe64(pRetrieve->qhandle);
 
@@ -427,7 +425,7 @@ static int32_t vnodeProcessFetchMsg(SVnodeObj *pVnode, SVReadMsg *pRead) {
 // notify connection(handle) that current qhandle is created, if current connection from
 // client is broken, the query needs to be killed immediately.
 int32_t vnodeNotifyCurrentQhandle(void *handle, void *qhandle, int32_t vgId) {
-  SRetrieveTableMsg *pMsg = rpcMallocCont(sizeof(SRetrieveTableMsg));
+  SRetrieveTableMsg *pMsg = (SRetrieveTableMsg*)rpcMallocCont(sizeof(SRetrieveTableMsg));
   pMsg->qhandle = htobe64((uint64_t)qhandle);
   pMsg->header.vgId = htonl(vgId);
   pMsg->header.contLen = htonl(sizeof(SRetrieveTableMsg));

@@ -37,14 +37,10 @@ int32_t dnodeInitCfg() {
   return ret;
 }
 
-void SDnodeCfg::Update()
+void SDnodeCfg::update()
 {
-
-}
-
-void dnodeUpdateCfg(SDnodeCfg *cfg) {
   if (tsCfg.dnodeId != 0) return;
-  dnodeResetCfg(cfg);
+  dnodeResetCfg(this);
 }
 
 int32_t dnodeGetDnodeId() {

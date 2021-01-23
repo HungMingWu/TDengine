@@ -68,12 +68,12 @@ void *vnodeGetWal(void *pVnode) {
   return ((SVnodeObj *)pVnode)->wal;
 }
 
-void vnodeAddIntoHash(SVnodeObj *pVnode) {
-  taosHashPut(tsVnodesHash, &pVnode->vgId, sizeof(int32_t), &pVnode, sizeof(SVnodeObj *));
+void SVnodeObj::AddIntoHash() {
+  taosHashPut(tsVnodesHash, &vgId, sizeof(int32_t), this, sizeof(SVnodeObj *));
 }
 
-void vnodeRemoveFromHash(SVnodeObj *pVnode) { 
-  taosHashRemove(tsVnodesHash, &pVnode->vgId, sizeof(int32_t));
+void SVnodeObj::RemoveFromHash() { 
+  taosHashRemove(tsVnodesHash, &vgId, sizeof(int32_t));
 }
 
 static void vnodeIncRef(void *ptNode) {
@@ -88,10 +88,10 @@ static void vnodeIncRef(void *ptNode) {
   vTrace("vgId:%d, get vnode, refCount:%d pVnode:%p", pVnode->vgId, pVnode->refCount, pVnode);
 }
 
-void *vnodeAcquire(int32_t vgId) {
+SVnodeObj *vnodeAcquire(int32_t vgId) {
   SVnodeObj **ppVnode = NULL;
   if (tsVnodesHash != NULL) {
-    ppVnode = taosHashGetClone(tsVnodesHash, &vgId, sizeof(int32_t), vnodeIncRef, NULL, sizeof(void *));
+    ppVnode = (SVnodeObj**)taosHashGetClone(tsVnodesHash, &vgId, sizeof(int32_t), vnodeIncRef, NULL, sizeof(void *));
   }
 
   if (ppVnode == NULL || *ppVnode == NULL) {
@@ -104,7 +104,7 @@ void *vnodeAcquire(int32_t vgId) {
 }
 
 void vnodeRelease(void *vparam) {
-  SVnodeObj *pVnode = vparam;
+  SVnodeObj *pVnode = (SVnodeObj*)vparam;
   if (vparam == NULL) return;
 
   int32_t refCount = atomic_sub_fetch_32(&pVnode->refCount, 1);
@@ -112,7 +112,7 @@ void vnodeRelease(void *vparam) {
   assert(refCount >= 0);
 
   if (refCount > 0) {
-    if (vnodeInResetStatus(pVnode) && refCount <= 3) {
+    if (pVnode->InStatus(TAOS_VN_STATUS_RESET) && refCount <= 3) {
       tsem_post(&pVnode->sem);
     }
   } else {
@@ -128,7 +128,7 @@ static void vnodeBuildVloadMsg(SVnodeObj *pVnode, SStatusMsg *pStatus) {
   int64_t compStorage = 0;
   int64_t pointsWritten = 0;
 
-  if (!vnodeInReadyStatus(pVnode)) return;
+  if (!pVnode->InStatus(TAOS_VN_STATUS_READY)) return;
   if (pStatus->openVnodes >= TSDB_MAX_VNODES) return;
 
   if (pVnode->tsdb) {
@@ -151,7 +151,7 @@ static void vnodeBuildVloadMsg(SVnodeObj *pVnode, SStatusMsg *pStatus) {
 int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
   void *pIter = taosHashIterate(tsVnodesHash, NULL);
   while (pIter) {
-    SVnodeObj **pVnode = pIter;
+    SVnodeObj **pVnode = (SVnodeObj**)pIter;
     if (*pVnode) {
 
     (*numOfVnodes)++;
@@ -170,11 +170,11 @@ int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
 }
 
 void vnodeBuildStatusMsg(void *param) {
-  SStatusMsg *pStatus = param;
+  SStatusMsg *pStatus = (SStatusMsg *)param;
 
   void *pIter = taosHashIterate(tsVnodesHash, NULL);
   while (pIter) {
-    SVnodeObj **pVnode = pIter;
+    SVnodeObj **pVnode = (SVnodeObj**)pIter;
     if (*pVnode) {
       vnodeBuildVloadMsg(*pVnode, pStatus);
     }
@@ -185,7 +185,7 @@ void vnodeBuildStatusMsg(void *param) {
 void vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes) {
   for (int32_t i = 0; i < numOfVnodes; ++i) {
     pAccess[i].vgId = htonl(pAccess[i].vgId);
-    SVnodeObj *pVnode = vnodeAcquire(pAccess[i].vgId);
+    SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(pAccess[i].vgId);
     if (pVnode != NULL) {
       pVnode->accessState = pAccess[i].accessState;
       if (pVnode->accessState != TSDB_VN_ALL_ACCCESS) {

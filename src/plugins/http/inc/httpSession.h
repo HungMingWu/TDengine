@@ -16,6 +16,10 @@
 #ifndef TDENGINE_HTTP_SESSION_H
 #define TDENGINE_HTTP_SESSION_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool httpInitSessions();
 void httpCleanUpSessions();
 
@@ -23,5 +27,7 @@ void httpCleanUpSessions();
 void httpCreateSession(HttpContext *pContext, void *taos);
 void httpGetSession(HttpContext *pContext);
 void httpReleaseSession(HttpContext *pContext);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -16,21 +16,14 @@
 #ifndef TDENGINE_VNODE_WRITE_H
 #define TDENGINE_VNODE_WRITE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "vnodeInt.h"
 
 int32_t vnodeInitWrite(void);
 void    vnodeCleanupWrite(void);
 
-int32_t vnodeWriteToWQueue(void *pVnode, void *pHead, int32_t qtype, void *pRpcMsg);
+int32_t vnodeWriteToWQueue(SVnodeObj *pVnode, void *pHead, int32_t qtype, void *pRpcMsg);
 void    vnodeFreeFromWQueue(void *pVnode, SVWriteMsg *pWrite);
 int32_t vnodeProcessWrite(void *pVnode, void *pHead, int32_t qtype, void *pRspRet);
 void    vnodeWaitWriteCompleted(SVnodeObj *pVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

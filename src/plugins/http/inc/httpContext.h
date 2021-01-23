@@ -18,6 +18,10 @@
 
 #include "httpInt.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool        httpInitContexts();
 void        httpCleanupContexts();
 const char *httpContextStateStr(HttpContextState state);
@@ -30,5 +34,7 @@ void         httpCloseContextByServer(HttpContext *pContext);
 void         httpCloseContextByApp(HttpContext *pContext);
 void         httpNotifyContextClose(HttpContext *pContext);
 bool         httpAlterContextState(HttpContext *pContext, HttpContextState srcState, HttpContextState destState);
-
+#ifdef __cplusplus
+}
+#endif
 #endif

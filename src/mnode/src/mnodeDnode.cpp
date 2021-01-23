@@ -37,6 +37,7 @@
 #include "mnodeWrite.h"
 #include "mnodePeer.h"
 #include "mnodeCluster.h"
+#include "dnodeEps.h"
 
 int32_t tsAccessSquence = 0;
 int64_t        tsDnodeRid = -1;

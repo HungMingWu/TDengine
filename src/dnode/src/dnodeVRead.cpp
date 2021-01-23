@@ -18,6 +18,8 @@
 #include "tqueue.h"
 #include "tworker.h"
 #include "dnodeVRead.h"
+#include "vnodeMgmt.h"
+#include "vnodeRead.h"
 
 static void *dnodeProcessReadQueue(void *pWorker);
 
@@ -63,7 +65,7 @@ void dnodeDispatchToVReadQueue(SRpcMsg *pMsg) {
     pHead->contLen = htonl(pHead->contLen);
 
     assert(pHead->contLen > 0);
-    void *pVnode = vnodeAcquire(pHead->vgId);
+    SVnodeObj *pVnode = vnodeAcquire(pHead->vgId);
     if (pVnode != NULL) {
       code = vnodeWriteToRQueue(pVnode, pCont, pHead->contLen, TAOS_QTYPE_RPC, pMsg);
       if (code == TSDB_CODE_SUCCESS) queuedMsgNum++;
@@ -118,10 +120,10 @@ static void *dnodeProcessReadQueue(void *wparam) {
   SWorkerPool *pPool = pWorker->pPool;
   SVReadMsg *  pRead;
   int32_t      qtype;
-  void *       pVnode;
+  SVnodeObj *  pVnode;
 
   while (1) {
-    if (taosReadQitemFromQset(pPool->qset, &qtype, (void **)&pRead, &pVnode) == 0) {
+    if (taosReadQitemFromQset(pPool->qset, &qtype, (void **)&pRead, (void**)&pVnode) == 0) {
       dDebug("dnode vquery got no message from qset:%p, exiting", pPool->qset);
       break;
     }

@@ -15,10 +15,6 @@
 #ifndef TDENGINE_QUERY_H
 #define TDENGINE_QUERY_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef void* qinfo_t;
 
 /**
@@ -91,9 +87,5 @@ void  qCleanupQueryMgmt(void* pExecutor);
 void** qRegisterQInfo(void* pMgmt, uint64_t qInfo);
 void** qAcquireQInfo(void* pMgmt, uint64_t key);
 void** qReleaseQInfo(void* pMgmt, void* pQInfo, bool freeHandle);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_QUERY_H
