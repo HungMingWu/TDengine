@@ -61,7 +61,6 @@ int32_t vnodeClose(int32_t vgId);
 // vnodeMgmt
 int32_t vnodeInitMgmt();
 void    vnodeCleanupMgmt();
-void    vnodeRelease(void *pVnode);
 void*   vnodeGetWal(void *pVnode);
 int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
 void    vnodeBuildStatusMsg(void *pStatus);
@@ -69,7 +68,6 @@ void    vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes);
 
 // vnodeWrite
 void    vnodeFreeFromWQueue(void *pVnode, SVWriteMsg *pWrite);
-int32_t vnodeProcessWrite(void *pVnode, void *pHead, int32_t qtype, void *pRspRet);
 
 // vnodeSync
 void    vnodeConfirmForward(void *pVnode, uint64_t version, int32_t code);

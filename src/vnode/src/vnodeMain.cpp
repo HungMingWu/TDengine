@@ -28,16 +28,17 @@
 #include "vnodeMgmt.h"
 #include "vnodeWorker.h"
 #include "vnodeMain.h"
+#include "vnodeWrite.h"
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno);
 
 int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
   int32_t code;
 
-  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(pVnodeCfg->cfg.vgId);
+  SVnodeObj *pVnode = vnodeAcquire(pVnodeCfg->cfg.vgId);
   if (pVnode != NULL) {
     vDebug("vgId:%d, vnode already exist, refCount:%d pVnode:%p", pVnodeCfg->cfg.vgId, pVnode->refCount, pVnode);
-    vnodeRelease(pVnode);
+    pVnode->Release();
     return TSDB_CODE_SUCCESS;
   }
 
@@ -103,7 +104,7 @@ int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
 }
 
 int32_t vnodeDrop(int32_t vgId) {
-  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(vgId);
+  SVnodeObj *pVnode = vnodeAcquire(vgId);
   if (pVnode == NULL) {
     vDebug("vgId:%d, failed to drop, vnode not find", vgId);
     return TSDB_CODE_VND_INVALID_VGROUP_ID;
@@ -114,8 +115,8 @@ int32_t vnodeDrop(int32_t vgId) {
 
   // remove from hash, so new messages wont be consumed
   pVnode->RemoveFromHash();
-  vnodeRelease(pVnode);
-  vnodeCleanupInMWorker(pVnode);
+  pVnode->Release();
+  pVnode->WriteIntoMWorker(VNODE_WORKER_ACTION_CLEANUP);
 
   return TSDB_CODE_SUCCESS;
 }
@@ -198,7 +199,7 @@ int32_t vnodeOpen(int32_t vgId) {
 
   int32_t code = vnodeReadCfg(pVnode);
   if (code != TSDB_CODE_SUCCESS) {
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return code;
   } 
 
@@ -206,7 +207,7 @@ int32_t vnodeOpen(int32_t vgId) {
   if (code != TSDB_CODE_SUCCESS) {
     vError("vgId:%d, failed to read file version, generate it from data file", pVnode->vgId);
     // Allow vnode start even when read file version fails, set file version as wal version or zero
-    // vnodeCleanUp(pVnode);
+    // pVnode->CleanUp();
     // return code;
   }
 
@@ -216,7 +217,7 @@ int32_t vnodeOpen(int32_t vgId) {
   pVnode->qqueue = dnodeAllocVQueryQueue(pVnode);
   pVnode->fqueue = dnodeAllocVFetchQueue(pVnode);
   if (pVnode->wqueue == NULL || pVnode->qqueue == NULL || pVnode->fqueue == NULL) {
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return terrno;
   }
 
@@ -229,7 +230,7 @@ int32_t vnodeOpen(int32_t vgId) {
     cqCfg.cqWrite = vnodeWriteToCache;
     pVnode->cq = cqOpen(pVnode, &cqCfg);
     if (pVnode->cq == NULL) {
-      vnodeCleanUp(pVnode);
+      pVnode->CleanUp();
       return terrno;
     }
   }
@@ -245,13 +246,13 @@ int32_t vnodeOpen(int32_t vgId) {
   terrno = 0;
   pVnode->tsdb = tsdbOpenRepo(temp, &appH);
   if (pVnode->tsdb == NULL) {
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return terrno;
   } else if (terrno != TSDB_CODE_SUCCESS) {
     vError("vgId:%d, failed to open tsdb, replica:%d reason:%s", pVnode->vgId, pVnode->syncCfg.replica,
            tstrerror(terrno));
     if (pVnode->syncCfg.replica <= 1) {
-      vnodeCleanUp(pVnode);
+      pVnode->CleanUp();
       return terrno;
     } else {
       pVnode->fversion = 0;
@@ -263,7 +264,7 @@ int32_t vnodeOpen(int32_t vgId) {
   pVnode->walCfg.vgId = pVnode->vgId;
   pVnode->wal = walOpen(temp, &pVnode->walCfg);
   if (pVnode->wal == NULL) { 
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return terrno;
   }
 
@@ -276,7 +277,7 @@ int32_t vnodeOpen(int32_t vgId) {
   code = tsdbSyncCommit(pVnode->tsdb);
   if (code != 0) {
     vError("vgId:%d, failed to commit after restore from wal since %s", pVnode->vgId, tstrerror(code));
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return code;
   }
 
@@ -285,7 +286,7 @@ int32_t vnodeOpen(int32_t vgId) {
 
   pVnode->qMgmt = qOpenQueryMgmt(pVnode->vgId);
   if (pVnode->qMgmt == NULL) {
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return terrno;
   }
 
@@ -315,7 +316,7 @@ int32_t vnodeOpen(int32_t vgId) {
     vError("vgId:%d, failed to open sync, replica:%d reason:%s", pVnode->vgId, pVnode->syncCfg.replica,
            tstrerror(terrno));
     pVnode->RemoveFromHash();
-    vnodeCleanUp(pVnode);
+    pVnode->CleanUp();
     return terrno;
   }
 
@@ -324,13 +325,13 @@ int32_t vnodeOpen(int32_t vgId) {
 }
 
 int32_t vnodeClose(int32_t vgId) {
-  SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(vgId);
+  SVnodeObj *pVnode = vnodeAcquire(vgId);
   if (pVnode == NULL) return 0;
 
   vDebug("vgId:%d, vnode will be closed, pVnode:%p", pVnode->vgId, pVnode);
   pVnode->RemoveFromHash();
-  vnodeRelease(pVnode);
-  vnodeCleanUp(pVnode);
+  pVnode->Release();
+  pVnode->CleanUp();
 
   return 0;
 }
@@ -401,20 +402,20 @@ void SVnodeObj::Destroy() {
   delete this;
 }
 
-void vnodeCleanUp(SVnodeObj *pVnode) {
-  vDebug("vgId:%d, vnode will cleanup, refCount:%d pVnode:%p", pVnode->vgId, pVnode->refCount, pVnode);
+void SVnodeObj::CleanUp() {
+  vDebug("vgId:%d, vnode will cleanup, refCount:%d pVnode:%p", vgId, refCount, this);
 
-  vnodeSetClosingStatus(pVnode);
+  vnodeSetClosingStatus(this);
 
   // stop replication module
-  if (pVnode->sync > 0) {
-    int64_t sync = pVnode->sync;
-    pVnode->sync = -1;
+  if (sync > 0) {
+    int64_t sync = this->sync;
+    this->sync = -1;
     syncStop(sync);
   }
 
-  vDebug("vgId:%d, vnode is cleaned, refCount:%d pVnode:%p", pVnode->vgId, pVnode->refCount, pVnode);
-  vnodeRelease(pVnode);
+  vDebug("vgId:%d, vnode is cleaned, refCount:%d pVnode:%p", vgId, refCount, this);
+  Release();
 }
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
@@ -481,7 +482,7 @@ int32_t vnodeReset(SVnodeObj *pVnode) {
   pVnode->tsdb = tsdbOpenRepo(rootDir, &appH);
 
   pVnode->SetStatus(TAOS_VN_STATUS_READY);
-  vnodeRelease(pVnode);
+  pVnode->Release();
 
   return 0;
 }

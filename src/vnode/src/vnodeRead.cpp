@@ -83,7 +83,7 @@ void vnodeFreeFromRQueue(SVnodeObj *pVnode, SVReadMsg *pRead) {
   vTrace("vgId:%d, free from vrqueue, refCount:%d queued:%d", pVnode->vgId, pVnode->refCount, pVnode->queuedRMsg);
 
   taosFreeQitem(pRead);
-  vnodeRelease(pVnode);
+  pVnode->Release();
 }
 
 static SVReadMsg *vnodeBuildVReadMsg(SVnodeObj *pVnode, void *pCont, int32_t contLen, int8_t qtype, SRpcMsg *pRpcMsg) {
@@ -126,7 +126,7 @@ int32_t vnodeWriteToRQueue(void *vparam, void *pCont, int32_t contLen, int8_t qt
   int32_t code = vnodeCheckRead(pVnode);
   if (code != TSDB_CODE_SUCCESS) {
     taosFreeQitem(pRead);
-    vnodeRelease(pVnode);
+    pVnode->Release();
     return code;
   }
 

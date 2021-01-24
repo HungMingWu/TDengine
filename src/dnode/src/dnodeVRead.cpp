@@ -69,7 +69,7 @@ void dnodeDispatchToVReadQueue(SRpcMsg *pMsg) {
     if (pVnode != NULL) {
       code = vnodeWriteToRQueue(pVnode, pCont, pHead->contLen, TAOS_QTYPE_RPC, pMsg);
       if (code == TSDB_CODE_SUCCESS) queuedMsgNum++;
-      vnodeRelease(pVnode);
+      pVnode->Release();
     }
 
     leftLen -= pHead->contLen;

@@ -23,11 +23,6 @@
 #include "vnodeWorker.h"
 #include "vnodeMain.h"
 
-typedef enum {
-  VNODE_WORKER_ACTION_CLEANUP,
-  VNODE_WORKER_ACTION_DESTROUY
-} EVMWorkerAction;
-
 typedef struct {
   int32_t vgId;
   int32_t code;
@@ -148,14 +143,9 @@ static int32_t vnodeWriteIntoMWorker(SVnodeObj *pVnode, EVMWorkerAction action, 
   return code;
 }
 
-int32_t vnodeCleanupInMWorker(SVnodeObj *pVnode) {
-  vTrace("vgId:%d, will cleanup in vmworker", pVnode->vgId);
-  return vnodeWriteIntoMWorker(pVnode, VNODE_WORKER_ACTION_CLEANUP, NULL);
-}
-
-int32_t vnodeDestroyInMWorker(SVnodeObj *pVnode) {
-  vTrace("vgId:%d, will destroy in vmworker", pVnode->vgId);
-  return vnodeWriteIntoMWorker(pVnode, VNODE_WORKER_ACTION_DESTROUY, NULL);
+int32_t SVnodeObj::WriteIntoMWorker(EVMWorkerAction action) {
+  vTrace("vgId:%d, will write action %d into vmworker", vgId, (int)action);
+  return vnodeWriteIntoMWorker(this, action, NULL);
 }
 
 static void vnodeFreeMWorkerMsg(SVMWorkerMsg *pMsg) {
@@ -180,7 +170,7 @@ static void vnodeProcessMWorkerMsg(SVMWorkerMsg *pMsg) {
 
   switch (pMsg->action) {
     case VNODE_WORKER_ACTION_CLEANUP:
-      vnodeCleanUp(pMsg->pVnode);
+      pMsg->pVnode->CleanUp();
       break;
     case VNODE_WORKER_ACTION_DESTROUY:
       pMsg->pVnode->Destroy();

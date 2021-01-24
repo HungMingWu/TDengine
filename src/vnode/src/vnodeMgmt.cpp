@@ -103,23 +103,20 @@ SVnodeObj *vnodeAcquire(int32_t vgId) {
   return *ppVnode;
 }
 
-void vnodeRelease(void *vparam) {
-  SVnodeObj *pVnode = (SVnodeObj*)vparam;
-  if (vparam == NULL) return;
-
-  int32_t refCount = atomic_sub_fetch_32(&pVnode->refCount, 1);
-  vTrace("vgId:%d, release vnode, refCount:%d pVnode:%p", pVnode->vgId, refCount, pVnode);
+void SVnodeObj::Release() {
+  int32_t refCount = atomic_sub_fetch_32(&refCount, 1);
+  vTrace("vgId:%d, release vnode, refCount:%d pVnode:%p", vgId, refCount, this);
   assert(refCount >= 0);
 
   if (refCount > 0) {
-    if (pVnode->InStatus(TAOS_VN_STATUS_RESET) && refCount <= 3) {
-      tsem_post(&pVnode->sem);
+    if (InStatus(TAOS_VN_STATUS_RESET) && refCount <= 3) {
+      tsem_post(&sem);
     }
   } else {
-    vDebug("vgId:%d, vnode will be destroyed, refCount:%d pVnode:%p", pVnode->vgId, refCount, pVnode);
-    vnodeDestroyInMWorker(pVnode);
+    vDebug("vgId:%d, vnode will be destroyed, refCount:%d pVnode:%p", vgId, refCount, this);
+    WriteIntoMWorker(VNODE_WORKER_ACTION_DESTROUY);
     int32_t count = taosHashGetSize(tsVnodesHash);
-    vDebug("vgId:%d, vnode is destroyed, vnodes:%d", pVnode->vgId, count);
+    vDebug("vgId:%d, vnode is destroyed, vnodes:%d", vgId, count);
   }
 }
 
@@ -185,13 +182,13 @@ void vnodeBuildStatusMsg(void *param) {
 void vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes) {
   for (int32_t i = 0; i < numOfVnodes; ++i) {
     pAccess[i].vgId = htonl(pAccess[i].vgId);
-    SVnodeObj *pVnode = (SVnodeObj*)vnodeAcquire(pAccess[i].vgId);
+    SVnodeObj *pVnode = vnodeAcquire(pAccess[i].vgId);
     if (pVnode != NULL) {
       pVnode->accessState = pAccess[i].accessState;
       if (pVnode->accessState != TSDB_VN_ALL_ACCCESS) {
         vDebug("vgId:%d, access state is set to %d", pAccess[i].vgId, pVnode->accessState);
       }
-      vnodeRelease(pVnode);
+      pVnode->Release();
     }
   }
 }

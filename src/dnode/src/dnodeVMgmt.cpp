@@ -160,7 +160,7 @@ static int32_t dnodeProcessCreateVnodeMsg(SRpcMsg *rpcMsg) {
   SVnodeObj *pVnode = vnodeAcquire(pCreate->cfg.vgId);
   if (pVnode != NULL) {
     dDebug("vgId:%d, already exist, return success", pCreate->cfg.vgId);
-    vnodeRelease(pVnode);
+    pVnode->Release();
     return TSDB_CODE_SUCCESS;
   } else {
     dDebug("vgId:%d, create vnode msg is received", pCreate->cfg.vgId);
@@ -175,7 +175,7 @@ static int32_t dnodeProcessAlterVnodeMsg(SRpcMsg *rpcMsg) {
   if (pVnode != NULL) {
     dDebug("vgId:%d, alter vnode msg is received", pAlter->cfg.vgId);
     int32_t code = vnodeAlter(pVnode, pAlter);
-    vnodeRelease(pVnode);
+    pVnode->Release();
     return code;
   } else {
     dError("vgId:%d, vnode not exist, can't alter it", pAlter->cfg.vgId);

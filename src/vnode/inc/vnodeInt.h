@@ -40,49 +40,55 @@ typedef enum _VN_STATUS {
   TAOS_VN_STATUS_RESET = 4,
 } EVnodeStatus;
 
+typedef enum { 
+	VNODE_WORKER_ACTION_CLEANUP, 
+	VNODE_WORKER_ACTION_DESTROUY 
+} EVMWorkerAction;
+
 struct SVnodeObj {
-  int32_t  vgId;      // global vnode group ID
-  int32_t  refCount;  // reference count
-  int32_t  queuedWMsg;
-  int32_t  queuedRMsg;
-  int32_t  flowctrlLevel;
-  int8_t   status = TAOS_VN_STATUS_INIT;
-  int8_t   role;
-  int8_t   accessState;
-  int8_t   isFull;
-  int8_t   isCommiting;
-  int8_t   dbReplica;
-  int8_t   dropped;
-  int8_t   reserved;
-  uint64_t version = 0;   // current version
-  uint64_t cversion;  // version while commit start
-  uint64_t fversion = 0;  // version on saved data file
-  void *   wqueue;    // write queue
-  void *   qqueue;    // read query queue
-  void *   fqueue;    // read fetch/cancel queue
-  void *   wal;
-  void *   tsdb;
-  int64_t  sync;
-  void *   events;
-  void *   cq;  // continuous query
-  int32_t  dbCfgVersion;
-  int32_t  vgCfgVersion;
-  STsdbCfg tsdbCfg;
-  SSyncCfg syncCfg;
-  SWalCfg  walCfg;
-  void *   qMgmt;
-  char *   rootDir;
-  tsem_t   sem;
-  char     db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
+  int32_t    vgId;      // global vnode group ID
+  int32_t    refCount;  // reference count
+  int32_t    queuedWMsg;
+  int32_t    queuedRMsg;
+  int32_t    flowctrlLevel;
+  int8_t     status = TAOS_VN_STATUS_INIT;
+  int8_t     role;
+  int8_t     accessState;
+  int8_t     isFull;
+  int8_t     isCommiting;
+  int8_t     dbReplica;
+  int8_t     dropped;
+  int8_t     reserved;
+  uint64_t   version = 0;   // current version
+  uint64_t   cversion;      // version while commit start
+  uint64_t   fversion = 0;  // version on saved data file
+  void*      wqueue;        // write queue
+  void*      qqueue;        // read query queue
+  void*      fqueue;        // read fetch/cancel queue
+  void*      wal;
+  void*      tsdb;
+  int64_t    sync;
+  void*      events;
+  void*      cq;  // continuous query
+  int32_t    dbCfgVersion;
+  int32_t    vgCfgVersion;
+  STsdbCfg   tsdbCfg;
+  SSyncCfg   syncCfg;
+  SWalCfg    walCfg;
+  void*      qMgmt;
+  char*      rootDir;
+  tsem_t     sem;
+  char       db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   std::mutex statusMutex;
 
  public:
-  void AddIntoHash();
-  void RemoveFromHash();
-  bool InStatus(EVnodeStatus status);
-  bool SetStatus(EVnodeStatus status);
-  void Destroy(); // Destructor
+  void    AddIntoHash();
+  void    RemoveFromHash();
+  bool    InStatus(EVnodeStatus status);
+  bool    SetStatus(EVnodeStatus status);
+  void    Release();
+  void    CleanUp();
+  void    Destroy();  // Destructor
+  int32_t WriteIntoMWorker(EVMWorkerAction action);
 };
-
-
 #endif

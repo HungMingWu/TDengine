@@ -33,7 +33,7 @@ uint32_t vnodeGetFileInfo(int32_t vgId, char *name, uint32_t *index, uint32_t ei
   *fver = pVnode->fversion;
   uint32_t ret = tsdbGetFileInfo(pVnode->tsdb, name, index, eindex, size);
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
   return ret;
 }
 
@@ -46,7 +46,7 @@ int32_t vnodeGetWalInfo(int32_t vgId, char *fileName, int64_t *fileId) {
 
   int32_t code = walGetWalFile(pVnode->wal, fileName, fileId);
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
   return code;
 }
 
@@ -67,7 +67,7 @@ void vnodeNotifyRole(int32_t vgId, int8_t role) {
     cqStop(pVnode->cq);
   }
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
 }
 
 void vnodeCtrlFlow(int32_t vgId, int32_t level) {
@@ -82,7 +82,7 @@ void vnodeCtrlFlow(int32_t vgId, int32_t level) {
     pVnode->flowctrlLevel = level;
   }
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
 }
 
 int32_t vnodeNotifyFileSynced(int32_t vgId, uint64_t fversion) {
@@ -99,7 +99,7 @@ int32_t vnodeNotifyFileSynced(int32_t vgId, uint64_t fversion) {
   vDebug("vgId:%d, data file is synced, fver:%" PRIu64 " vver:%" PRIu64, vgId, fversion, fversion);
   int32_t code = vnodeReset(pVnode);
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
   return code;
 }
 
@@ -111,7 +111,7 @@ void vnodeConfirmForard(int32_t vgId, void *wparam, int32_t code) {
   }
 
   dnodeSendRpcVWriteRsp(pVnode, wparam, code);
-  vnodeRelease(pVnode);
+  pVnode->Release();
 }
 
 int32_t vnodeWriteToCache(int32_t vgId, void *wparam, int32_t qtype, void *rparam) {
@@ -123,7 +123,7 @@ int32_t vnodeWriteToCache(int32_t vgId, void *wparam, int32_t qtype, void *rpara
 
   int32_t code = vnodeWriteToWQueue(pVnode, wparam, qtype, rparam);
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
   return code;
 }
 
@@ -143,7 +143,7 @@ int32_t vnodeGetVersion(int32_t vgId, uint64_t *fver, uint64_t *wver) {
     *wver = pVnode->version;
   }
 
-  vnodeRelease(pVnode);
+  pVnode->Release();
   return code;
 }
 

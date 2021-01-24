@@ -20,7 +20,5 @@
 
 int32_t vnodeInitMWorker();
 void    vnodeCleanupMWorker();
-int32_t vnodeCleanupInMWorker(SVnodeObj *pVnode);
-int32_t vnodeDestroyInMWorker(SVnodeObj *pVnode);
 
 #endif

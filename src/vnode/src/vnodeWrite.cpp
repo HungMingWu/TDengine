@@ -250,7 +250,7 @@ static int32_t vnodeWriteToWQueueImp(SVWriteMsg *pWrite) {
     if (code != TSDB_CODE_SUCCESS) {
       vError("vgId:%d, failed to write into vwqueue since %s", pVnode->vgId, tstrerror(code));
       taosFreeQitem(pWrite);
-      vnodeRelease(pVnode);
+      pVnode->Release();
       return code;
     }
   }
@@ -259,7 +259,7 @@ static int32_t vnodeWriteToWQueueImp(SVWriteMsg *pWrite) {
     vError("vgId:%d, failed to write into vwqueue, vstatus is %s, refCount:%d pVnode:%p", pVnode->vgId,
            vnodeStatus[pVnode->status], pVnode->refCount, pVnode);
     taosFreeQitem(pWrite);
-    vnodeRelease(pVnode);
+    pVnode->Release();
     return TSDB_CODE_APP_NOT_READY;
   }
 
@@ -297,7 +297,7 @@ void vnodeFreeFromWQueue(void *vparam, SVWriteMsg *pWrite) {
   vTrace("vgId:%d, msg:%p, app:%p, free from vwqueue, queued:%d", pVnode->vgId, pWrite, pWrite->rpcMsg.ahandle, queued);
 
   taosFreeQitem(pWrite);
-  vnodeRelease(pVnode);
+  pVnode->Release();
 }
 
 static void vnodeFlowCtrlMsgToWQueue(void *param, void *tmrId) {
