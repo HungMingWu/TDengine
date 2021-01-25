@@ -165,7 +165,7 @@ static int32_t syncRestoreWal(SSyncPeer *pPeer, uint64_t *wver) {
   int32_t    ret, code = -1;
   uint64_t   lastVer = 0;
 
-  SWalHead *pHead = calloc(SYNC_MAX_SIZE, 1);  // size for one record
+  SWalHead *pHead = (SWalHead*)calloc(SYNC_MAX_SIZE, 1);  // size for one record
   if (pHead == NULL) return -1;
 
   while (1) {
@@ -234,7 +234,7 @@ static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
     forwards++;
   }
 
-  pthread_mutex_lock(&pNode->mutex);
+  std::lock_guard<std::mutex> lock(pNode->mutex);
 
   while (forwards < pRecv->forwards && pRecv->code == 0) {
     offset = syncProcessOneBufferedFwd(pPeer, offset);
@@ -243,8 +243,6 @@ static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
 
   nodeRole = TAOS_SYNC_ROLE_SLAVE;
   sDebug("%s, finish processing buffered fwds:%d", pPeer->id, forwards);
-
-  pthread_mutex_unlock(&pNode->mutex);
 
   return pRecv->code;
 }
@@ -283,11 +281,11 @@ static void syncCloseRecvBuffer(SSyncNode *pNode) {
 static int32_t syncOpenRecvBuffer(SSyncNode *pNode) {
   syncCloseRecvBuffer(pNode);
 
-  SRecvBuffer *pRecv = calloc(sizeof(SRecvBuffer), 1);
+  SRecvBuffer *pRecv = (SRecvBuffer*)calloc(sizeof(SRecvBuffer), 1);
   if (pRecv == NULL) return -1;
 
   pRecv->bufferSize = SYNC_RECV_BUFFER_SIZE;
-  pRecv->buffer = malloc(pRecv->bufferSize);
+  pRecv->buffer = (char*)malloc(pRecv->bufferSize);
   if (pRecv->buffer == NULL) {
     free(pRecv);
     return -1;

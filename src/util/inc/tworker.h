@@ -16,10 +16,7 @@
 #ifndef TDENGINE_TWORKER_H
 #define TDENGINE_TWORKER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#include <mutex>
 typedef void *(*FWorkerThread)(void *pWorker);
 struct SWorkerPool;
 
@@ -29,7 +26,7 @@ typedef struct {
   struct SWorkerPool *pPool;
 } SWorker;
 
-typedef struct SWorkerPool {
+struct SWorkerPool {
   int32_t  max;  // max number of workers
   int32_t  min;  // min number of workers
   int32_t  num;  // current number of workers
@@ -37,16 +34,12 @@ typedef struct SWorkerPool {
   char *   name;
   SWorker *worker;
   FWorkerThread   workerFp;
-  pthread_mutex_t mutex;
-} SWorkerPool;
+  std::mutex mutex;
+};
 
 int32_t tWorkerInit(SWorkerPool *pPool);
 void    tWorkerCleanup(SWorkerPool *pPool);
 void *  tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle);
 void    tWorkerFreeQueue(SWorkerPool *pPool, void *pQueue);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -164,7 +164,7 @@ void syncCleanUp() {
 int64_t syncStart(const SSyncInfo *pInfo) {
   const SSyncCfg *pCfg = &pInfo->syncCfg;
 
-  SSyncNode *pNode = static_cast<SSyncNode*>(calloc(sizeof(SSyncNode), 1));
+  auto pNode = new(std::nothrow) SSyncNode;
   if (pNode == NULL) {
     sError("no memory to allocate syncNode");
     terrno = TAOS_SYSTEM_ERROR(errno);
@@ -172,7 +172,6 @@ int64_t syncStart(const SSyncInfo *pInfo) {
   }
 
   tstrncpy(pNode->path, pInfo->path, sizeof(pNode->path));
-  pthread_mutex_init(&pNode->mutex, NULL);
 
   pNode->getFileInfo = pInfo->getFileInfo;
   pNode->getWalInfo = pInfo->getWalInfo;
@@ -268,7 +267,7 @@ void syncStop(int64_t rid) {
 
   sInfo("vgId:%d, cleanup sync", pNode->vgId);
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   if (tsVgIdHash) taosHashRemove(tsVgIdHash, &pNode->vgId, sizeof(int32_t));
   if (pNode->pFwdTimer) taosTmrStop(pNode->pFwdTimer);
@@ -282,7 +281,7 @@ void syncStop(int64_t rid) {
   pPeer = pNode->peerInfo[TAOS_SYNC_MAX_REPLICA];
   if (pPeer) syncRemovePeer(pPeer);
 
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleaseNode(pNode);
   taosRemoveRef(tsNodeRefId, rid);
@@ -297,7 +296,7 @@ int32_t syncReconfig(int64_t rid, const SSyncCfg *pNewCfg) {
   sInfo("vgId:%d, reconfig, role:%s replica:%d old:%d", pNode->vgId, syncRole[nodeRole], pNewCfg->replica,
         pNode->replica);
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   syncStopCheckPeerConn(pNode->peerInfo[TAOS_SYNC_MAX_REPLICA]);  // arb
   for (int32_t index = 0; index < pNode->replica; ++index) {
@@ -365,7 +364,7 @@ int32_t syncReconfig(int64_t rid, const SSyncCfg *pNewCfg) {
     syncStartCheckPeerConn(pNode->peerInfo[index]);
   }
 
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   sInfo("vgId:%d, %d replicas are configured, quorum:%d", pNode->vgId, pNode->replica, pNode->quorum);
   syncBroadcastStatus(pNode);
@@ -420,7 +419,7 @@ void syncRecover(int64_t rid) {
   (*pNode->notifyRole)(pNode->vgId, nodeRole);
   nodeVersion = 0;
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   for (int32_t i = 0; i < pNode->replica; ++i) {
     pPeer = pNode->peerInfo[i];
@@ -429,7 +428,7 @@ void syncRecover(int64_t rid) {
     }
   }
 
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleaseNode(pNode);
 }
@@ -488,10 +487,9 @@ static void syncFreeNode(void *param) {
   SSyncNode *pNode = static_cast<SSyncNode *>(param);
   sDebug("vgId:%d, node is freed, refCount:%d", pNode->vgId, pNode->refCount);
 
-  pthread_mutex_destroy(&pNode->mutex);
   tfree(pNode->pRecv);
   tfree(pNode->pSyncFwds);
-  tfree(pNode);
+  delete pNode;
 }
 
 SSyncNode *syncAcquireNode(int64_t rid) {
@@ -905,12 +903,12 @@ static void syncNotStarted(void *param, void *tmrId) {
 
   SSyncNode *pNode = pPeer->pSyncNode;
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
   pPeer->timer = NULL;
   pPeer->sstatus = TAOS_SYNC_STATUS_INIT;
   sInfo("%s, sync conn is still not up, restart and set sstatus:%s", pPeer->id, syncStatus[pPeer->sstatus]);
   syncRestartConnection(pPeer);
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleasePeer(pPeer);
 }
@@ -922,9 +920,9 @@ static void syncTryRecoverFromMaster(void *param, void *tmrId) {
 
   SSyncNode *pNode = pPeer->pSyncNode;
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
   syncRecoverFromMaster(pPeer);
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleasePeer(pPeer);
 }
@@ -1046,7 +1044,7 @@ static int32_t syncProcessPeerMsg(int64_t rid, void *buffer) {
   SSyncHead *pHead = static_cast<SSyncHead *>(buffer);
   SSyncNode *pNode = pPeer->pSyncNode;
   
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   int32_t code = syncReadPeerMsg(pPeer, pHead);
 
@@ -1062,7 +1060,7 @@ static int32_t syncProcessPeerMsg(int64_t rid, void *buffer) {
     }
   }
 
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
   syncReleasePeer(pPeer);
 
   return code;
@@ -1144,12 +1142,12 @@ static void syncCheckPeerConnection(void *param, void *tmrId) {
 
   SSyncNode *pNode = pPeer->pSyncNode;
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   sDebug("%s, check peer connection", pPeer->id);
   syncSetupPeerConnection(pPeer);
 
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleasePeer(pPeer);
 }
@@ -1211,7 +1209,7 @@ static void syncProcessIncommingConnection(int32_t connFd, uint32_t sourceIp) {
   sDebug("vgId:%d, sync connection is incoming, tranId:%u", vgId, msg.tranId);
 
   SSyncNode *pNode = *ppNode;
-  pthread_mutex_lock(&pNode->mutex);
+  std::lock_guard<std::mutex> lock(pNode->mutex);
 
   SSyncPeer *pPeer;
   for (i = 0; i < pNode->replica; ++i) {
@@ -1241,8 +1239,6 @@ static void syncProcessIncommingConnection(int32_t connFd, uint32_t sourceIp) {
       syncSendPeersStatusMsgToPeer(pPeer, 1, SYNC_STATUS_EXCHANGE_DATA, syncGenTranId());
     }
   }
-
-  pthread_mutex_unlock(&pNode->mutex);
 }
 
 static void syncProcessBrokenLink(int64_t rid) {
@@ -1251,7 +1247,7 @@ static void syncProcessBrokenLink(int64_t rid) {
 
   SSyncNode *pNode = pPeer->pSyncNode;
 
-  pthread_mutex_lock(&pNode->mutex);
+  pNode->mutex.lock();
 
   sDebug("%s, TCP link is broken since %s, pfd:%d sfd:%d", pPeer->id, strerror(errno), pPeer->peerFd, pPeer->syncFd);
   pPeer->peerFd = -1;
@@ -1260,7 +1256,7 @@ static void syncProcessBrokenLink(int64_t rid) {
   }
 
   syncRestartConnection(pPeer);
-  pthread_mutex_unlock(&pNode->mutex);
+  pNode->mutex.unlock();
 
   syncReleasePeer(pPeer);
 }
@@ -1364,7 +1360,7 @@ static void syncMonitorFwdInfos(void *param, void *tmrId) {
     int64_t time = taosGetTimestampMs();
 
     if (pSyncFwds->fwds > 0) {
-      pthread_mutex_lock(&pNode->mutex);
+      std::lock_guard<std::mutex> lock(pNode->mutex);
       for (int32_t i = 0; i < pSyncFwds->fwds; ++i) {
         SFwdInfo *pFwdInfo = pSyncFwds->fwdInfo + (pSyncFwds->first + i) % SYNC_MAX_FWDS;
         if (ABS(time - pFwdInfo->time) < 2000) break;
@@ -1375,7 +1371,6 @@ static void syncMonitorFwdInfos(void *param, void *tmrId) {
       }
 
       syncRemoveConfirmedFwdInfo(pNode);
-      pthread_mutex_unlock(&pNode->mutex);
     }
 
     pNode->pFwdTimer = taosTmrStart(syncMonitorFwdInfos, SYNC_FWD_TIMER, (void *)pNode->rid, tsSyncTmrCtrl);
@@ -1421,7 +1416,7 @@ static int32_t syncForwardToPeerImpl(SSyncNode *pNode, void *data, void *mhandle
   syncBuildSyncFwdMsg(pSyncHead, pNode->vgId, sizeof(SWalHead) + pWalHead->len);
   fwdLen = pSyncHead->len + sizeof(SSyncHead);  // include the WAL and SYNC head
 
-  pthread_mutex_lock(&pNode->mutex);
+  std::lock_guard<std::mutex> lock(pNode->mutex);
 
   for (int32_t i = 0; i < pNode->replica; ++i) {
     pPeer = pNode->peerInfo[i];
@@ -1443,8 +1438,6 @@ static int32_t syncForwardToPeerImpl(SSyncNode *pNode, void *data, void *mhandle
       syncRestartConnection(pPeer);
     }
   }
-
-  pthread_mutex_unlock(&pNode->mutex);
 
   return code;
 }

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_SDB_H
 #define TDENGINE_MNODE_SDB_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "mnode.h"
 #include "twal.h"
 
@@ -105,9 +101,5 @@ int64_t  sdbGetNumOfRows(void *pTable);
 int32_t  sdbGetId(void *pTable);
 uint64_t sdbGetVersion();
 bool     sdbCheckRowDeleted(void *pTable, void *pRow);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

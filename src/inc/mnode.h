@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_H
 #define TDENGINE_MNODE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "trpc.h"
 
 struct SAcctObj;
@@ -72,9 +68,5 @@ int32_t mnodeProcessWrite(SMnodeMsg *pMsg);
 int32_t mnodeProcessPeerReq(SMnodeMsg *pMsg);
 void    mnodeProcessPeerRsp(SRpcMsg *pMsg);
 int32_t mnodeRetriveAuth(char *user, char *spi, char *encrypt, char *secret, char *ckey);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

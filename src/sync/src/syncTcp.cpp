@@ -55,7 +55,7 @@ static SThreadObj *syncGetTcpThread(SPoolObj *pPool);
 void *syncOpenTcpThreadPool(SPoolInfo *pInfo) {
   pthread_attr_t thattr;
 
-  SPoolObj *pPool = calloc(sizeof(SPoolObj), 1);
+  SPoolObj *pPool = (SPoolObj*)calloc(sizeof(SPoolObj), 1);
   if (pPool == NULL) {
     sError("failed to alloc pool for TCP server since no enough memory");
     return NULL;
@@ -63,7 +63,7 @@ void *syncOpenTcpThreadPool(SPoolInfo *pInfo) {
 
   pPool->info = *pInfo;
 
-  pPool->pThread = calloc(sizeof(SThreadObj *), pInfo->numOfThreads);
+  pPool->pThread = (SThreadObj**)calloc(sizeof(SThreadObj *), pInfo->numOfThreads);
   if (pPool->pThread == NULL) {
     sError("failed to alloc pool thread for TCP server since no enough memory");
     tfree(pPool);
@@ -80,7 +80,7 @@ void *syncOpenTcpThreadPool(SPoolInfo *pInfo) {
 
   pthread_attr_init(&thattr);
   pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_JOINABLE);
-  if (pthread_create(&(pPool->thread), &thattr, (void *)syncAcceptPeerTcpConnection, pPool) != 0) {
+  if (pthread_create(&(pPool->thread), &thattr, syncAcceptPeerTcpConnection, pPool) != 0) {
     sError("failed to create accept thread for TCP server since %s", strerror(errno));
     close(pPool->acceptFd);
     tfree(pPool->pThread);
@@ -95,7 +95,7 @@ void *syncOpenTcpThreadPool(SPoolInfo *pInfo) {
 }
 
 void syncCloseTcpThreadPool(void *param) {
-  SPoolObj *  pPool = param;
+  SPoolObj *  pPool = (SPoolObj*)param;
   SThreadObj *pThread;
 
   shutdown(pPool->acceptFd, SHUT_RD);
@@ -114,9 +114,9 @@ void syncCloseTcpThreadPool(void *param) {
 
 void *syncAllocateTcpConn(void *param, int64_t rid, int32_t connFd) {
   struct epoll_event event;
-  SPoolObj *pPool = param;
+  SPoolObj *pPool = (SPoolObj*)param;
 
-  SConnObj *pConn = calloc(sizeof(SConnObj), 1);
+  SConnObj *pConn = (SConnObj*)calloc(sizeof(SConnObj), 1);
   if (pConn == NULL) {
     terrno = TAOS_SYSTEM_ERROR(errno);
     return NULL;
@@ -150,7 +150,7 @@ void *syncAllocateTcpConn(void *param, int64_t rid, int32_t connFd) {
 }
 
 void syncFreeTcpConn(void *param) {
-  SConnObj *  pConn = param;
+  SConnObj *  pConn = (SConnObj*)param;
   SThreadObj *pThread = pConn->pThread;
 
   sDebug("%p TCP connection will be closed, fd:%d", pThread, pConn->fd);
@@ -199,7 +199,7 @@ static void *syncProcessTcpData(void *param) {
     }
 
     for (int32_t i = 0; i < fdNum; ++i) {
-      pConn = events[i].data.ptr;
+      pConn = (SConnObj*)events[i].data.ptr;
       assert(pConn);
 
       if (events[i].events & EPOLLERR) {
@@ -286,7 +286,7 @@ static SThreadObj *syncGetTcpThread(SPoolObj *pPool) {
   pthread_attr_t thattr;
   pthread_attr_init(&thattr);
   pthread_attr_setdetachstate(&thattr, PTHREAD_CREATE_JOINABLE);
-  int32_t ret = pthread_create(&(pThread->thread), &thattr, (void *)syncProcessTcpData, pThread);
+  int32_t ret = pthread_create(&(pThread->thread), &thattr, syncProcessTcpData, pThread);
   pthread_attr_destroy(&thattr);
 
   if (ret != 0) {

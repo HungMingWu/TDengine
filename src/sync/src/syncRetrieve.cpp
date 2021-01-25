@@ -237,7 +237,7 @@ static int32_t syncRetrieveLastWal(SSyncPeer *pPeer, char *name, uint64_t fversi
 
   sDebug("%s, retrieve last wal:%s, offset:%" PRId64 " fver:%" PRIu64, pPeer->id, name, offset, fversion);
 
-  SWalHead *pHead = malloc(SYNC_MAX_SIZE);
+  SWalHead *pHead = (SWalHead*)malloc(SYNC_MAX_SIZE);
   int32_t   bytes = 0;
 
   while (1) {

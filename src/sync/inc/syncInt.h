@@ -16,9 +16,7 @@
 #ifndef TDENGINE_SYNC_INT_H
 #define TDENGINE_SYNC_INT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <mutex>
 #include "syncMsg.h"
 #include "twal.h"
 
@@ -116,7 +114,7 @@ typedef struct SSyncNode {
   FNotifyFlowCtrl   notifyFlowCtrl;
   FNotifyFileSynced notifyFileSynced;
   FGetVersion       getVersion;
-  pthread_mutex_t   mutex;
+  std::mutex        mutex;
 } SSyncNode;
 
 // sync module global
@@ -131,9 +129,5 @@ void       syncRestartConnection(SSyncPeer *pPeer);
 void       syncBroadcastStatus(SSyncNode *pNode);
 SSyncPeer *syncAcquirePeer(int64_t rid);
 void       syncReleasePeer(SSyncPeer *pPeer);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_VNODEPEER_H

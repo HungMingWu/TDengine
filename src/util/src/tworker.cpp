@@ -21,8 +21,7 @@
 
 int32_t tWorkerInit(SWorkerPool *pPool) {
   pPool->qset = taosOpenQset();
-  pPool->worker = calloc(sizeof(SWorker), pPool->max);
-  pthread_mutex_init(&pPool->mutex, NULL);
+  pPool->worker = (SWorker*)calloc(sizeof(SWorker), pPool->max);
   for (int i = 0; i < pPool->max; ++i) {
     SWorker *pWorker = pPool->worker + i;
     pWorker->id = i;
@@ -49,17 +48,15 @@ void tWorkerCleanup(SWorkerPool *pPool) {
   }
 
   free(pPool->worker);
-  taosCloseQset(pPool->qset);
-  pthread_mutex_destroy(&pPool->mutex);
+  taosCloseQset();
 
   uInfo("worker:%s is closed", pPool->name);
 }
 
 void *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
-  pthread_mutex_lock(&pPool->mutex);
+  std::lock_guard<std::mutex> lock(pPool->mutex);
   taos_queue pQueue = taosOpenQueue();
   if (pQueue == NULL) {
-    pthread_mutex_unlock(&pPool->mutex);
     return NULL;
   }
 
@@ -84,7 +81,6 @@ void *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
     } while (pPool->num < pPool->min);
   }
 
-  pthread_mutex_unlock(&pPool->mutex);
   uDebug("worker:%s, queue:%p is allocated, ahandle:%p", pPool->name, pQueue, ahandle);
 
   return pQueue;

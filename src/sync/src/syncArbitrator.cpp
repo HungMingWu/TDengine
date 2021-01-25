@@ -120,7 +120,7 @@ static void arbProcessIncommingConnection(int32_t connFd, uint32_t sourceIp) {
     return;
   }
 
-  SNodeConn *pNode = calloc(sizeof(SNodeConn), 1);
+  SNodeConn *pNode = (SNodeConn*)calloc(sizeof(SNodeConn), 1);
   if (pNode == NULL) {
     sError("failed to allocate memory since %s", strerror(errno));
     taosCloseSocket(connFd);
