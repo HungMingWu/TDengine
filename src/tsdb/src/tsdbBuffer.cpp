@@ -16,14 +16,12 @@
 #include "tsdb.h"
 #include "tsdbMain.h"
 
-#define POOL_IS_EMPTY(b) (listNEles((b)->bufBlockList) == 0)
-
 static STsdbBufBlock *tsdbNewBufBlock(int bufBlockSize);
 static void           tsdbFreeBufBlock(STsdbBufBlock *pBufBlock);
 
 // ---------------- INTERNAL FUNCTIONS ----------------
 STsdbBufPool *tsdbNewBufPool() {
-  STsdbBufPool *pBufPool = (STsdbBufPool *)calloc(1, sizeof(*pBufPool));
+  auto pBufPool = new (std::nothrow) STsdbBufPool;
   if (pBufPool == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     tsdbFreeBufPool(pBufPool);
@@ -37,26 +35,16 @@ STsdbBufPool *tsdbNewBufPool() {
     return NULL;
   }
 
-  pBufPool->bufBlockList = tdListNew(sizeof(STsdbBufBlock *));
-  if (pBufPool->bufBlockList == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    tsdbFreeBufPool(pBufPool);
-    return NULL;
-  }
-
   return pBufPool;
 }
 
 void tsdbFreeBufPool(STsdbBufPool *pBufPool) {
   if (pBufPool) {
-    if (pBufPool->bufBlockList) {
-      ASSERT(listNEles(pBufPool->bufBlockList) == 0);
-      tdListFree(pBufPool->bufBlockList);
-    }
+    ASSERT(pBufPool->bufBlockList.empty());
 
     pthread_cond_destroy(&pBufPool->poolNotEmpty);
 
-    free(pBufPool);
+    delete pBufPool;
   }
 }
 
@@ -75,11 +63,8 @@ int tsdbOpenBufPool(STsdbRepo *pRepo) {
     STsdbBufBlock *pBufBlock = tsdbNewBufBlock(pPool->bufBlockSize);
     if (pBufBlock == NULL) goto _err;
 
-    if (tdListAppend(pPool->bufBlockList, (void *)(&pBufBlock)) < 0) {
-      tsdbFreeBufBlock(pBufBlock);
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      goto _err;
-    }
+    pPool->bufBlockList.push_back(pBufBlock);
+
 
     pPool->nBufBlocks++;
   }
@@ -98,43 +83,35 @@ void tsdbCloseBufPool(STsdbRepo *pRepo) {
   if (pRepo == NULL) return;
 
   STsdbBufPool * pBufPool = pRepo->pPool;
-  STsdbBufBlock *pBufBlock = NULL;
 
   if (pBufPool) {
-    SListNode *pNode = NULL;
-    while ((pNode = tdListPopHead(pBufPool->bufBlockList)) != NULL) {
-      tdListNodeGetData(pBufPool->bufBlockList, pNode, (void *)(&pBufBlock));
+    for (auto &pBufBlock : pBufPool->bufBlockList)
       tsdbFreeBufBlock(pBufBlock);
-      free(pNode);
-    }
   }
 
   tsdbDebug("vgId:%d, buffer pool is closed", REPO_ID(pRepo));
 }
 
-SListNode *tsdbAllocBufBlockFromPool(STsdbRepo *pRepo) {
+STsdbBufBlock *tsdbAllocBufBlockFromPool(STsdbRepo *pRepo) {
   ASSERT(pRepo != NULL && pRepo->pPool != NULL);
   ASSERT(IS_REPO_LOCKED(pRepo));
 
   STsdbBufPool *pBufPool = pRepo->pPool;
 
-  while (POOL_IS_EMPTY(pBufPool)) {
+  while (pBufPool->bufBlockList.empty()) {
     pRepo->repoLocked = false;
     pthread_cond_wait(&(pBufPool->poolNotEmpty), &(pRepo->mutex));
     pRepo->repoLocked = true;
   }
 
-  SListNode *    pNode = tdListPopHead(pBufPool->bufBlockList);
-  ASSERT(pNode != NULL);
-  STsdbBufBlock *pBufBlock = NULL;
-  tdListNodeGetData(pBufPool->bufBlockList, pNode, (void *)(&pBufBlock));
-
+  auto pBufBlock = pBufPool->bufBlockList.front();
+  pBufPool->bufBlockList.pop_front();
   pBufBlock->blockId = pBufPool->index++;
   pBufBlock->offset = 0;
   pBufBlock->remain = pBufPool->bufBlockSize;
 
   tsdbDebug("vgId:%d, buffer block is allocated, blockId:%" PRId64, REPO_ID(pRepo), pBufBlock->blockId);
-  return pNode;
+  return pBufBlock;
 }
 
 // ---------------- LOCAL FUNCTIONS ----------------

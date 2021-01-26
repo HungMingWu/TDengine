@@ -86,10 +86,11 @@ int tsdbUnRefMemTable(STsdbRepo *pRepo, SMemTable *pMemTable) {
   if (ref == 0) {
     STsdbBufPool *pBufPool = pRepo->pPool;
 
-    SListNode *pNode = NULL;
     if (tsdbLockRepo(pRepo) < 0) return -1;
-    while ((pNode = tdListPopHead(pMemTable->bufBlockList)) != NULL) {
-      tdListAppendNode(pBufPool->bufBlockList, pNode);
+    while (!pMemTable->bufBlockList.empty()) {
+      auto data = pMemTable->bufBlockList.front();
+      pMemTable->bufBlockList.pop_front();
+      pBufPool->bufBlockList.push_back(data);
     }
     int code = pthread_cond_signal(&pBufPool->poolNotEmpty);
     if (code != 0) {
@@ -107,7 +108,6 @@ int tsdbUnRefMemTable(STsdbRepo *pRepo, SMemTable *pMemTable) {
     }
 
     tdListDiscard(pMemTable->actList);
-    tdListDiscard(pMemTable->bufBlockList);
     tsdbFreeMemTable(pMemTable);
   }
   return 0;
@@ -158,7 +158,7 @@ void *tsdbAllocBytes(STsdbRepo *pRepo, int bytes) {
 
   pBufBlock = tsdbGetCurrBufBlock(pRepo);
   if ((pRepo->mem->extraBuffList != NULL) ||
-      ((listNEles(pRepo->mem->bufBlockList) >= pCfg->totalBlocks / 3) && (pBufBlock->remain < bytes))) {
+      ((pRepo->mem->bufBlockList.size() >= pCfg->totalBlocks / 3) && (pBufBlock->remain < bytes))) {
     // allocate from SYSTEM buffer pool
     if (pRepo->mem->extraBuffList == NULL) {
       pRepo->mem->extraBuffList = tdListNew(0);
@@ -185,10 +185,10 @@ void *tsdbAllocBytes(STsdbRepo *pRepo, int bytes) {
     tsdbTrace("vgId:%d allocate %d bytes from SYSTEM buffer block", REPO_ID(pRepo), bytes);
   } else {  // allocate from TSDB buffer pool
     if (pBufBlock == NULL || pBufBlock->remain < bytes) {
-      ASSERT(listNEles(pRepo->mem->bufBlockList) < pCfg->totalBlocks / 3);
+      ASSERT(pRepo->mem->bufBlockList.size() < pCfg->totalBlocks / 3);
       if (tsdbLockRepo(pRepo) < 0) return NULL;
-      SListNode *pNode = tsdbAllocBufBlockFromPool(pRepo);
-      tdListAppendNode(pRepo->mem->bufBlockList, pNode);
+      auto data = tsdbAllocBufBlockFromPool(pRepo);
+      pRepo->mem->bufBlockList.push_back(data);
       if (tsdbUnlockRepo(pRepo) < 0) return NULL;
       pBufBlock = tsdbGetCurrBufBlock(pRepo);
     }
@@ -198,7 +198,7 @@ void *tsdbAllocBytes(STsdbRepo *pRepo, int bytes) {
     pBufBlock->offset += bytes;
     pBufBlock->remain -= bytes;
     tsdbTrace("vgId:%d allocate %d bytes from TSDB buffer block, nBlocks %d offset %d remain %d", REPO_ID(pRepo), bytes,
-              listNEles(pRepo->mem->bufBlockList), pBufBlock->offset, pBufBlock->remain);
+              pRepo->mem->bufBlockList.size(), pBufBlock->offset, pBufBlock->remain);
   }
 
   return ptr;
@@ -365,7 +365,7 @@ int tsdbLoadDataFromCache(STable *pTable, SSkipListIterator *pIter, TSKEY maxKey
 static SMemTable* tsdbNewMemTable(STsdbRepo *pRepo) {
   STsdbMeta *pMeta = pRepo->tsdbMeta;
 
-  SMemTable *pMemTable = (SMemTable *)calloc(1, sizeof(*pMemTable));
+  auto pMemTable = new (std::nothrow) SMemTable;
   if (pMemTable == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     goto _err;
@@ -388,12 +388,6 @@ static SMemTable* tsdbNewMemTable(STsdbRepo *pRepo) {
     goto _err;
   }
 
-  pMemTable->bufBlockList = tdListNew(sizeof(STsdbBufBlock*));
-  if (pMemTable->bufBlockList == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
-  }
-
   T_REF_INC(pMemTable);
 
   return pMemTable;
@@ -405,14 +399,13 @@ _err:
 
 static void tsdbFreeMemTable(SMemTable* pMemTable) {
   if (pMemTable) {
-    ASSERT((pMemTable->bufBlockList == NULL) ? true : (listNEles(pMemTable->bufBlockList) == 0));
+    ASSERT(pMemTable->bufBlockList.empty());
     ASSERT((pMemTable->actList == NULL) ? true : (listNEles(pMemTable->actList) == 0));
 
     tdListFree(pMemTable->extraBuffList);
-    tdListFree(pMemTable->bufBlockList);
     tdListFree(pMemTable->actList);
     tfree(pMemTable->tData);
-    free(pMemTable);
+    delete pMemTable;
   }
 }
 
@@ -869,12 +862,13 @@ static void tsdbFreeRows(STsdbRepo *pRepo, void **rows, int rowCounter) {
       pBufBlock->remain += bytes;
       ASSERT(row == POINTER_SHIFT(pBufBlock->data, pBufBlock->offset));
       tsdbTrace("vgId:%d free %d bytes to TSDB buffer pool, nBlocks %d offset %d remain %d", REPO_ID(pRepo), bytes,
-                listNEles(pRepo->mem->bufBlockList), pBufBlock->offset, pBufBlock->remain);
+                pRepo->mem->bufBlockList.size(), pBufBlock->offset, pBufBlock->remain);
 
       if (pBufBlock->offset == 0) {  // return the block to buffer pool
         if (tsdbLockRepo(pRepo) < 0) return;
-        SListNode *pNode = tdListPopTail(pRepo->mem->bufBlockList);
-        tdListPrependNode(pBufPool->bufBlockList, pNode);
+        auto data = pRepo->mem->bufBlockList.back();
+        pRepo->mem->bufBlockList.pop_back();
+        pRepo->mem->bufBlockList.push_front(data);
         if (tsdbUnlockRepo(pRepo) < 0) return;
       }
     } else {

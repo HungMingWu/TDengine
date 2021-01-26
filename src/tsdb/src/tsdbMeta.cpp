@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdlib.h>
+#include <algorithm>
 #include "hash.h"
 #include "taosdef.h"
 #include "tchecksum.h"
@@ -440,12 +441,6 @@ STsdbMeta *tsdbNewMeta(STsdbCfg *pCfg) {
     return nullptr;
   }
 
-  pMeta->superList = tdListNew(sizeof(STable *));
-  if (pMeta->superList == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return nullptr;
-  }
-
   pMeta->uidMap = taosHashInit((size_t)(TSDB_INIT_NTABLES * 1.1), taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT),
                                true, HASH_NO_LOCK);
   if (pMeta->uidMap == NULL) {
@@ -460,10 +455,9 @@ STsdbMeta *tsdbNewMeta(STsdbCfg *pCfg) {
 void tsdbFreeMeta(STsdbMeta *pMeta) {
   if (pMeta) {
     taosHashCleanup(pMeta->uidMap);
-    tdListFree(pMeta->superList);
     tfree(pMeta->tables);
     pthread_rwlock_destroy(&pMeta->rwLock);
-    free(pMeta);
+    delete pMeta;
   }
 }
 
@@ -495,7 +489,6 @@ _err:
 
 int tsdbCloseMeta(STsdbRepo *pRepo) {
   STsdbMeta *pMeta = pRepo->tsdbMeta;
-  SListNode *pNode = NULL;
   STable *   pTable = NULL;
 
   if (pMeta == NULL) return 0;
@@ -504,10 +497,10 @@ int tsdbCloseMeta(STsdbRepo *pRepo) {
     tsdbFreeTable(pMeta->tables[i]);
   }
 
-  while ((pNode = tdListPopHead(pMeta->superList)) != NULL) {
-    tdListNodeGetData(pMeta->superList, pNode, (void *)(&pTable));
+  while (!pMeta->superList.empty()) {
+    pTable = pMeta->superList.front();
+    pMeta->superList.pop_front();
     tsdbFreeTable(pTable);
-    listNodeFree(pNode);
   }
 
   tsdbDebug("vgId:%d TSDB meta is closed", REPO_ID(pRepo));
@@ -790,12 +783,7 @@ static int tsdbAddTableToMeta(STsdbRepo *pRepo, STable *pTable, bool addIdx, boo
   }
 
   if (TABLE_TYPE(pTable) == TSDB_SUPER_TABLE) {
-    if (tdListAppend(pMeta->superList, (void *)(&pTable)) < 0) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      tsdbError("vgId:%d failed to add table %s to meta since %s", REPO_ID(pRepo), TABLE_CHAR_NAME(pTable),
-                tstrerror(terrno));
-      goto _err;
-    }
+    pMeta->superList.push_back(pTable);
   } else {
     if (TABLE_TID(pTable) >= pMeta->maxTables) {
       if (tsdbAdjustMetaTables(pRepo, TABLE_TID(pTable)) < 0) goto _err;
@@ -844,7 +832,6 @@ _err:
 
 static void tsdbRemoveTableFromMeta(STsdbRepo *pRepo, STable *pTable, bool rmFromIdx, bool lock) {
   STsdbMeta *pMeta = pRepo->tsdbMeta;
-  SListIter  lIter = {0};
   SListNode *pNode = NULL;
   STable *   tTable = NULL;
 
@@ -855,16 +842,8 @@ static void tsdbRemoveTableFromMeta(STsdbRepo *pRepo, STable *pTable, bool rmFro
   if (lock) tsdbWLockRepoMeta(pRepo);
 
   if (TABLE_TYPE(pTable) == TSDB_SUPER_TABLE) {
-    tdListInitIter(pMeta->superList, &lIter, TD_LIST_BACKWARD);
-
-    while ((pNode = tdListNext(&lIter)) != NULL) {
-      tdListNodeGetData(pMeta->superList, pNode, (void *)(&tTable));
-      if (pTable == tTable) {
-        tdListPopNode(pMeta->superList, pNode);
-        free(pNode);
-        break;
-      }
-    }
+    auto it = std::find(begin(pMeta->superList), end(pMeta->superList), pTable);
+    if (it != end(pMeta->superList)) pMeta->superList.erase(it);
   } else {
     pMeta->tables[pTable->tableId.tid] = NULL;
     if (TABLE_TYPE(pTable) == TSDB_CHILD_TABLE && rmFromIdx) {

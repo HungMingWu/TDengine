@@ -380,7 +380,7 @@ int tsdbCheckCommit(STsdbRepo *pRepo) {
   STsdbBufBlock *pBufBlock = tsdbGetCurrBufBlock(pRepo);
   ASSERT(pBufBlock != NULL);
   if ((pRepo->mem->extraBuffList != NULL) ||
-      ((listNEles(pRepo->mem->bufBlockList) >= pCfg->totalBlocks / 3) && (pBufBlock->remain < TSDB_BUFFER_RESERVE))) {
+      ((pRepo->mem->bufBlockList.size() >= pCfg->totalBlocks / 3) && (pBufBlock->remain < TSDB_BUFFER_RESERVE))) {
     // trigger commit
     if (tsdbAsyncCommit(pRepo) < 0) return -1;
   }

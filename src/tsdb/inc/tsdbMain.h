@@ -15,6 +15,7 @@
 #ifndef _TD_TSDB_MAIN_H_
 #define _TD_TSDB_MAIN_H_
 
+#include <list>
 #include "os.h"
 #include "hash.h"
 #include "tcoding.h"
@@ -26,10 +27,6 @@
 #include "tsdb.h"
 #include "tskiplist.h"
 #include "tutil.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 extern int32_t tsdbDebugFlag;
 
@@ -80,7 +77,7 @@ typedef struct {
   int32_t   nTables;
   int32_t   maxTables;
   STable**  tables;
-  SList*    superList;
+  std::list<STable*> superList;
   SHashObj* uidMap;
   SKVStore* pStore;
   int       maxRowBytes;
@@ -101,7 +98,7 @@ typedef struct {
   int            tBufBlocks;
   int            nBufBlocks;
   int64_t        index;
-  SList*         bufBlockList;
+  std::list<STsdbBufBlock*> bufBlockList;
 } STsdbBufPool;
 
 // ------------------ tsdbMemTable.c
@@ -128,7 +125,7 @@ typedef struct {
   STableData** tData;
   SList*       actList;
   SList*       extraBuffList;
-  SList*       bufBlockList;
+  std::list<STsdbBufBlock*> bufBlockList;
 } SMemTable;
 
 enum { TSDB_UPDATE_META, TSDB_DROP_META };
@@ -449,7 +446,7 @@ STsdbBufPool* tsdbNewBufPool();
 void          tsdbFreeBufPool(STsdbBufPool* pBufPool);
 int           tsdbOpenBufPool(STsdbRepo* pRepo);
 void          tsdbCloseBufPool(STsdbRepo* pRepo);
-SListNode*    tsdbAllocBufBlockFromPool(STsdbRepo* pRepo);
+STsdbBufBlock* tsdbAllocBufBlockFromPool(STsdbRepo* pRepo);
 
 // ------------------ tsdbMemTable.c
 int   tsdbRefMemTable(STsdbRepo* pRepo, SMemTable* pMemTable);
@@ -487,15 +484,9 @@ static FORCE_INLINE TKEY tsdbNextIterTKey(SSkipListIterator* pIter) {
 
 static FORCE_INLINE STsdbBufBlock* tsdbGetCurrBufBlock(STsdbRepo* pRepo) {
   ASSERT(pRepo != NULL);
-  if (pRepo->mem == NULL) return NULL;
-
-  SListNode* pNode = listTail(pRepo->mem->bufBlockList);
-  if (pNode == NULL) return NULL;
-
-  STsdbBufBlock* pBufBlock = NULL;
-  tdListNodeGetData(pRepo->mem->bufBlockList, pNode, (void*)(&pBufBlock));
-
-  return pBufBlock;
+  if (pRepo->mem == NULL) return nullptr;
+  if (pRepo->mem->bufBlockList.empty()) return nullptr;
+  return pRepo->mem->bufBlockList.back();
 }
 
 // ------------------ tsdbFile.c
@@ -611,9 +602,5 @@ void             tsdbFreeScanHandle(STsdbScanHandle* pScanHandle);
 
 // ------------------ tsdbCommitQueue.c
 int tsdbScheduleCommit(STsdbRepo *pRepo);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
