@@ -18,6 +18,7 @@
 #define _DEFAULT_SOURCE
 #define _GNU_SOURCE
 
+#include <string>
 #include "os.h"
 #include "ttype.h"
 #include "qAst.h"
@@ -30,7 +31,6 @@
 #include "tschemautil.h"
 #include "tsclient.h"
 #include "tstoken.h"
-#include "tstrbuild.h"
 #include "ttokendef.h"
 
 #define DEFAULT_PRIMARY_TIMESTAMP_COL_NAME "_c0"
@@ -3232,22 +3232,22 @@ static int32_t optrToString(tSQLExpr* pExpr, char** exprString) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t tablenameListToString(tSQLExpr* pExpr, SStringBuilder* sb) {
+static int32_t tablenameListToString(tSQLExpr* pExpr, std::string &sb) {
   tSQLExprList* pList = pExpr->pParam;
   if (pList->nExpr <= 0) {
     return TSDB_CODE_TSC_INVALID_SQL;
   }
 
   if (pList->nExpr > 0) {
-    taosStringBuilderAppendStringLen(sb, QUERY_COND_REL_PREFIX_IN, QUERY_COND_REL_PREFIX_IN_LEN);
+    sb += std::string(QUERY_COND_REL_PREFIX_IN);
   }
 
   for (int32_t i = 0; i < pList->nExpr; ++i) {
     tSQLExpr* pSub = pList->a[i].pNode;
-    taosStringBuilderAppendStringLen(sb, pSub->val.pz, pSub->val.nLen);
+    sb += std::string(pSub->val.pz, pSub->val.nLen);
 
     if (i < pList->nExpr - 1) {
-      taosStringBuilderAppendString(sb, TBNAME_LIST_SEP);
+      sb += TBNAME_LIST_SEP;
     }
 
     if (pSub->val.nLen <= 0 || !tscValidateTableNameLength(pSub->val.nLen)) {
@@ -3258,9 +3258,8 @@ static int32_t tablenameListToString(tSQLExpr* pExpr, SStringBuilder* sb) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t tablenameCondToString(tSQLExpr* pExpr, SStringBuilder* sb) {
-  taosStringBuilderAppendStringLen(sb, QUERY_COND_REL_PREFIX_LIKE, QUERY_COND_REL_PREFIX_LIKE_LEN);
-  taosStringBuilderAppendString(sb, pExpr->val.pz);
+static int32_t tablenameCondToString(tSQLExpr* pExpr, std::string& sb) {
+  sb += std::string(QUERY_COND_REL_PREFIX_LIKE) + std::string(pExpr->val.pz);
 
   return TSDB_CODE_SUCCESS;
 }
@@ -3382,7 +3381,7 @@ static int32_t getTagCondString(tSQLExpr* pExpr, char** str) {
   return tSQLExprLeafToString(pExpr, true, str);
 }
 
-static int32_t getTablenameCond(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, tSQLExpr* pTableCond, SStringBuilder* sb) {
+static int32_t getTablenameCond(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, tSQLExpr* pTableCond, std::string &sb) {
   const char* msg0 = "invalid table name list";
 
   if (pTableCond == NULL) {
@@ -4025,7 +4024,7 @@ int tableNameCompar(const void* lhs, const void* rhs) {
 }
 
 static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, const char* account,
-                                          tSQLExpr* pExpr, int16_t tableCondIndex, SStringBuilder* sb) {
+                                          tSQLExpr* pExpr, int16_t tableCondIndex, std::string &sb) {
   const char* msg = "table name too long";
 
   if (pExpr == NULL) {
@@ -4040,20 +4039,18 @@ static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo,
   assert(pExpr->nSQLOptr == TK_LIKE || pExpr->nSQLOptr == TK_IN);
 
   if (pExpr->nSQLOptr == TK_LIKE) {
-    char* str = taosStringBuilderGetResult(sb, NULL);
-    pQueryInfo->tagCond.tbnameCond.cond = strdup(str);
-    pQueryInfo->tagCond.tbnameCond.len = (int32_t) strlen(str);
+    pQueryInfo->tagCond.tbnameCond.cond = strdup(sb.c_str());
+    pQueryInfo->tagCond.tbnameCond.len = (int32_t)sb.length();
     return TSDB_CODE_SUCCESS;
   }
 
-  SStringBuilder sb1; memset(&sb1, 0, sizeof(sb1));
-  taosStringBuilderAppendStringLen(&sb1, QUERY_COND_REL_PREFIX_IN, QUERY_COND_REL_PREFIX_IN_LEN);
+  std::string sb1(QUERY_COND_REL_PREFIX_IN);
 
   char db[TSDB_TABLE_FNAME_LEN] = {0};
 
   // remove the duplicated input table names
   int32_t num = 0;
-  char*   tableNameString = taosStringBuilderGetResult(sb, NULL);
+  char*   tableNameString = &sb[0];
 
   char** segments = strsplit(tableNameString + QUERY_COND_REL_PREFIX_IN_LEN, TBNAME_LIST_SEP, &num);
   qsort(segments, num, POINTER_BYTES, tableNameCompar);
@@ -4074,7 +4071,7 @@ static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo,
   
   for (int32_t i = 0; i < num; ++i) {
     if (i >= 1) {
-      taosStringBuilderAppendStringLen(&sb1, TBNAME_LIST_SEP, 1);
+      sb1 += std::string(TBNAME_LIST_SEP, 1);
     }
 
     char      idBuf[TSDB_TABLE_FNAME_LEN] = {0};
@@ -4086,21 +4083,18 @@ static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo,
 
     int32_t ret = setObjFullName(idBuf, account, &dbToken, &t, &xlen);
     if (ret != TSDB_CODE_SUCCESS) {
-      taosStringBuilderDestroy(&sb1);
       tfree(segments);
 
       invalidSqlErrMsg(tscGetErrorMsgPayload(pCmd), msg);
       return ret;
     }
 
-    taosStringBuilderAppendString(&sb1, idBuf);
+    sb1 += std::string(idBuf);
   }
 
-  char* str = taosStringBuilderGetResult(&sb1, NULL);
-  pQueryInfo->tagCond.tbnameCond.cond = strdup(str);
-  pQueryInfo->tagCond.tbnameCond.len = (int32_t) strlen(str);
+  pQueryInfo->tagCond.tbnameCond.cond = strdup(sb1.c_str());
+  pQueryInfo->tagCond.tbnameCond.len = (int32_t)sb1.length();
 
-  taosStringBuilderDestroy(&sb1);
   tfree(segments);
   return TSDB_CODE_SUCCESS;
 }
@@ -4317,7 +4311,7 @@ int32_t parseWhereClause(SQueryInfo* pQueryInfo, tSQLExpr** pExpr, SSqlObj* pSql
   int32_t ret = TSDB_CODE_SUCCESS;
 
   // tags query condition may be larger than 512bytes, therefore, we need to prepare enough large space
-  SStringBuilder sb; memset(&sb, 0, sizeof(sb));
+  std::string sb;
   SCondExpr      condExpr = {0};
 
   if ((*pExpr)->pLeft == NULL || (*pExpr)->pRight == NULL) {
@@ -4350,7 +4344,7 @@ int32_t parseWhereClause(SQueryInfo* pQueryInfo, tSQLExpr** pExpr, SSqlObj* pSql
   }
 
   // 4. get the table name query condition
-  if ((ret = getTablenameCond(&pSql->cmd, pQueryInfo, condExpr.pTableCond, &sb)) != TSDB_CODE_SUCCESS) {
+  if ((ret = getTablenameCond(&pSql->cmd, pQueryInfo, condExpr.pTableCond, sb)) != TSDB_CODE_SUCCESS) {
     return ret;
   }
 
@@ -4367,8 +4361,7 @@ int32_t parseWhereClause(SQueryInfo* pQueryInfo, tSQLExpr** pExpr, SSqlObj* pSql
   // 7. query condition for table name
   pQueryInfo->tagCond.relType = (condExpr.relType == TK_AND) ? TSDB_RELATION_AND : TSDB_RELATION_OR;
 
-  ret = setTableCondForSTableQuery(&pSql->cmd, pQueryInfo, getAccountId(pSql), condExpr.pTableCond, condExpr.tableCondIndex, &sb);
-  taosStringBuilderDestroy(&sb);
+  ret = setTableCondForSTableQuery(&pSql->cmd, pQueryInfo, getAccountId(pSql), condExpr.pTableCond, condExpr.tableCondIndex, sb);
 
   if (!validateFilterExpr(pQueryInfo)) {
     return invalidSqlErrMsg(tscGetErrorMsgPayload(&pSql->cmd), msg2);

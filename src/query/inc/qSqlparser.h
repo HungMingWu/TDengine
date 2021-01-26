@@ -23,7 +23,6 @@ extern "C" {
 #include "taos.h"
 #include "taosmsg.h"
 #include "tstoken.h"
-#include "tstrbuild.h"
 #include "tvariant.h"
 
 #define ParseTOKENTYPE SStrToken

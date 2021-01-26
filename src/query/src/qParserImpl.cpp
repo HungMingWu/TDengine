@@ -19,7 +19,6 @@
 #include "taosmsg.h"
 #include "tcmdtype.h"
 #include "tstoken.h"
-#include "tstrbuild.h"
 #include "ttokendef.h"
 #include "tutil.h"
 

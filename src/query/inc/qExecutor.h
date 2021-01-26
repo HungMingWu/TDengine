@@ -15,6 +15,7 @@
 #ifndef TDENGINE_QUERYEXECUTOR_H
 #define TDENGINE_QUERYEXECUTOR_H
 
+#include <setjmp.h>
 #include "os.h"
 
 #include "hash.h"

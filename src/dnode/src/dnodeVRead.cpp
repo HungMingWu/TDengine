@@ -94,14 +94,6 @@ void *dnodeAllocVFetchQueue(void *pVnode) {
   return tWorkerAllocQueue(&tsVFetchWP, pVnode);
 }
 
-void dnodeFreeVQueryQueue(void *pQqueue) {
-  tWorkerFreeQueue(&tsVQueryWP, pQqueue);
-}
-
-void dnodeFreeVFetchQueue(void *pFqueue) {
-  tWorkerFreeQueue(&tsVFetchWP, pFqueue);
-}
-
 void dnodeSendRpcVReadRsp(void *pVnode, SVReadMsg *pRead, int32_t code) {
   SRpcMsg rpcRsp;
   rpcRsp.handle = pRead->rpcHandle;

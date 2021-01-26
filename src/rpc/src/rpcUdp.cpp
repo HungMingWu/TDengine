@@ -73,7 +73,7 @@ void *taosInitUdpConnection(uint32_t ip, uint16_t port, char *label, int threads
   pSet->ip = ip;
   pSet->port = port;
   pSet->shandle = shandle;
-  pSet->fp = fp;
+  pSet->fp = (void* (*)(SRecvInfo*))fp;
   pSet->threads = threads;
   tstrncpy(pSet->label, label, sizeof(pSet->label));
 
@@ -92,7 +92,7 @@ void *taosInitUdpConnection(uint32_t ip, uint16_t port, char *label, int threads
       break;
     }
 
-    pConn->buffer = malloc(RPC_MAX_UDP_SIZE);
+    pConn->buffer = (char*)malloc(RPC_MAX_UDP_SIZE);
     if (NULL == pConn->buffer) {
       tError("%s failed to malloc recv buffer", label);
       break;
@@ -107,7 +107,7 @@ void *taosInitUdpConnection(uint32_t ip, uint16_t port, char *label, int threads
 
     tstrncpy(pConn->label, label, sizeof(pConn->label));
     pConn->shandle = shandle;
-    pConn->processData = fp;
+    pConn->processData = (void* (*)(SRecvInfo*))fp;
     pConn->index = i;
     pConn->pSet = pSet;
 
@@ -183,7 +183,7 @@ void *taosOpenUdpConnection(void *shandle, void *thandle, uint32_t ip, uint16_t 
 }
 
 static void *taosRecvUdpData(void *param) {
-  SUdpConn          *pConn = param;
+  SUdpConn          *pConn = (SUdpConn*)param;
   struct sockaddr_in sourceAdd;
   ssize_t            dataLen;
   unsigned int       addLen;
@@ -210,7 +210,7 @@ static void *taosRecvUdpData(void *param) {
     }
 
     int32_t size = dataLen + tsRpcOverhead;
-    char *tmsg = malloc(size);
+    char *tmsg = (char*)malloc(size);
     if (NULL == tmsg) {
       tError("%s failed to allocate memory, size:%" PRId64, pConn->label, (int64_t)dataLen);
       continue;

@@ -62,7 +62,7 @@ int32_t dnodeInitVMgmt() {
 }
 
 void dnodeCleanupVMgmt() {
-  tWorkerFreeQueue(&tsVMgmtWP, tsVMgmtQueue);
+  taosCloseQueue(tsVMgmtQueue);
   tWorkerCleanup(&tsVMgmtWP);
 
   tsVMgmtQueue = NULL;

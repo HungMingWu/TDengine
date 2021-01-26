@@ -106,7 +106,7 @@ int retrieveAuthInfo(char *meterId, char *spi, char *encrypt, char *secret, char
 void processRequestMsg(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   SRpcMsg *pTemp;
  
-  pTemp = taosAllocateQitem(sizeof(SRpcMsg));
+  pTemp = (SRpcMsg*)taosAllocateQitem(sizeof(SRpcMsg));
   memcpy(pTemp, pMsg, sizeof(SRpcMsg));
 
   tDebug("request is received, type:%d, contLen:%d, item:%p", pMsg->msgType, pMsg->contLen, pTemp);
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
       tInfo("failed to open data file, reason:%s", strerror(errno));
   }
 
-  qhandle = taosOpenQueue(sizeof(SRpcMsg));
+  qhandle = taosOpenQueue();
   qset = taosOpenQset();
   taosAddIntoQset(qset, qhandle, NULL);
 

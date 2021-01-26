@@ -29,6 +29,7 @@
 #include "vnodeWorker.h"
 #include "vnodeMain.h"
 #include "vnodeWrite.h"
+#include "tqueue.h"
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno);
 
@@ -371,11 +372,11 @@ void SVnodeObj::Destroy() {
   }
 
   if (qqueue) {
-    dnodeFreeVQueryQueue(qqueue);
+    taosCloseQueue(qqueue);
   }
 
   if (fqueue) {
-    dnodeFreeVFetchQueue(fqueue);
+    taosCloseQueue(fqueue);
   }
 
   tfree(rootDir);

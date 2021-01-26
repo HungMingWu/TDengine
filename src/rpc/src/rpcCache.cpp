@@ -13,6 +13,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <mutex>
+#include <vector>
 #include "os.h"
 #include "tglobal.h"
 #include "tmempool.h"
@@ -31,23 +33,55 @@ typedef struct SConnHash {
   uint64_t          time;
 } SConnHash;
 
-typedef struct {
+class rpcLock {
+  int64_t val;
+public:
+  void lock();
+  void unlock();
+};
+
+struct SConnCache {
   SConnHash     **connHashList;
   mpool_h         connHashMemPool;
   int             maxSessions;
   int             total;
-  int *           count;
+  std::vector<int>       count;
   int64_t         keepTimer;
-  pthread_mutex_t mutex;
+  std::mutex      mutex;
   void          (*cleanFp)(void *);
   void           *tmrCtrl;
   void           *pTimer;
-  int64_t        *lockedBy;
-} SConnCache;
+  std::vector<rpcLock> lockedBy;
+
+public:
+  explicit SConnCache(int maxSessions_);
+};
+
+SConnCache::SConnCache(int maxSessions_) : 
+    maxSessions(maxSessions_), 
+    count(maxSessions), lockedBy(maxSessions)
+{
+}
+
+void rpcLock::lock() {
+  int64_t tid = taosGetSelfPthreadId();
+  int     i = 0;
+  while (atomic_val_compare_exchange_64(&val, 0, tid) != 0) {
+    if (++i % 100 == 0) {
+      sched_yield();
+    }
+  }
+}
+
+void rpcLock::unlock() 
+{
+  int64_t tid = taosGetSelfPthreadId();
+  if (atomic_val_compare_exchange_64(&val, tid, 0) != tid) {
+    assert(false);
+  }
+}
 
 static int  rpcHashConn(void *handle, char *fqdn, uint16_t port, int8_t connType);
-static void rpcLockCache(int64_t *lockedBy);
-static void rpcUnlockCache(int64_t *lockedBy);
 static void rpcCleanConnCache(void *handle, void *tmrId);
 static void rpcRemoveExpiredNodes(SConnCache *pCache, SConnHash *pNode, int hash, uint64_t time);
 
@@ -59,32 +93,26 @@ void *rpcOpenConnCache(int maxSessions, void (*cleanFp)(void *), void *tmrCtrl, 
   connHashMemPool = taosMemPoolInit(maxSessions, sizeof(SConnHash));
   if (connHashMemPool == 0) return NULL;
 
-  connHashList = calloc(sizeof(SConnHash *), maxSessions);
+  connHashList = (SConnHash**)calloc(sizeof(SConnHash *), maxSessions);
   if (connHashList == 0) {
     taosMemPoolCleanUp(connHashMemPool);
     return NULL;
   }
 
-  pCache = malloc(sizeof(SConnCache));
+  pCache =  new (std::nothrow) SConnCache(maxSessions);
   if (pCache == NULL) {
     taosMemPoolCleanUp(connHashMemPool);
     free(connHashList);
     return NULL;
   }
-  memset(pCache, 0, sizeof(SConnCache));
 
-  pCache->count = calloc(sizeof(int), maxSessions);
   pCache->total = 0;
   pCache->keepTimer = keepTimer;
-  pCache->maxSessions = maxSessions;
   pCache->connHashMemPool = connHashMemPool;
   pCache->connHashList = connHashList;
   pCache->cleanFp = cleanFp;
   pCache->tmrCtrl = tmrCtrl;
-  pCache->lockedBy = calloc(sizeof(int64_t), maxSessions);
   taosTmrReset(rpcCleanConnCache, (int32_t)(pCache->keepTimer * 2), pCache, pCache->tmrCtrl, &pCache->pTimer);
-
-  pthread_mutex_init(&pCache->mutex, NULL);
 
   return pCache;
 }
@@ -95,21 +123,12 @@ void rpcCloseConnCache(void *handle) {
   pCache = (SConnCache *)handle;
   if (pCache == NULL || pCache->maxSessions == 0) return;
 
-  pthread_mutex_lock(&pCache->mutex);
-
   taosTmrStopA(&(pCache->pTimer));
 
   if (pCache->connHashMemPool) taosMemPoolCleanUp(pCache->connHashMemPool);
 
   tfree(pCache->connHashList);
-  tfree(pCache->count);
-  tfree(pCache->lockedBy);
 
-  pthread_mutex_unlock(&pCache->mutex);
-
-  pthread_mutex_destroy(&pCache->mutex);
-
-  memset(pCache, 0, sizeof(SConnCache));
   free(pCache);
 }
 
@@ -133,7 +152,7 @@ void rpcAddConnIntoCache(void *handle, void *data, char *fqdn, uint16_t port, in
   pNode->prev = NULL;
   pNode->time = time;
 
-  rpcLockCache(pCache->lockedBy+hash);
+  pCache->lockedBy[hash].lock();
 
   pNode->next = pCache->connHashList[hash];
   if (pCache->connHashList[hash] != NULL) (pCache->connHashList[hash])->prev = pNode;
@@ -142,7 +161,7 @@ void rpcAddConnIntoCache(void *handle, void *data, char *fqdn, uint16_t port, in
   pCache->count[hash]++;
   rpcRemoveExpiredNodes(pCache, pNode->next, hash, time);
 
-  rpcUnlockCache(pCache->lockedBy+hash);
+  pCache->lockedBy[hash].unlock();
 
   pCache->total++;
   // tTrace("%p %s:%hu:%d:%d:%p added into cache, connections:%d", data, fqdn, port, connType, hash, pNode, pCache->count[hash]);
@@ -162,7 +181,7 @@ void *rpcGetConnFromCache(void *handle, char *fqdn, uint16_t port, int8_t connTy
   uint64_t time = taosGetTimestampMs();
 
   hash = rpcHashConn(pCache, fqdn, port, connType);
-  rpcLockCache(pCache->lockedBy+hash);
+  std::lock_guard<rpcLock> lock(pCache->lockedBy[hash]);
 
   pNode = pCache->connHashList[hash];
   while (pNode) {
@@ -196,14 +215,6 @@ void *rpcGetConnFromCache(void *handle, char *fqdn, uint16_t port, int8_t connTy
     pCache->count[hash]--;
   }
 
-  rpcUnlockCache(pCache->lockedBy+hash);
-
-  if (pData) {
-    //tTrace("%p %s:%hu:%d:%d:%p retrieved from cache, connections:%d", pData, fqdn, port, connType, hash, pNode, pCache->count[hash]);
-  } else {
-    //tTrace("%s:%hu:%d:%d failed to retrieve conn from cache, connections:%d", fqdn, port, connType, hash, pCache->count[hash]);
-  }
-
   return pData;
 }
 
@@ -216,19 +227,17 @@ static void rpcCleanConnCache(void *handle, void *tmrId) {
   if (pCache == NULL || pCache->maxSessions == 0) return;
   if (pCache->pTimer != tmrId) return;
 
-  pthread_mutex_lock(&pCache->mutex);
+  std::lock_guard<std::mutex> lock(pCache->mutex);
   uint64_t time = taosGetTimestampMs();
 
   for (hash = 0; hash < pCache->maxSessions; ++hash) {
-    rpcLockCache(pCache->lockedBy+hash);
+    std::lock_guard<rpcLock> lock(pCache->lockedBy[hash]);
     pNode = pCache->connHashList[hash];
     rpcRemoveExpiredNodes(pCache, pNode, hash, time);
-    rpcUnlockCache(pCache->lockedBy+hash);
   }
 
   // tTrace("timer, total connections in cache:%d", pCache->total);
   taosTmrReset(rpcCleanConnCache, (int32_t)(pCache->keepTimer * 2), pCache, pCache->tmrCtrl, &pCache->pTimer);
-  pthread_mutex_unlock(&pCache->mutex);
 }
 
 static void rpcRemoveExpiredNodes(SConnCache *pCache, SConnHash *pNode, int hash, uint64_t time) {
@@ -270,21 +279,3 @@ static int rpcHashConn(void *handle, char *fqdn, uint16_t port, int8_t connType)
 
   return hash;
 }
-
-static void rpcLockCache(int64_t *lockedBy) {
-  int64_t tid = taosGetSelfPthreadId();
-  int     i = 0;
-  while (atomic_val_compare_exchange_64(lockedBy, 0, tid) != 0) {
-    if (++i % 100 == 0) {
-      sched_yield();
-    }
-  }
-}
-
-static void rpcUnlockCache(int64_t *lockedBy) {
-  int64_t tid = taosGetSelfPthreadId();
-  if (atomic_val_compare_exchange_64(lockedBy, tid, 0) != tid) {
-    assert(false);
-  }
-}
-

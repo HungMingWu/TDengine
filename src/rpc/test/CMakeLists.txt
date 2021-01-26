@@ -4,15 +4,15 @@ PROJECT(TDengine)
 INCLUDE_DIRECTORIES(${TD_COMMUNITY_DIR}/src/rpc/inc)
 
 IF (TD_LINUX)
-  LIST(APPEND CLIENT_SRC ./rclient.c)
+  LIST(APPEND CLIENT_SRC ./rclient.cpp)
   ADD_EXECUTABLE(rclient ${CLIENT_SRC})
   TARGET_LINK_LIBRARIES(rclient trpc)
 
-  LIST(APPEND SCLIENT_SRC ./rsclient.c)
+  LIST(APPEND SCLIENT_SRC ./rsclient.cpp)
   ADD_EXECUTABLE(rsclient ${SCLIENT_SRC})
   TARGET_LINK_LIBRARIES(rsclient trpc)
 
-  LIST(APPEND SERVER_SRC ./rserver.c)
+  LIST(APPEND SERVER_SRC ./rserver.cpp)
   ADD_EXECUTABLE(rserver ${SERVER_SRC})
   TARGET_LINK_LIBRARIES(rserver trpc)
 ENDIF ()

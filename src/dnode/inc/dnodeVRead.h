@@ -23,7 +23,5 @@ void    dnodeCleanupVRead();
 void    dnodeDispatchToVReadQueue(SRpcMsg *pMsg);
 void *  dnodeAllocVQueryQueue(void *pVnode);
 void *  dnodeAllocVFetchQueue(void *pVnode);
-void    dnodeFreeVQueryQueue(void *pQqueue);
-void    dnodeFreeVFetchQueue(void *pFqueue);
 
 #endif

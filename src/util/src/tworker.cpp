@@ -85,8 +85,3 @@ void *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
 
   return pQueue;
 }
-
-void tWorkerFreeQueue(SWorkerPool *pPool, void *pQueue) {
-  taosCloseQueue(pQueue);
-  uDebug("worker:%s, queue:%p is freed", pPool->name, pQueue);
-}

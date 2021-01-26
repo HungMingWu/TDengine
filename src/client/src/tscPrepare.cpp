@@ -12,6 +12,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+#include <string>
 #include "os.h"
 
 #include "taos.h"
@@ -19,7 +20,6 @@
 #include "tscUtil.h"
 #include "ttimer.h"
 #include "taosmsg.h"
-#include "tstrbuild.h"
 #include "tscLog.h"
 #include "tscSubquery.h"
 
@@ -188,22 +188,16 @@ static int normalStmtPrepare(STscStmt* stmt) {
   return TSDB_CODE_SUCCESS;
 }
 
-static char* normalStmtBuildSql(STscStmt* stmt) {
+static std::string normalStmtBuildSql(STscStmt* stmt) {
   SNormalStmt* normal = &stmt->normal;
-  SStringBuilder sb; memset(&sb, 0, sizeof(sb));
+  std::string sb;
 
-  if (taosStringBuilderSetJmp(&sb) != 0) {
-    taosStringBuilderDestroy(&sb);
-    return NULL;
-  }
-
-  taosStringBuilderEnsureCapacity(&sb, 4096);
   uint32_t idxParam = 0;
 
   for(uint16_t i = 0; i < normal->numParts; i++) {
     SNormalStmtPart* part = normal->parts + i;
     if (!part->isParam) {
-      taosStringBuilderAppendStringLen(&sb, part->str, part->len);
+      sb += std::string(part->str, part->len);
       continue;
     }
 
@@ -211,7 +205,7 @@ static char* normalStmtBuildSql(STscStmt* stmt) {
     switch (var->nType)
     {
     case TSDB_DATA_TYPE_NULL:
-      taosStringBuilderAppendNull(&sb);
+      sb += "null";
       break;
 
     case TSDB_DATA_TYPE_BOOL:
@@ -219,29 +213,29 @@ static char* normalStmtBuildSql(STscStmt* stmt) {
     case TSDB_DATA_TYPE_SMALLINT:
     case TSDB_DATA_TYPE_INT:
     case TSDB_DATA_TYPE_BIGINT:
-      taosStringBuilderAppendInteger(&sb, var->i64);
+      sb += std::to_string(var->i64);
       break;
 
     case TSDB_DATA_TYPE_FLOAT:
     case TSDB_DATA_TYPE_DOUBLE:
-      taosStringBuilderAppendDouble(&sb, var->dKey);
+      sb += std::to_string(var->dKey);
       break;
 
     case TSDB_DATA_TYPE_BINARY:
-      taosStringBuilderAppendChar(&sb, '\'');
+      sb += '\'';
       for (char* p = var->pz; *p != 0; ++p) {
         if (*p == '\'' || *p == '"') {
-          taosStringBuilderAppendChar(&sb, '\\');
+          sb += '\\';
         }
-        taosStringBuilderAppendChar(&sb, *p);
+        sb += *p;
       }
-      taosStringBuilderAppendChar(&sb, '\'');
+      sb += '\'';
       break;
 
     case TSDB_DATA_TYPE_NCHAR:
-      taosStringBuilderAppendChar(&sb, '\'');
-      taosStringBuilderAppend(&sb, var->wpz, var->nLen);
-      taosStringBuilderAppendChar(&sb, '\'');
+      sb += '\'';
+      sb += std::string((char *)var->wpz, var->nLen);
+      sb += '\'';
       break;
 
     default:
@@ -250,7 +244,7 @@ static char* normalStmtBuildSql(STscStmt* stmt) {
     }
   }
 
-  return taosStringBuilderGetResult(&sb, NULL);
+  return sb;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -981,17 +975,16 @@ int taos_stmt_execute(TAOS_STMT* stmt) {
   if (pStmt->isInsert) {
     ret = insertStmtExecute(pStmt);
   } else { // normal stmt query
-    char* sql = normalStmtBuildSql(pStmt);
-    if (sql == NULL) {
+    std::string sql = normalStmtBuildSql(pStmt);
+    if (sql.empty()) {
       ret = TSDB_CODE_TSC_OUT_OF_MEMORY;
     } else {
       if (pStmt->pSql != NULL) {
         taos_free_result(pStmt->pSql);
         pStmt->pSql = NULL;
       }
-      pStmt->pSql = (SSqlObj*)taos_query((TAOS*)pStmt->taos, sql);
+      pStmt->pSql = (SSqlObj*)taos_query((TAOS*)pStmt->taos, sql.c_str());
       ret = taos_errno(pStmt->pSql);
-      free(sql);
     }
   }
 
