@@ -223,12 +223,12 @@ static char *syncProcessOneBufferedFwd(SSyncPeer *pPeer, char *offset) {
 
 static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
   SSyncNode *  pNode = pPeer->pSyncNode;
-  SRecvBuffer *pRecv = pNode->pRecv;
+  auto &pRecv = pNode->pRecv;
   int32_t      forwards = 0;
 
   sDebug("%s, number of buffered forwards:%d", pPeer->id, pRecv->forwards);
 
-  char *offset = pRecv->buffer;
+  char *offset = pRecv->buffer.data();
   while (forwards < pRecv->forwards) {
     offset = syncProcessOneBufferedFwd(pPeer, offset);
     forwards++;
@@ -249,7 +249,7 @@ static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
 
 int32_t syncSaveIntoBuffer(SSyncPeer *pPeer, SWalHead *pHead) {
   SSyncNode *  pNode = pPeer->pSyncNode;
-  SRecvBuffer *pRecv = pNode->pRecv;
+  auto &pRecv = pNode->pRecv;
   int32_t len = pHead->len + sizeof(SWalHead);
 
   if (pRecv == NULL) {
@@ -257,46 +257,17 @@ int32_t syncSaveIntoBuffer(SSyncPeer *pPeer, SWalHead *pHead) {
     return -1;
   }
 
-  if (pRecv->bufferSize - (pRecv->offset - pRecv->buffer) >= len) {
+  if (pRecv->buffer.size() - (pRecv->offset - pRecv->buffer.data()) >= len) {
     memcpy(pRecv->offset, pHead, len);
     pRecv->offset += len;
     pRecv->forwards++;
     sTrace("%s, fwd is saved into queue, hver:%" PRIu64 " fwds:%d", pPeer->id, pHead->version, pRecv->forwards);
   } else {
-    sError("%s, buffer size:%d is too small", pPeer->id, pRecv->bufferSize);
+    sError("%s, buffer size:%d is too small", pPeer->id, pRecv->buffer.size());
     pRecv->code = -1;  // set error code
   }
 
   return pRecv->code;
-}
-
-static void syncCloseRecvBuffer(SSyncNode *pNode) {
-  if (pNode->pRecv) {
-    tfree(pNode->pRecv->buffer);
-  }
-
-  tfree(pNode->pRecv);
-}
-
-static int32_t syncOpenRecvBuffer(SSyncNode *pNode) {
-  syncCloseRecvBuffer(pNode);
-
-  SRecvBuffer *pRecv = (SRecvBuffer*)calloc(sizeof(SRecvBuffer), 1);
-  if (pRecv == NULL) return -1;
-
-  pRecv->bufferSize = SYNC_RECV_BUFFER_SIZE;
-  pRecv->buffer = (char*)malloc(pRecv->bufferSize);
-  if (pRecv->buffer == NULL) {
-    free(pRecv);
-    return -1;
-  }
-
-  pRecv->offset = pRecv->buffer;
-  pRecv->forwards = 0;
-
-  pNode->pRecv = pRecv;
-
-  return 0;
 }
 
 static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
@@ -368,19 +339,16 @@ void *syncRestoreData(void *param) {
 
   (*pNode->notifyRole)(pNode->vgId, TAOS_SYNC_ROLE_SYNCING);
 
-  if (syncOpenRecvBuffer(pNode) < 0) {
-    sError("%s, failed to allocate recv buffer, restart connection", pPeer->id);
-    syncRestartConnection(pPeer);
+  pNode->pRecv.reset(new SRecvBuffer);
+
+  if (syncRestoreDataStepByStep(pPeer) == 0) {
+    sInfo("%s, it is synced successfully", pPeer->id);
+    nodeRole = TAOS_SYNC_ROLE_SLAVE;
+    syncBroadcastStatus(pNode);
   } else {
-    if (syncRestoreDataStepByStep(pPeer) == 0) {
-      sInfo("%s, it is synced successfully", pPeer->id);
-      nodeRole = TAOS_SYNC_ROLE_SLAVE;
-      syncBroadcastStatus(pNode);
-    } else {
-      sError("%s, failed to restore data, restart connection", pPeer->id);
-      nodeRole = TAOS_SYNC_ROLE_UNSYNCED;
-      syncRestartConnection(pPeer);
-    }
+    sError("%s, failed to restore data, restart connection", pPeer->id);
+    nodeRole = TAOS_SYNC_ROLE_UNSYNCED;
+    syncRestartConnection(pPeer);
   }
 
   (*pNode->notifyRole)(pNode->vgId, nodeRole);
@@ -389,7 +357,7 @@ void *syncRestoreData(void *param) {
   sInfo("%s, restore data over, set sstatus:%s", pPeer->id, syncStatus[nodeSStatus]);
 
   taosClose(pPeer->syncFd);
-  syncCloseRecvBuffer(pNode);
+  pNode->pRecv.reset();
   __sync_fetch_and_sub(&tsSyncNum, 1);
 
   // The ref is obtained in both the create thread and the current thread, so it is released twice

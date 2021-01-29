@@ -1,8 +1,14 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.15)
 PROJECT(TDengine)
 
-INCLUDE_DIRECTORIES(inc)
 AUX_SOURCE_DIRECTORY(src SRC)
 
-ADD_LIBRARY(common ${SRC})
-TARGET_LINK_LIBRARIES(common tutil)
+add_library(common ${SRC})
+target_include_directories(common
+PRIVATE
+	inc
+)
+target_link_libraries(common 
+PRIVATE
+	tutil
+)

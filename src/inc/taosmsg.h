@@ -16,7 +16,6 @@
 #ifndef TDENGINE_TAOSMSG_H
 #define TDENGINE_TAOSMSG_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "taosdef.h"

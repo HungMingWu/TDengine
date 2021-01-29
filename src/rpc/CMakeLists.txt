@@ -1,10 +1,22 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.15)
 PROJECT(TDengine)
 
-INCLUDE_DIRECTORIES(inc)
 AUX_SOURCE_DIRECTORY(src SRC)
 
-ADD_LIBRARY(trpc ${SRC})
-TARGET_LINK_LIBRARIES(trpc tutil lz4 common)
+add_library(trpc ${SRC})
 
-ADD_SUBDIRECTORY(test)
+target_link_libraries(trpc 
+PRIVATE
+	tutil
+	lz4
+	common
+)
+
+target_include_directories(trpc
+PUBLIC
+	inc
+)
+
+IF (TD_LINUX)
+add_subdirectory(test)
+ENDIF ()

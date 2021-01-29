@@ -487,7 +487,6 @@ static void syncFreeNode(void *param) {
   SSyncNode *pNode = static_cast<SSyncNode *>(param);
   sDebug("vgId:%d, node is freed, refCount:%d", pNode->vgId, pNode->refCount);
 
-  tfree(pNode->pRecv);
   tfree(pNode->pSyncFwds);
   delete pNode;
 }

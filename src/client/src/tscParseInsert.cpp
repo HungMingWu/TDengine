@@ -18,6 +18,7 @@
 
 #define _XOPEN_SOURCE
 
+#include <vector>
 #include "os.h"
 
 #include "ttype.h"
@@ -1474,7 +1475,7 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
   }
 
   tscAllocateMemIfNeed(pTableDataBlock, tinfo.rowSize, &maxRows);
-  char *tokenBuf = (char*)calloc(1, 4096);
+  std::vector<char> tokenBuf(4096);
 
   while ((readLen = tgetline(&line, &n, fp)) != -1) {
     if (('\r' == line[readLen - 1]) || ('\n' == line[readLen - 1])) {
@@ -1488,7 +1489,7 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
     char *lineptr = line;
     strtolower(line, line);
 
-    int32_t len = tsParseOneRowData(&lineptr, pTableDataBlock, pSchema, &spd, pCmd, tinfo.precision, &code, tokenBuf);
+    int32_t len = tsParseOneRowData(&lineptr, pTableDataBlock, pSchema, &spd, pCmd, tinfo.precision, &code, tokenBuf.data());
     if (len <= 0 || pTableDataBlock->numOfParams > 0) {
       pSql->res.code = code;
       break;
@@ -1501,7 +1502,6 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
     }
   }
 
-  tfree(tokenBuf);
   free(line);
 
   if (count > 0) {

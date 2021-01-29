@@ -1,13 +1,13 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.15)
 PROJECT(TDengine)
 
-INCLUDE_DIRECTORIES(${TD_COMMUNITY_DIR}/src/mnode/inc)
-INCLUDE_DIRECTORIES(${TD_COMMUNITY_DIR}/src/dnode/inc)
-INCLUDE_DIRECTORIES(${TD_COMMUNITY_DIR}/src/tsdb/inc)
-INCLUDE_DIRECTORIES(${TD_ENTERPRISE_DIR}/src/inc)
-INCLUDE_DIRECTORIES(inc)
-AUX_SOURCE_DIRECTORY(src SRC)
+add_library(balance 
+  src/bnMain.cpp
+  src/bnScore.cpp
+  src/bnThread.cpp)
 
-IF (TD_LINUX)
-  ADD_LIBRARY(balance ${SRC})
-ENDIF ()
+target_include_directories(balance
+PRIVATE
+	inc
+	../mnode/inc
+)

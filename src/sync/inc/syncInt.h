@@ -16,7 +16,9 @@
 #ifndef TDENGINE_SYNC_INT_H
 #define TDENGINE_SYNC_INT_H
 
+#include <memory>
 #include <mutex>
+#include <vector>
 #include "syncMsg.h"
 #include "twal.h"
 
@@ -31,7 +33,7 @@
 #define SYNC_MAX_NUM 2
 
 #define SYNC_MAX_SIZE (TSDB_MAX_WAL_SIZE + sizeof(SWalHead) + sizeof(SSyncHead) + 16)
-#define SYNC_RECV_BUFFER_SIZE (5*1024*1024)
+static constexpr size_t SYNC_RECV_BUFFER_SIZE = 5 * 1024 * 1024;
 
 #define SYNC_MAX_FWDS 512
 #define SYNC_FWD_TIMER 300
@@ -43,13 +45,14 @@
 #define nodeVersion pNode->peerInfo[pNode->selfIndex]->version
 #define nodeSStatus pNode->peerInfo[pNode->selfIndex]->sstatus
 
-typedef struct {
-  char *  buffer;
-  int32_t bufferSize;
+struct SRecvBuffer {
+  std::vector<char> buffer;
   char *  offset;
-  int32_t forwards;
-  int32_t code;
-} SRecvBuffer;
+  int32_t forwards = 0;
+  int32_t code = 0;
+  SRecvBuffer() : buffer(SYNC_RECV_BUFFER_SIZE), offset(buffer.data()) {}
+  ~SRecvBuffer() = default;
+};
 
 typedef struct {
   uint64_t  version;
@@ -102,7 +105,7 @@ typedef struct SSyncNode {
   int64_t      rid;
   SSyncPeer *  peerInfo[TAOS_SYNC_MAX_REPLICA + 1];  // extra one for arbitrator
   SSyncPeer *  pMaster;
-  SRecvBuffer *pRecv;
+  std::unique_ptr<SRecvBuffer> pRecv;
   SSyncFwds *  pSyncFwds;  // saved forward info if quorum >1
   void *       pFwdTimer;
   void *       pRoleTimer;
