@@ -108,16 +108,12 @@ typedef struct HttpParser {
   int16_t httpCode;
   int32_t parseCode;
 } HttpParser;
-#ifdef __cplusplus
-extern "C" {
-#endif
+
 void        httpInitParser(HttpParser *parser);
 HttpParser *httpCreateParser(struct HttpContext *pContext);
 void        httpClearParser(HttpParser *parser);
 void        httpDestroyParser(HttpParser *parser);
 int32_t     httpParseBuf(HttpParser *parser, const char *buf, int32_t len);
 char *      httpGetStatusDesc(int32_t statusCode);
-#ifdef __cplusplus
-}
-#endif
+
 #endif

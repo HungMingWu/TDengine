@@ -111,11 +111,11 @@ static int32_t httpAppendString(HttpString *str, const char *s, int32_t len) {
   if (str->size == 0) {
     str->pos = 0;
     str->size = 64;
-    str->str = malloc(str->size);
+    str->str = (char*)malloc(str->size);
   } else if (str->pos + len + 1 >= str->size) {
     str->size += len;
     str->size *= 4;
-    str->str = realloc(str->str, str->size);
+    str->str = (char*)realloc(str->str, str->size);
   } else {
   }
 
@@ -333,7 +333,7 @@ static int32_t httpOnBody(HttpParser *parser, const char *chunk, int32_t len) {
 
   if (buf->size <= 0) {
     buf->size = MIN(len + 2, HTTP_BUFFER_SIZE);
-    buf->str = malloc(buf->size);
+    buf->str = (char*)malloc(buf->size);
   }
 
   int32_t newSize = buf->pos + len + 1;
@@ -347,7 +347,7 @@ static int32_t httpOnBody(HttpParser *parser, const char *chunk, int32_t len) {
     newSize = MAX(newSize, HTTP_BUFFER_INIT);
     newSize *= 4;
     newSize = MIN(newSize, HTTP_BUFFER_SIZE);
-    buf->str = realloc(buf->str, newSize);
+    buf->str = (char*)realloc(buf->str, newSize);
     buf->size = newSize;
     
     if (buf->str == NULL) {
@@ -380,7 +380,7 @@ static HTTP_PARSER_STATE httpTopStack(HttpParser *parser) {
   HttpStack *stack = &parser->stacks;
   ASSERT(stack->pos >= 1);
 
-  return stack->stacks[stack->pos - 1];
+  return (HTTP_PARSER_STATE)stack->stacks[stack->pos - 1];
 }
 
 static int32_t httpPushStack(HttpParser *parser, HTTP_PARSER_STATE state) {
@@ -388,10 +388,10 @@ static int32_t httpPushStack(HttpParser *parser, HTTP_PARSER_STATE state) {
   if (stack->size == 0) {
     stack->pos = 0;
     stack->size = 32;
-    stack->stacks = malloc(stack->size * sizeof(int8_t));
+    stack->stacks = (int8_t*)malloc(stack->size * sizeof(int8_t));
   } else if (stack->pos + 1 > stack->size) {
     stack->size *= 2;
-    stack->stacks = realloc(stack->stacks, stack->size * sizeof(int8_t));
+    stack->stacks = (int8_t*)realloc(stack->stacks, stack->size * sizeof(int8_t));
   } else {
   }
 
@@ -468,7 +468,7 @@ void httpInitParser(HttpParser *parser) {
 }
 
 HttpParser *httpCreateParser(HttpContext *pContext) {
-  HttpParser *parser = calloc(1, sizeof(HttpParser));
+  auto parser = new HttpParser;
   if (!parser) return NULL;
   httpTrace("context:%p, fd:%d, create parser", pContext, pContext->fd);
 
@@ -519,7 +519,7 @@ char *httpDecodeUrl(const char *enc) {
   int32_t ok = 1;
   HttpString str = {0};
   while (*enc) {
-    char *p = strchr(enc, '%');
+    const char *p = strchr(enc, '%');
     if (!p) break;
     int32_t hex, cnt;
     int32_t n = sscanf(p+1, "%2x%n", &hex, &cnt);

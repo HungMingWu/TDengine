@@ -16,10 +16,6 @@
 #ifndef TDENGINE_HTTP_QUEUE_H
 #define TDENGINE_HTTP_QUEUE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 
 typedef void (*FHttpResultFp)(void *param, void *result, int32_t code, int32_t rows);
@@ -27,9 +23,5 @@ typedef void (*FHttpResultFp)(void *param, void *result, int32_t code, int32_t r
 bool httpInitResultQueue();
 void httpCleanupResultQueue();
 void httpDispatchToResultQueue(void *param, TAOS_RES *result, int32_t code, int32_t rows, FHttpResultFp fp);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

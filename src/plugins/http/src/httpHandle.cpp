@@ -34,7 +34,7 @@ bool httpDecodeRequest(HttpContext* pContext) {
 bool httpProcessData(HttpContext* pContext) {
   if (!httpAlterContextState(pContext, HTTP_CONTEXT_STATE_READY, HTTP_CONTEXT_STATE_HANDLING)) {
     httpTrace("context:%p, fd:%d, state:%s not in ready state, stop process request", pContext, pContext->fd,
-              httpContextStateStr(pContext->state));
+              httpContextStateStr((HttpContextState)pContext->state));
     httpCloseContextByApp(pContext);
     return false;
   }

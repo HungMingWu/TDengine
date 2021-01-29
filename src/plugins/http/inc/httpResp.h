@@ -32,14 +32,9 @@ enum _httpRespTempl {
 
 extern const char *httpRespTemplate[];
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 void httpSendErrorResp(HttpContext *pContext, int32_t errNo);
 void httpSendTaosdInvalidSqlErrorResp(HttpContext *pContext, char *errMsg);
 void httpSendSuccResp(HttpContext *pContext, char *desc);
 void httpSendOptionResp(HttpContext *pContext, char *desc);
-#ifdef __cplusplus
-}
-#endif
+
 #endif

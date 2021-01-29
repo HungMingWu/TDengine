@@ -19,10 +19,6 @@
 #include "httpJson.h"
 #include "taos.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void gcInitQueryJson(HttpContext *pContext);
 void gcCleanQueryJson(HttpContext *pContext);
 
@@ -31,7 +27,5 @@ void gcStopQueryJson(HttpContext *pContext, HttpSqlCmd *cmd);
 bool gcBuildQueryJson(HttpContext *pContext, HttpSqlCmd *cmd, TAOS_RES *result, int32_t numOfRows);
 
 void gcSendHeartBeatResp(HttpContext *pContext, HttpSqlCmd *cmd);
-#ifdef __cplusplus
-}
-#endif
+
 #endif

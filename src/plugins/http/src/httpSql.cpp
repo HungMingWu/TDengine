@@ -409,7 +409,6 @@ void httpProcessRequestCb(void *param, TAOS_RES *result, int32_t code) {
   }
 }
 
-extern "C"
 void httpProcessRequest(HttpContext *pContext) {
   httpGetSession(pContext);
 

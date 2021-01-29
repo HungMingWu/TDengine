@@ -56,7 +56,6 @@ static void httpStopThread(HttpThread* pThread) {
   pthread_mutex_destroy(&(pThread->threadMutex));
 }
 
-extern "C"
 void httpCleanUpConnect() {
   HttpServer *pServer = &tsHttpServer;
   if (pServer->pThreads == NULL) return;
@@ -247,7 +246,6 @@ static void *httpAcceptHttpConnection(void *arg) {
   return NULL;
 }
 
-extern "C"
 bool httpInitConnect() {
   HttpServer *pServer = &tsHttpServer;
   pServer->pThreads = (HttpThread*)calloc(pServer->numOfThreads, sizeof(HttpThread));

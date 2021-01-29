@@ -16,10 +16,6 @@
 #ifndef TDENGINE_HTTP_SQL_H
 #define TDENGINE_HTTP_SQL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t httpAddToSqlCmdBuffer(HttpContext *pContext, const char *const format, ...);
 int32_t httpAddToSqlCmdBufferNoTerminal(HttpContext *pContext, const char *const format, ...);
 int32_t httpAddToSqlCmdBufferWithSize(HttpContext *pContext, int32_t mallocSize);
@@ -37,7 +33,5 @@ int32_t     httpCurSqlCmdPos(HttpContext *pContext);
 void    httpTrimTableName(char *name);
 int32_t httpShrinkTableName(HttpContext *pContext, int32_t pos, char *name);
 char *  httpGetCmdsString(HttpContext *pContext, int32_t pos);
-#ifdef __cplusplus
-}
-#endif
+
 #endif

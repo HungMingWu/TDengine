@@ -35,7 +35,7 @@ void httpCreateSession(HttpContext *pContext, void *taos) {
   session.refCount = 1;
   int32_t len = snprintf(session.id, HTTP_SESSION_ID_LEN, "%s.%s", pContext->user, pContext->pass);
 
-  pContext->session = taosCachePut(server->sessionCache, session.id, len, &session, sizeof(HttpSession), tsHttpSessionExpire * 1000);
+  pContext->session = (HttpSession*)taosCachePut((SCacheObj*)server->sessionCache, session.id, len, &session, sizeof(HttpSession), tsHttpSessionExpire * 1000);
   // void *temp = pContext->session;
   // taosCacheRelease(server->sessionCache, (void **)&temp, false);
 
@@ -59,7 +59,7 @@ static void httpFetchSessionImp(HttpContext *pContext) {
   char sessionId[HTTP_SESSION_ID_LEN];
   int32_t len = snprintf(sessionId, HTTP_SESSION_ID_LEN, "%s.%s", pContext->user, pContext->pass);
 
-  pContext->session = taosCacheAcquireByKey(server->sessionCache, sessionId, len);
+  pContext->session = (HttpSession*)taosCacheAcquireByKey((SCacheObj *)server->sessionCache, sessionId, len);
   if (pContext->session != NULL) {
     atomic_add_fetch_32(&pContext->session->refCount, 1);
     httpDebug("context:%p, fd:%d, user:%s, find an exist session:%p:%p, sessionRef:%d", pContext, pContext->fd,
@@ -90,12 +90,12 @@ void httpReleaseSession(HttpContext *pContext) {
   httpDebug("context:%p, release session:%p:%p, sessionRef:%d", pContext, pContext->session, pContext->session->taos,
             pContext->session->refCount);
 
-  taosCacheRelease(tsHttpServer.sessionCache, (void **)&pContext->session, false);
+  taosCacheRelease((SCacheObj*)tsHttpServer.sessionCache, (void **)&pContext->session, false);
   pContext->session = NULL;
 }
 
 static void httpDestroySession(void *data) {
-  HttpSession *session = data;
+  HttpSession *session = (HttpSession *)data;
   httpDebug("session:%p:%p, is destroyed, sessionRef:%d", session, session->taos, session->refCount);
 
   if (session->taos != NULL) {
@@ -106,9 +106,9 @@ static void httpDestroySession(void *data) {
 
 void httpCleanUpSessions() {
   if (tsHttpServer.sessionCache != NULL) {
-    SCacheObj *cache = tsHttpServer.sessionCache;
+    SCacheObj *cache = (SCacheObj *)tsHttpServer.sessionCache;
     httpInfo("session cache is cleanuping, size:%d", taosHashGetSize(cache->pHashTable));
-    taosCacheCleanup(tsHttpServer.sessionCache);
+    taosCacheCleanup(cache);
     tsHttpServer.sessionCache = NULL;
   }
 }

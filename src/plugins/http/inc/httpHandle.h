@@ -15,13 +15,7 @@
 
 #ifndef TDENGINE_HTTP_HANDLE_H
 #define TDENGINE_HTTP_HANDLE_H
-#ifdef __cplusplus
-extern "C" {
-#endif
 // http request handler
 void httpProcessRequest(HttpContext *pContext);
 bool httpProcessData(HttpContext *pContext);
-#ifdef __cplusplus
-}
-#endif
 #endif
