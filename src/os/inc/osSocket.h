@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_SOCKET_H
 #define TDENGINE_OS_SOCKET_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_FUNC_SOCKET_OP
   #define taosSend(sockfd, buf, len, flags) send(sockfd, buf, len, flags)
   #define taosSendto(sockfd, buf, len, flags, dest_addr, addrlen) sendto(sockfd, buf, len, flags, dest_addr, addrlen)
@@ -68,9 +64,5 @@ int32_t taosSetSockOpt(SOCKET socketfd, int32_t level, int32_t optname, void *op
 // TAOS_OS_FUNC_SOCKET_INET
 uint32_t    taosInetAddr(char *ipAddr);
 const char *taosInetNtoa(struct in_addr ipInt);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

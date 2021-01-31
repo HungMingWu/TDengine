@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TAST_H
 #define TDENGINE_TAST_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 
 #include "taosmsg.h"
@@ -86,9 +82,5 @@ void tExprNodeDestroy(tExprNode *pNode, void (*fp)(void *));
 void tExprTreeDestroy(tExprNode **pExprs, void (*fp)(void*));
 
 bool exprTreeApplayFilter(tExprNode *pExpr, const void *pItem, SExprTraverseSupp *param);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TAST_H

@@ -16,10 +16,7 @@
 #ifndef TDENGINE_TSCLOCALMERGE_H
 #define TDENGINE_TSCLOCALMERGE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#include <memory>
 #include "qExtbuffer.h"
 #include "qFill.h"
 #include "taosmsg.h"
@@ -56,7 +53,7 @@ typedef struct SLocalReducer {
   SColumnModel *         resColModel;
   SColumnModel*          finalModel;
   tExtMemBuffer **       pExtMemBuffer;      // disk-based buffer
-  SFillInfo*             pFillInfo;          // interpolation support structure
+  std::unique_ptr<SFillInfo>             pFillInfo;          // interpolation support structure
   char*                  pFinalRes;          // result data after interpo
   tFilePage*             discardData;
   bool                   discard;
@@ -95,9 +92,5 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
 void tscDestroyLocalReducer(SSqlObj *pSql);
 
 int32_t tscDoLocalMerge(SSqlObj *pSql);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCLOCALMERGE_H

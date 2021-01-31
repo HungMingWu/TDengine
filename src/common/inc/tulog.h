@@ -16,10 +16,6 @@
 #ifndef TDENGINE_COMMON_ULOG_H
 #define TDENGINE_COMMON_ULOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 
 extern int32_t uDebugFlag;
@@ -34,9 +30,5 @@ extern int8_t  tscEmbedded;
 
 #define pError(...) { taosPrintLog("APP ERROR ", 255, __VA_ARGS__); }  
 #define pPrint(...) { taosPrintLog("APP ", 255, __VA_ARGS__); }  
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

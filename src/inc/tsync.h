@@ -16,10 +16,6 @@
 #ifndef TDENGINE_SYNC_H
 #define TDENGINE_SYNC_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define TAOS_SYNC_MAX_REPLICA 5
 #define TAOS_SYNC_MAX_INDEX   0x7FFFFFFF
 
@@ -122,9 +118,5 @@ extern const char *syncRole[];
 extern int32_t  sDebugFlag;
 extern char     tsArbitrator[];
 extern uint16_t tsSyncPort;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_SYNC_H

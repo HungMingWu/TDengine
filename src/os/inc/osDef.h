@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_DEF_H
 #define TDENGINE_OS_DEF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef STDERR_FILENO
 #define STDERR_FILENO (2)
 #endif
@@ -95,10 +91,6 @@ extern "C" {
   #define threadlocal __thread
 #else
   #define threadlocal
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif

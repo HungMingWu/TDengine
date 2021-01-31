@@ -16,10 +16,6 @@
 #ifndef TAOS_QUEUE_H
 #define TAOS_QUEUE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
 
 This set of API for queue is designed specially for vnode/mnode. The main purpose is to 
@@ -54,7 +50,7 @@ int        taosReadAllQitems(taos_queue, taos_qall);
 int        taosGetQitem(taos_qall, int *type, void **pitem);
 void       taosResetQitems(taos_qall);
 
-taos_qset  taosOpenQset();
+taos_qset  taosOpenQset(taos_qset qset);
 void       taosCloseQset();
 void       taosQsetThreadResume(taos_qset param);
 int        taosAddIntoQset(taos_qset, taos_queue, void *ahandle);
@@ -66,10 +62,6 @@ int        taosReadAllQitemsFromQset(taos_qset, taos_qall, void **handle);
 
 int        taosGetQueueItemsNumber(taos_queue param);
 int        taosGetQsetItemsNumber(taos_qset param);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
 

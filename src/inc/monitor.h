@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MONITOR_H
 #define TDENGINE_MONITOR_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 
 typedef struct {
@@ -54,9 +50,5 @@ void    monCleanupSystem();
 void    monSaveAcctLog(SAcctMonitorObj *pMonObj);
 void    monSaveLog(int32_t level, const char *const format, ...);
 void    monExecuteSQL(char *sql);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

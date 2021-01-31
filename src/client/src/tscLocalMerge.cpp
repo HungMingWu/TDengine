@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <vector>
 #include "tscLocalMerge.h"
 #include "tscSubquery.h"
 #include "os.h"
@@ -132,12 +133,12 @@ static void tscInitSqlContext(SSqlCmd *pCmd, SLocalReducer *pReducer, tOrderDesc
   }
 }
 
-static SFillColInfo* createFillColInfo(SQueryInfo* pQueryInfo) {
+static std::vector<SFillColInfo> createFillColInfo(SQueryInfo* pQueryInfo) {
   int32_t numOfCols = (int32_t)tscNumOfFields(pQueryInfo);
   int32_t offset = 0;
   
-  SFillColInfo* pFillCol = (SFillColInfo*)calloc(numOfCols, sizeof(SFillColInfo));
-  for(int32_t i = 0; i < numOfCols; ++i) {
+  std::vector<SFillColInfo> pFillCol(numOfCols);
+  for (int32_t i = 0; i < numOfCols; ++i) {
     SInternalField* pIField = (SInternalField*)taosArrayGet(pQueryInfo->fieldsInfo.internalField, i);
 
     if (pIField->pArithExprInfo == NULL) {
@@ -382,10 +383,10 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
   int64_t revisedSTime = taosTimeTruncate(stime, &pQueryInfo->interval, tinfo.precision);
   
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {
-    SFillColInfo* pFillCol = createFillColInfo(pQueryInfo);
-    pReducer->pFillInfo = taosInitFillInfo(pQueryInfo->order.order, revisedSTime, pQueryInfo->groupbyExpr.numOfGroupCols,
+    auto pFillCol = createFillColInfo(pQueryInfo);
+    pReducer->pFillInfo.reset(new SFillInfo(pQueryInfo->order.order, revisedSTime, pQueryInfo->groupbyExpr.numOfGroupCols,
                                            4096, (int32_t)pQueryInfo->fieldsInfo.numOfOutput, pQueryInfo->interval.sliding, pQueryInfo->interval.slidingUnit,
-                                           tinfo.precision, pQueryInfo->fillType, pFillCol, pSql);
+                                           tinfo.precision, pQueryInfo->fillType, std::move(pFillCol), pSql));
   }
 }
 
@@ -493,7 +494,7 @@ void tscDestroyLocalReducer(SSqlObj *pSql) {
   // there is no more result, so we release all allocated resource
   SLocalReducer *pLocalReducer = (SLocalReducer *)atomic_exchange_ptr(&pRes->pLocalReducer, NULL);
   if (pLocalReducer != NULL) {
-    pLocalReducer->pFillInfo = (SFillInfo*)taosDestroyFillInfo(pLocalReducer->pFillInfo);
+    pLocalReducer->pFillInfo.reset();
 
     if (pLocalReducer->pCtx != NULL) {
       int32_t numOfExprs = (int32_t) tscSqlExprNumOfExprs(pQueryInfo);
@@ -870,7 +871,7 @@ void savePrevRecordAndSetupFillInfo(SLocalReducer *pLocalReducer, SQueryInfo *pQ
     int64_t stime = (pQueryInfo->window.skey < pQueryInfo->window.ekey) ? pQueryInfo->window.skey : pQueryInfo->window.ekey;
     int64_t revisedSTime = taosTimeTruncate(stime, &pQueryInfo->interval, tinfo.precision);
   
-    taosResetFillInfo(pFillInfo, revisedSTime);
+    pFillInfo->reset(revisedSTime);
   }
 
   pLocalReducer->discard = true;
@@ -926,7 +927,7 @@ static void genFinalResWithoutFill(SSqlRes* pRes, SLocalReducer *pLocalReducer, 
     tColModelCompact(pLocalReducer->finalModel, pBeforeFillData, prevSize);
 
     // set remain data to be discarded, and reset the interpolation information
-    savePrevRecordAndSetupFillInfo(pLocalReducer, pQueryInfo, pLocalReducer->pFillInfo);
+    savePrevRecordAndSetupFillInfo(pLocalReducer, pQueryInfo, pLocalReducer->pFillInfo.get());
   }
 
   memcpy(pRes->data, pBeforeFillData->data, (size_t)(pRes->numOfRows * pLocalReducer->finalModel->rowSize));
@@ -945,7 +946,7 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
   
   tFilePage  *pBeforeFillData = pLocalReducer->pResultBuf;
   SQueryInfo *pQueryInfo = tscGetQueryInfoDetail(pCmd, pCmd->clauseIndex);
-  SFillInfo  *pFillInfo = pLocalReducer->pFillInfo;
+  auto &      pFillInfo = pLocalReducer->pFillInfo;
 
   // todo extract function
   int64_t actualETime = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.ekey: pQueryInfo->window.skey;
@@ -957,7 +958,7 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
   }
 
   while (1) {
-    int64_t newRows = taosFillResultDataBlock(pFillInfo, pResPages, pLocalReducer->resColModel->capacity);
+    int64_t newRows = pFillInfo->fillResultDataBlock(pResPages, pLocalReducer->resColModel->capacity);
 
     if (pQueryInfo->limit.offset < newRows) {
       newRows -= pQueryInfo->limit.offset;
@@ -979,13 +980,13 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
       pQueryInfo->limit.offset -= newRows;
       pRes->numOfRows = 0;
 
-      if (!taosFillHasMoreResults(pFillInfo)) {
+      if (!pFillInfo->hasMoreResults()) {
         if (!doneOutput) { // reduce procedure has not completed yet, but current results for fill are exhausted
           break;
         }
 
         // all output in current group are completed
-        int32_t totalRemainRows = (int32_t)getNumOfResultsAfterFillGap(pFillInfo, actualETime, pLocalReducer->resColModel->capacity);
+        int32_t totalRemainRows = (int32_t)pFillInfo->getNumOfResultsAfterFillGap(actualETime, pLocalReducer->resColModel->capacity);
         if (totalRemainRows <= 0) {
           break;
         }
@@ -1003,7 +1004,7 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
       assert(pRes->numOfRows >= 0);
 
       /* set remain data to be discarded, and reset the interpolation information */
-      savePrevRecordAndSetupFillInfo(pLocalReducer, pQueryInfo, pFillInfo);
+      savePrevRecordAndSetupFillInfo(pLocalReducer, pQueryInfo, pFillInfo.get());
     }
 
     int32_t offset = 0;
@@ -1276,12 +1277,12 @@ bool genFinalResults(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool noMoreCur
   if (pQueryInfo->interval.interval == 0 || pQueryInfo->fillType == TSDB_FILL_NONE) {
     genFinalResWithoutFill(pRes, pLocalReducer, pQueryInfo);
   } else {
-    SFillInfo* pFillInfo = pLocalReducer->pFillInfo;
+    auto &pFillInfo = pLocalReducer->pFillInfo;
     if (pFillInfo != NULL) {
       TSKEY ekey = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.ekey: pQueryInfo->window.skey;
 
-      taosFillSetStartInfo(pFillInfo, (int32_t)pResBuf->num, ekey);
-      taosFillCopyInputDataFromOneFilePage(pFillInfo, pResBuf);
+      pFillInfo->fillSetStartInfo((int32_t)pResBuf->num, ekey);
+      pFillInfo->fillCopyInputDataFromOneFilePage(pResBuf);
     }
     
     doFillResult(pSql, pLocalReducer, noMoreCurrentGroupRes);
@@ -1320,7 +1321,7 @@ static void resetEnvForNewResultset(SSqlRes *pRes, SSqlCmd *pCmd, SLocalReducer 
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {
     TSKEY skey = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.skey:pQueryInfo->window.ekey;//MIN(pQueryInfo->window.skey, pQueryInfo->window.ekey);
     int64_t newTime = taosTimeTruncate(skey, &pQueryInfo->interval, tinfo.precision);
-    taosResetFillInfo(pLocalReducer->pFillInfo, newTime);
+    pLocalReducer->pFillInfo->reset(newTime);
   }
 }
 
@@ -1334,16 +1335,16 @@ static bool doBuildFilledResultForGroup(SSqlObj *pSql) {
 
   SQueryInfo *pQueryInfo = tscGetQueryInfoDetail(pCmd, pCmd->clauseIndex);
   SLocalReducer *pLocalReducer = pRes->pLocalReducer;
-  SFillInfo *pFillInfo = pLocalReducer->pFillInfo;
+  auto &pFillInfo = pLocalReducer->pFillInfo;
 
-  if (pFillInfo != NULL && taosFillHasMoreResults(pFillInfo)) {
+  if (pFillInfo != NULL && pFillInfo->hasMoreResults()) {
     assert(pQueryInfo->fillType != TSDB_FILL_NONE);
 
     tFilePage *pFinalDataBuf = pLocalReducer->pResultBuf;
     int64_t etime = *(int64_t *)(pFinalDataBuf->data + TSDB_KEYSIZE * (pFillInfo->numOfRows - 1));
 
     // the first column must be the timestamp column
-    int32_t rows = (int32_t) getNumOfResultsAfterFillGap(pFillInfo, etime, pLocalReducer->resColModel->capacity);
+    int32_t rows = (int32_t)pFillInfo->getNumOfResultsAfterFillGap(etime, pLocalReducer->resColModel->capacity);
     if (rows > 0) {  // do fill gap
       doFillResult(pSql, pLocalReducer, false);
     }
@@ -1359,7 +1360,7 @@ static bool doHandleLastRemainData(SSqlObj *pSql) {
   SSqlRes *pRes = &pSql->res;
 
   SLocalReducer *pLocalReducer = pRes->pLocalReducer;
-  SFillInfo     *pFillInfo = pLocalReducer->pFillInfo;
+  auto &pFillInfo = pLocalReducer->pFillInfo;
 
   bool prevGroupCompleted = (!pLocalReducer->discard) && pLocalReducer->hasUnprocessedRow;
 
@@ -1372,7 +1373,7 @@ static bool doHandleLastRemainData(SSqlObj *pSql) {
       ((pRes->numOfRowsGroup < pQueryInfo->limit.limit && pQueryInfo->limit.limit > 0) || (pQueryInfo->limit.limit < 0))) {
       int64_t etime = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.ekey : pQueryInfo->window.skey;
 
-      int32_t rows = (int32_t)getNumOfResultsAfterFillGap(pFillInfo, etime, pLocalReducer->resColModel->capacity);
+      int32_t rows = (int32_t)pFillInfo->getNumOfResultsAfterFillGap(etime, pLocalReducer->resColModel->capacity);
       if (rows > 0) {
         doFillResult(pSql, pLocalReducer, true);
       }

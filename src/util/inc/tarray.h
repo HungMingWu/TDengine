@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TAOSARRAY_H
 #define TDENGINE_TAOSARRAY_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 
 #define TARRAY_MIN_SIZE 8
@@ -158,9 +154,5 @@ void* taosArraySearch(const SArray* pArray, const void* key, __compar_fn_t compa
  * @param key
  */
 char* taosArraySearchString(const SArray* pArray, const char* key, __compar_fn_t comparFn);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TAOSARRAY_H

@@ -18,10 +18,6 @@
 
 #include "osString.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
   TAOS_ALLOC_MODE_DEFAULT = 0,
   TAOS_ALLOC_MODE_RANDOM_FAIL = 1,
@@ -80,9 +76,5 @@ void   taosTMemset(void *ptr, int c);
     // #define tgetline(lineptr, n, stream) taos_getline(lineptr, n, stream, __FILE__, __LINE__)
   #endif  
 #endif 
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -155,7 +155,6 @@ static void bnDiscardVnode(SVgObj *pVgroup, SVnodeGid *pVnodeGid) {
   mnodeUpdateVgroup(pVgroup);
 }
 
-extern "C"
 int32_t bnAllocVnodes(SVgObj *pVgroup) {
   int32_t dnode = 0;
   int32_t vnodes = 0;
@@ -390,7 +389,6 @@ static bool bnMonitorBalance() {
 // 1. reset balanceAccessSquence to zero
 // 2. reset state of dnodes to offline
 // 3. reset lastAccess of dnodes to zero
-extern "C"
 void bnReset() {
   void *     pIter = NULL;
   SDnodeObj *pDnode = NULL;
@@ -601,7 +599,6 @@ void bnCleanUp() {
   bnCleanupDnodes();
 }
 
-extern "C"
 int32_t bnDropDnode(SDnodeObj *pDnode) {
   int32_t    totalFreeVnodes = 0;
   void *     pIter = NULL;
@@ -660,7 +657,6 @@ static void bnMonitorDnodeModule() {
   }
 }
 
-extern "C"
 int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnodeId) {
   if (!sdbIsMaster()) {
     mError("dnode:%d, failed to alter vgId:%d to dnode:%d, for self not master", pSrcDnode->dnodeId, vnodeId, dnodeId);

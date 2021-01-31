@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_ATOMIC_H
 #define TDENGINE_OS_ATOMIC_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_FUNC_ATOMIC
   #define atomic_load_8(ptr) __atomic_load_n((ptr), __ATOMIC_SEQ_CST)
   #define atomic_load_16(ptr) __atomic_load_n((ptr), __ATOMIC_SEQ_CST)
@@ -104,10 +100,6 @@ extern "C" {
   #define atomic_fetch_xor_32(ptr, val) __atomic_fetch_xor((ptr), (val), __ATOMIC_SEQ_CST)
   #define atomic_fetch_xor_64(ptr, val) __atomic_fetch_xor((ptr), (val), __ATOMIC_SEQ_CST)
   #define atomic_fetch_xor_ptr(ptr, val) __atomic_fetch_xor((ptr), (val), __ATOMIC_SEQ_CST)
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif

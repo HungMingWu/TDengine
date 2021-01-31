@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_SEMPHONE_H
 #define TDENGINE_OS_SEMPHONE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_FUNC_SEMPHONE
   #define tsem_t sem_t
   #define tsem_init sem_init
@@ -36,9 +32,5 @@ void    taosResetPthread(pthread_t* thread);
 bool    taosComparePthread(pthread_t first, pthread_t second);
 int32_t taosGetPId();
 int32_t taosGetCurrentAPPName(char* name, int32_t* len);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSOCKET_H
 #define TDENGINE_TSOCKET_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t taosReadn(SOCKET sock, char *buffer, int32_t len);
 int32_t taosWriteMsg(SOCKET fd, void *ptr, int32_t nbytes);
 int32_t taosReadMsg(SOCKET fd, void *ptr, int32_t nbytes);
@@ -36,9 +32,5 @@ int32_t  taosGetFqdn(char *);
 uint32_t taosGetIpv4FromFqdn(const char *);
 void     tinet_ntoa(char *ipstr, uint32_t ip);
 uint32_t ip2uint(const char *const ip_addr);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSOCKET_H

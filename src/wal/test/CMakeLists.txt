@@ -4,7 +4,7 @@ PROJECT(TDengine)
 IF (TD_LINUX)
   INCLUDE_DIRECTORIES(../inc)
 
-  LIST(APPEND WALTEST_SRC ./waltest.c)
+  LIST(APPEND WALTEST_SRC ./waltest.cpp)
   ADD_EXECUTABLE(waltest ${WALTEST_SRC})
   TARGET_LINK_LIBRARIES(waltest twal osdetail tutil)
 

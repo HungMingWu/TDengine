@@ -120,7 +120,6 @@ void bnStartTimer(int64_t mseconds) {
   }
 }
 
-extern "C" 
 void bnNotify() {
   bnStartTimer(500); 
 }

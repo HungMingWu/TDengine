@@ -16,10 +16,6 @@
 #ifndef TDENGINE_QPERCENTILE_H
 #define TDENGINE_QPERCENTILE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "qExtbuffer.h"
 #include "qResultbuf.h"
 #include "qTsbuf.h"
@@ -77,7 +73,3 @@ int32_t tMemBucketPut(tMemBucket *pBucket, const void *data, size_t size);
 double getPercentile(tMemBucket *pMemBucket, double percent);
 
 #endif  // TDENGINE_QPERCENTILE_H
-
-#ifdef __cplusplus
-}
-#endif

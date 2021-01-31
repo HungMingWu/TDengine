@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_H
 #define TDENGINE_OS_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifdef _TD_DARWIN_64
 #include "osDarwin.h"
 #endif
@@ -69,9 +65,5 @@ extern "C" {
 #include "osTimer.h"
 
 void osInit();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -23,10 +23,6 @@
 #include "ttype.h"
 #include "tutil.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define STR_TO_VARSTR(x, str)             \
   do {                                    \
     VarDataLenT __len = strlen(str);      \
@@ -374,9 +370,5 @@ static FORCE_INLINE int tdAddColToKVRow(SKVRowBuilder *pBuilder, int16_t colId, 
 
   return 0;
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // _TD_DATA_FORMAT_H_

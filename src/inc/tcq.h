@@ -15,10 +15,6 @@
 #ifndef _TD_CQ_H_
 #define _TD_CQ_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tdataformat.h"
 
 typedef int32_t (*FCqWrite)(int32_t vgId, void *pHead, int32_t qtype, void *pMsg);
@@ -48,10 +44,5 @@ void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, ch
 void  cqDrop(void *handle);
 
 extern int32_t cqDebugFlag;
-
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // _TD_CQ_H_

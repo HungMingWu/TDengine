@@ -18,12 +18,7 @@
 
 #include <setjmp.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include <assert.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
  * cleanup actions
@@ -120,9 +115,5 @@ void exceptionThrow( int32_t code );
 #define THROW( x )          exceptionThrow( (x) )
 #define CAUGHT_EXCEPTION()  ((bool)(caughtException == 1))
 #define CLEANUP_EXECUTE()   cleanupExecute( &exceptionNode, CAUGHT_EXCEPTION() )
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

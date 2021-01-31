@@ -18,17 +18,9 @@
 
 #include "bnInt.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t bnInitThread();
 void    bnCleanupThread();
 void    bnNotify();
 void    bnStartTimer(int64_t mseconds);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

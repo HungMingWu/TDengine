@@ -49,10 +49,6 @@
 #include "sys/msvcStat.h"
 #include "sys/msvcTypes.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define TAOS_OS_FUNC_LZ4
   int32_t BUILDIN_CLZL(uint64_t val);
   int32_t BUILDIN_CLZ(uint32_t val);
@@ -344,7 +340,5 @@ void wordfree(wordexp_t *pwordexp);
     #define atomic_xor_fetch_ptr atomic_xor_fetch_32
     #define atomic_fetch_xor_ptr atomic_fetch_xor_32
   #endif
-#ifdef __cplusplus
-}
-#endif
+
 #endif

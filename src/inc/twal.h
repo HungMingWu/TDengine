@@ -15,10 +15,6 @@
 #ifndef _TD_WAL_H_
 #define _TD_WAL_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
   TAOS_WAL_NOLOG = 0,
   TAOS_WAL_WRITE = 1,
@@ -65,9 +61,5 @@ void     walFsync(twalh, bool forceFsync);
 int32_t  walRestore(twalh, void *pVnode, FWalWrite writeFp);
 int32_t  walGetWalFile(twalh, char *fileName, int64_t *fileId);
 uint64_t walGetVersion(twalh);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // _TD_WAL_H_

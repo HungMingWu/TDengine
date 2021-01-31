@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSKIPLIST_H
 #define TDENGINE_TSKIPLIST_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "taosdef.h"
 #include "tarray.h"
@@ -141,9 +137,5 @@ SSkipListNode *    tSkipListIterGet(SSkipListIterator *iter);
 void *             tSkipListDestroyIter(SSkipListIterator *iter);
 uint32_t           tSkipListRemove(SSkipList *pSkipList, SSkipListKey key);
 void               tSkipListRemoveNode(SSkipList *pSkipList, SSkipListNode *pNode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSKIPLIST_H

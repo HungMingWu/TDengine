@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCLIENT_H
 #define TDENGINE_TSCLIENT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 
 #include "taos.h"
@@ -503,9 +499,5 @@ extern int (*tscBuildMsg[TSDB_SQL_MAX])(SSqlObj *pSql, SSqlInfo *pInfo);
 
 void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, SArray* tables);
 int16_t getNewResColId(SQueryInfo* pQueryInfo);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

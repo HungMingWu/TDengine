@@ -16,10 +16,6 @@
 #ifndef TDENGINE_HASH_H
 #define TDENGINE_HASH_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tarray.h"
 #include "hashfunc.h"
 #include "tlockfree.h"
@@ -149,9 +145,5 @@ size_t taosHashGetMemSize(const SHashObj *pHashObj);
 
 void *taosHashIterate(SHashObj *pHashObj, void *p);
 void  taosHashCancelIterate(SHashObj *pHashObj, void *p);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_HASH_H

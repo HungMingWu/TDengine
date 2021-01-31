@@ -16,10 +16,6 @@
 #ifndef TDENGINE_WAL_INT_H
 #define TDENGINE_WAL_INT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 
 extern int32_t wDebugFlag;
@@ -60,9 +56,5 @@ typedef struct {
 int32_t walGetNextFile(SWal *pWal, int64_t *nextFileId);
 int32_t walGetOldFile(SWal *pWal, int64_t curFileId, int32_t minDiff, int64_t *oldFileId);
 int32_t walGetNewFile(SWal *pWal, int64_t *newFileId);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,16 +16,8 @@
 #ifndef TDENGINE_OS_COMMON_H
 #define TDENGINE_OS_COMMON_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_DEF_ZU
   #define PRIzu "zu"
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif

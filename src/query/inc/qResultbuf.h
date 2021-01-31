@@ -16,10 +16,6 @@
 #ifndef TDENGINE_QRESULTBUF_H
 #define TDENGINE_QRESULTBUF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <tlist.h>
 #include "hash.h"
 #include "os.h"
@@ -165,9 +161,5 @@ void destroyResultBuf(SDiskbasedResultBuf* pResultBuf);
  * @return
  */
 SPageInfo* getLastPageInfo(SIDList pList);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_QRESULTBUF_H

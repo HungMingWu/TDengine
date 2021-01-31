@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCOMPRESSION_H
 #define TDENGINE_TSCOMPRESSION_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "taosdef.h"
 #include "tutil.h"
 
@@ -264,9 +260,5 @@ static FORCE_INLINE int tsDecompressTimestamp(const char *const input, int compr
     return -1;
   }
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCOMPRESSION_H

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TLOSERTREE_H
 #define TDENGINE_TLOSERTREE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 
 typedef int (*__merge_compare_fn_t)(const void *, const void *, void *param);
@@ -47,9 +43,5 @@ void tLoserTreeAdjust(SLoserTreeInfo *pTree, int32_t idx);
 void tLoserTreeRebuild(SLoserTreeInfo *pTree);
 
 void tLoserTreeDisplay(SLoserTreeInfo *pTree);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TLOSERTREE_H

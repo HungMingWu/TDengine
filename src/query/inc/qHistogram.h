@@ -16,10 +16,6 @@
 #ifndef TDENGINE_HISTOGRAM_H
 #define TDENGINE_HISTOGRAM_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define USE_ARRAYLIST
 
 #define MAX_HISTOGRAM_BIN 500
@@ -71,9 +67,5 @@ int32_t histoBinarySearch(SHistBin* pEntry, int32_t len, double val);
 
 SHeapEntry* tHeapCreate(int32_t numOfEntries);
 void tHeapSort(SHeapEntry* pEntry, int32_t len);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_HISTOGRAM_H

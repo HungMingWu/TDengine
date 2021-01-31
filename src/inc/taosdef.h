@@ -16,13 +16,7 @@
 #ifndef TDENGINE_TAOS_DEF_H
 #define TDENGINE_TAOS_DEF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
-#include <stdbool.h>
-#include "osDef.h"
 #include "taos.h"
 
 #define TSDB__packed
@@ -400,9 +394,5 @@ typedef enum {
 } ECheckItemType;
 
 extern char *qtypeStr[];
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

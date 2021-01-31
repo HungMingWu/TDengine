@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_ARM32_H
 #define TDENGINE_OS_ARM32_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <argp.h>
@@ -83,9 +79,5 @@ extern "C" {
   #define BUILDIN_CTZL(val) __builtin_ctzll(val)
   #define BUILDIN_CLZ(val) __builtin_clz(val)
   #define BUILDIN_CTZ(val) __builtin_ctz(val)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

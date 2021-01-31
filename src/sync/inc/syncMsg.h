@@ -16,9 +16,6 @@
 #ifndef TDENGINE_SYNC_MSG_H
 #define TDENGINE_SYNC_MSG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "tsync.h"
 
 typedef enum {
@@ -135,9 +132,5 @@ void syncBuildPeersStatus(SPeersStatus *pMsg, int32_t vgId);
 
 void syncBuildFileAck(SFileAck *pMsg, int32_t vgId);
 void syncBuildFileInfo(SFileInfo *pMsg, int32_t vgId);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_VNODEPEER_H

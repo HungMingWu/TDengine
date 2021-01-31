@@ -16,12 +16,7 @@
 #ifndef TDENGINE_TAOSERROR_H
 #define TDENGINE_TAOSERROR_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
-#include <stdbool.h>
 
 #ifdef TAOS_ERROR_C
 #define TAOS_DEFINE_ERROR(name, mod, code, msg) {.val = (int32_t)((0x80000000 | ((mod)<<16) | (code))), .str=(msg)},
@@ -427,11 +422,6 @@ TAOS_DEFINE_ERROR(TSDB_CODE_FS_NO_VALID_DISK,             0, 0x2208, "tfs no val
 
 #ifdef TAOS_ERROR_C
 };
-#endif
-
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif //TDENGINE_TAOSERROR_H

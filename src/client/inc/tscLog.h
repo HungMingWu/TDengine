@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCLOG_H
 #define TDENGINE_TSCLOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 
 extern uint32_t cDebugFlag;
@@ -32,9 +28,5 @@ extern int8_t  tscEmbedded;
 #define tscDebug(...)  do { if (cDebugFlag & DEBUG_DEBUG) { taosPrintLog("TSC ", cDebugFlag, __VA_ARGS__); }} while(0)
 #define tscTrace(...)  do { if (cDebugFlag & DEBUG_TRACE) { taosPrintLog("TSC ", cDebugFlag, __VA_ARGS__); }} while(0)
 #define tscDebugL(...) do { if (cDebugFlag & DEBUG_DEBUG) { taosPrintLongString("TSC ", cDebugFlag, __VA_ARGS__); }} while(0)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

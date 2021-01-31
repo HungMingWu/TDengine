@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_ALPINE_H
 #define TDENGINE_OS_ALPINE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -83,10 +79,6 @@ typedef int(*__compar_fn_t)(const void *, const void *);
 void  error (int, int, const char *);
 #ifndef PTHREAD_MUTEX_RECURSIVE_NP
   #define  PTHREAD_MUTEX_RECURSIVE_NP PTHREAD_MUTEX_RECURSIVE
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif

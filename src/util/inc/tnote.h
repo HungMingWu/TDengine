@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TNOTE_H
 #define TDENGINE_TNOTE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define MAX_NOTE_LINE_SIZE 66000
 #define NOTE_FILE_NAME_LEN 300
 
@@ -56,9 +52,5 @@ void taosNotePrintBuffer(SNoteObj *pNote, char *buffer, int32_t len);
   if (tscEmbedded == 1) {                          \
     taosNotePrintBuffer(&tsInfoNote, buffer, len); \
   }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

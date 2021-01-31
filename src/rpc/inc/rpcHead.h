@@ -16,10 +16,6 @@
 #ifndef TDENGINE_RPCHEAD_H
 #define TDENGINE_RPCHEAD_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define RPC_CONN_TCP    2
 
 extern int tsRpcOverhead;
@@ -70,11 +66,6 @@ typedef struct {
 } SRpcDigest;
 
 #pragma pack(pop)
-
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_RPCHEAD_H
 

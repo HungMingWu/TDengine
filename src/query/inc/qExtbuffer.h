@@ -15,10 +15,6 @@
 #ifndef TDENGINE_TEXTBUFFER_H
 #define TDENGINE_TEXTBUFFER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "taosmsg.h"
 
@@ -236,9 +232,5 @@ int32_t compare_a(tOrderDescriptor *, int32_t numOfRow1, int32_t s1, char *data1
 
 int32_t compare_d(tOrderDescriptor *, int32_t numOfRow1, int32_t s1, char *data1, int32_t numOfRow2, int32_t s2,
                   char *data2);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TBASE_SORT_H

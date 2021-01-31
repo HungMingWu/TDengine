@@ -19,10 +19,6 @@
 #include "tstoken.h"
 #include "tarray.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // variant, each number/string/field_id has a corresponding struct during parsing sql
 typedef struct tVariant {
   uint32_t nType;
@@ -54,9 +50,5 @@ int32_t tVariantToString(tVariant *pVar, char *dst);
 int32_t tVariantDump(tVariant *pVariant, char *payload, int16_t type, bool includeLengthPrefix);
 
 int32_t tVariantTypeSetType(tVariant *pVariant, char type);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TVARIANT_H

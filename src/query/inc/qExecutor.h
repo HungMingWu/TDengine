@@ -16,6 +16,7 @@
 #define TDENGINE_QUERYEXECUTOR_H
 
 #include <setjmp.h>
+#include <memory>
 #include "os.h"
 
 #include "hash.h"
@@ -182,7 +183,7 @@ typedef struct SQueryRuntimeEnv {
   int32_t              numOfRowsPerPage;
   uint16_t*            offset;
   uint16_t             scanFlag;         // denotes reversed scan of data or not
-  SFillInfo*           pFillInfo;
+  std::unique_ptr<SFillInfo>           pFillInfo;
   SResultRowInfo       windowResInfo;
   STSBuf*              pTsBuf;
   STSCursor            cur;

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCHEMAUTIL_H
 #define TDENGINE_TSCHEMAUTIL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "taosmsg.h"
 #include "tstoken.h"
 #include "tsclient.h"
@@ -85,9 +81,5 @@ STableMeta* tscCreateTableMetaFromMsg(STableMetaMsg* pTableMetaMsg);
 
 bool vgroupInfoIdentical(SNewVgroupInfo *pExisted, SVgroupMsg* src);
 SNewVgroupInfo createNewVgroupInfo(SVgroupMsg *pVgroupMsg);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCHEMAUTIL_H

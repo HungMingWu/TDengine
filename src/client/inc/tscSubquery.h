@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCSUBQUERY_H
 #define TDENGINE_TSCSUBQUERY_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tscUtil.h"
 #include "tsclient.h"
 
@@ -47,9 +43,5 @@ void tscLockByThread(int64_t *lockedBy);
 
 void tscUnlockByThread(int64_t *lockedBy);
 
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCSUBQUERY_H

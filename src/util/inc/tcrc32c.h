@@ -23,10 +23,6 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef const uint8_t *crc_stream;
 
 extern uint32_t (*crc32c)(uint32_t crci, crc_stream bytes, size_t len);
@@ -36,9 +32,5 @@ uint32_t crc32c_sf(uint32_t crci, crc_stream input, size_t length);
 uint32_t crc32c_hw(uint32_t crc, crc_stream buf, size_t len);
 
 void taosResolveCRC();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TCRC32C_H

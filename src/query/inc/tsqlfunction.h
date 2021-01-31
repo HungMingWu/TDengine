@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSQLFUNCTION_H
 #define TDENGINE_TSQLFUNCTION_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 
 #include "tname.h"
@@ -274,9 +270,5 @@ static FORCE_INLINE void initResultInfo(SResultRowCellInfo *pResInfo, uint32_t b
   
   memset(GET_ROWCELL_INTERBUF(pResInfo), 0, (size_t)bufLen);
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSQLFUNCTION_H

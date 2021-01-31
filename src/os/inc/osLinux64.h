@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_LINUX64_H
 #define TDENGINE_OS_LINUX64_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <argp.h>
@@ -80,9 +76,5 @@ extern "C" {
 #endif
 #include <linux/sysctl.h>
 #include <math.h>
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,17 +16,9 @@
 #ifndef TDENGINE_OS_TIMER_H
 #define TDENGINE_OS_TIMER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // TAOS_OS_FUNC_TIMER
 void taosMsleep(int mseconds);
 int taosInitTimer(void (*callback)(int), int ms);
 void taosUninitTimer();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

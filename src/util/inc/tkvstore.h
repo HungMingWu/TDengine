@@ -15,10 +15,6 @@
 #ifndef _TD_KVSTORE_H_
 #define _TD_KVSTORE_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 
 #define KVSTORE_FILE_VERSION ((uint32_t)0)
@@ -59,9 +55,5 @@ int       tdUpdateKVStoreRecord(SKVStore *pStore, uint64_t uid, void *cont, int 
 int       tdDropKVStoreRecord(SKVStore *pStore, uint64_t uid);
 int       tdKVStoreEndCommit(SKVStore *pStore);
 void      tsdbGetStoreInfo(char *fname, uint32_t *magic, int64_t *size);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

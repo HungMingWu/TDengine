@@ -16,10 +16,6 @@
 #ifndef TDENGINE_SYNC_TCP_POOL_H
 #define TDENGINE_SYNC_TCP_POOL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef struct {
   int32_t   numOfThreads;
   uint32_t  serverIp;
@@ -34,10 +30,6 @@ void *syncOpenTcpThreadPool(SPoolInfo *pInfo);
 void  syncCloseTcpThreadPool(void *);
 void *syncAllocateTcpConn(void *, int64_t rid, int32_t connFd);
 void  syncFreeTcpConn(void *);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TCP_POOL_H
                                    

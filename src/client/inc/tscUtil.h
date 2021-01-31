@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCUTIL_H
 #define TDENGINE_TSCUTIL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "exception.h"
 #include "os.h"
 #include "qExtbuffer.h"
@@ -298,9 +294,5 @@ STableMeta* tscTableMetaClone(STableMeta* pTableMeta);
 void* malloc_throw(size_t size);
 void* calloc_throw(size_t nmemb, size_t size);
 char* strdup_throw(const char* str);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCUTIL_H

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TFILE_H
 #define TDENGINE_TFILE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // init taos file module
 int32_t tfInit();
 
@@ -37,9 +33,5 @@ int32_t tfFsync(int64_t tfd);
 bool    tfValid(int64_t tfd);
 int64_t tfLseek(int64_t tfd, int64_t offset, int32_t whence);
 int32_t tfFtruncate(int64_t tfd, int64_t length);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TFILE_H

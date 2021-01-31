@@ -1,10 +1,6 @@
 #ifndef TDENGINE_TTYPE_H
 #define TDENGINE_TTYPE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "taosdef.h"
 
 // ----------------- For variable data types such as TSDB_DATA_TYPE_BINARY and TSDB_DATA_TYPE_NCHAR
@@ -81,7 +77,7 @@ typedef struct tstr {
 #define IS_VALID_UINT(_t)       ((_t) >= 0 && (_t) < UINT32_MAX)
 #define IS_VALID_UBIGINT(_t)    ((_t) >= 0 && (_t) < UINT64_MAX)
 
-static FORCE_INLINE bool isNull(const char *val, int32_t type) {
+static inline bool isNull(const char *val, int32_t type) {
   switch (type) {
     case TSDB_DATA_TYPE_BOOL:
       return *(uint8_t *)val == TSDB_DATA_BOOL_NULL;
@@ -144,9 +140,5 @@ void tsDataSwap(void *pLeft, void *pRight, int32_t type, int32_t size, void* buf
 int32_t tStrToInteger(const char* z, int16_t type, int32_t n, int64_t* value, bool issigned);
 
 #define SET_DOUBLE_NULL(v) (*(uint64_t *)(v) = TSDB_DATA_DOUBLE_NULL)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TTYPE_H

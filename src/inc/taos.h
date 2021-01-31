@@ -17,11 +17,6 @@
 #define TDENGINE_TAOS_H
 
 #include <stdint.h>
-#include <stdbool.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef void   TAOS;
 typedef void   TAOS_STMT;
@@ -152,9 +147,5 @@ DLL_EXPORT TAOS_STREAM *taos_open_stream(TAOS *taos, const char *sql, void (*fp)
 DLL_EXPORT void taos_close_stream(TAOS_STREAM *tstr);
 
 DLL_EXPORT int taos_load_table_info(TAOS *taos, const char* tableNameList);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

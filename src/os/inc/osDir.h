@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_DIR_H
 #define TDENGINE_OS_DIR_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <sys/types.h>
 
 // TAOS_OS_FUNC_DIR
@@ -28,9 +24,5 @@ int  taosMkDir(const char *pathname, mode_t mode);
 void taosRename(char* oldName, char *newName);
 void taosRemoveOldLogFiles(char *rootDir, int32_t keepDays);
 int32_t taosCompressFile(char *srcFileName, char *destFileName);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

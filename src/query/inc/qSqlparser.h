@@ -16,10 +16,6 @@
 #ifndef TDENGINE_QSQLPARSER_H
 #define TDENGINE_QSQLPARSER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "taos.h"
 #include "taosmsg.h"
 #include "tstoken.h"
@@ -304,9 +300,5 @@ enum {
 #define AGG_ARIGHTMEIC     2
 
 SSqlInfo qSQLParse(const char *str);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_QSQLPARSER_H

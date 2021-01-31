@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TUTIL_H
 #define TDENGINE_TUTIL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "tmd5.h"
 #include "tcrc32c.h"
@@ -51,9 +47,5 @@ static FORCE_INLINE void taosEncryptPass(uint8_t *inBuf, size_t inLen, char *tar
   MD5Final(&context);
   memcpy(target, context.digest, TSDB_KEY_LEN);
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TUTIL_H

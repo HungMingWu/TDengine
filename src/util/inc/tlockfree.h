@@ -17,11 +17,6 @@
 
 #include "os.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
 // reference counting
 typedef void (*_ref_fn_t)(const void* pObj);
 
@@ -105,10 +100,5 @@ void taosRUnLockLatch(SRWLatch *pLatch);
 #define taosCorEndWrite(x) atomic_add_fetch_32((x), 1); \
     break; \
   }
-
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSCHED_H
 #define TDENGINE_TSCHED_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef struct SSchedMsg {
   void (*fp)(struct SSchedMsg *);
   void (*tfp)(void *, void *);
@@ -32,9 +28,5 @@ void *taosInitScheduler(int queueSize, int numOfThreads, const char *label);
 void *taosInitSchedulerWithInfo(int queueSize, int numOfThreads, const char *label, void *tmrCtrl);
 int  taosScheduleTask(void *qhandle, SSchedMsg *pMsg);
 void taosCleanUpScheduler(void *param);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSCHED_H

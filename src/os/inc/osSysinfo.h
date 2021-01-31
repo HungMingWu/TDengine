@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_SYSINFO_H
 #define TDENGINE_OS_SYSINFO_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // TAOS_OS_FUNC_SYSINFO
 void taosGetSystemInfo();
 bool taosGetProcIO(float *readKB, float *writeKB);
@@ -36,9 +32,5 @@ char *taosGetCmdlineByPID(int pid);
 
 // TAOS_OS_FUNC_SYSINFO_CORE
 void taosSetCoreDump();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

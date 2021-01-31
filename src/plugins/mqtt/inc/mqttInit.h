@@ -15,9 +15,6 @@
 
 #ifndef TDENGINE_MQTT_INIT_H
 #define TDENGINE_MQTT_INIT_H
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @file
@@ -70,8 +67,5 @@ void* mqttClientRefresher(void* client);
  */
 void mqttCleanupRes(int status, int sockfd, pthread_t* client_daemon);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

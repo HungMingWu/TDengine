@@ -16,14 +16,6 @@
 #ifndef TDENGINE_MQTT_PLYLOAD_H
 #define TDENGINE_MQTT_PLYLOAD_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 char* mqttConverJsonToSql(char* json, int maxSize);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

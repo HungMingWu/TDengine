@@ -16,17 +16,9 @@
 #ifndef TDENGINE_MQTT_H
 #define TDENGINE_MQTT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t mqttInitSystem();
 int32_t mqttStartSystem();
 void    mqttStopSystem();
 void    mqttCleanUpSystem();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

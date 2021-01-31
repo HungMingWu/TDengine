@@ -16,17 +16,9 @@
 #ifndef TDENGINE_ADMIN_H
 #define TDENGINE_ADMIN_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct HttpServer;
 
 void adminInitHandle(struct HttpServer* pServer);
 void opInitHandle(struct HttpServer* pServer);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_QUERY_LOG_H
 #define TDENGINE_QUERY_LOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 
 extern uint32_t qDebugFlag;
@@ -30,9 +26,5 @@ extern uint32_t qDebugFlag;
 #define qInfo(...)  do { if (qDebugFlag & DEBUG_INFO)  { taosPrintLog("QRY ", 255, __VA_ARGS__); }}        while(0)
 #define qDebug(...) do { if (qDebugFlag & DEBUG_DEBUG) { taosPrintLog("QRY ", qDebugFlag, __VA_ARGS__); }} while(0)
 #define qTrace(...) do { if (qDebugFlag & DEBUG_TRACE) { taosPrintLog("QRY ", qDebugFlag, __VA_ARGS__); }} while(0)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_QUERY_LOG_H

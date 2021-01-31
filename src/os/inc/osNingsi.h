@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_NINGSI_H
 #define TDENGINE_OS_NINGSI_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define  TAOS_OS_FUNC_ATOMIC
 /*
  * type __sync_fetch_and_add (type *ptr, type value);
@@ -128,9 +124,5 @@ void*   atomic_exchange_ptr_impl( void **ptr, void *val );
 #define atomic_fetch_xor_32(ptr, val) __sync_fetch_and_xor((ptr), (val))
 #define atomic_fetch_xor_64(ptr, val) __sync_fetch_and_xor((ptr), (val))
 #define atomic_fetch_xor_ptr(ptr, val) __sync_fetch_and_xor((ptr), (val))
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

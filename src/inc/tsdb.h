@@ -16,7 +16,6 @@
 #define _TD_TSDB_H_
 
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "taosdef.h"
@@ -25,10 +24,6 @@
 #include "tdataformat.h"
 #include "tname.h"
 #include "hash.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #define TSDB_VERSION_MAJOR 1
 #define TSDB_VERSION_MINOR 0
@@ -327,9 +322,5 @@ void tsdbDestroyCommitQueue();
 int  tsdbSyncCommit(TSDB_REPO_T *repo);
 void tsdbIncCommitRef(int vgId);
 void tsdbDecCommitRef(int vgId);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // _TD_TSDB_H_

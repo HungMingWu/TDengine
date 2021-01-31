@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_STRING_H
 #define TDENGINE_OS_STRING_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_FUNC_STRING_STRDUP
   #define taosStrdupImp(str) strdup(str)
   #define taosStrndupImp(str, size) strndup(str, size)
@@ -51,9 +47,5 @@ bool    taosMbsToUcs4(char *mbs, size_t mbs_len, char *ucs4, int32_t ucs4_max_le
 int     tasoUcs4Compare(void *f1_ucs4, void *f2_ucs4, int bytes);
 bool    taosValidateEncodec(const char *encodec);
 char *  taosCharsetReplace(char *charsetstr);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

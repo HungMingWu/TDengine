@@ -16,14 +16,6 @@
 #ifndef TDENGINE_COMMON_TIMEZONE_H
 #define TDENGINE_COMMON_TIMEZONE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void tsSetTimeZone();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

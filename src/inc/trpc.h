@@ -15,11 +15,6 @@
 #ifndef TDENGINE_TRPC_H
 #define TDENGINE_TRPC_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <stdbool.h>
 #include <stdint.h>
 #include "taosdef.h"
 
@@ -92,9 +87,5 @@ int   rpcGetConnInfo(void *thandle, SRpcConnInfo *pInfo);
 void  rpcSendRecv(void *shandle, SRpcEpSet *pEpSet, SRpcMsg *pReq, SRpcMsg *pRsp);
 int   rpcReportProgress(void *pConn, char *pCont, int contLen);
 void  rpcCancelRequest(int64_t rid);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TRPC_H

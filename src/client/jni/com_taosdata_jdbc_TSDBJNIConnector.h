@@ -4,9 +4,7 @@
 
 #ifndef _Included_com_taosdata_jdbc_TSDBJNIConnector
 #define _Included_com_taosdata_jdbc_TSDBJNIConnector
-#ifdef __cplusplus
-extern "C" {
-#endif
+
 #undef com_taosdata_jdbc_TSDBJNIConnector_INVALID_CONNECTION_POINTER_VALUE
 #define com_taosdata_jdbc_TSDBJNIConnector_INVALID_CONNECTION_POINTER_VALUE 0LL
 /*
@@ -177,7 +175,4 @@ JNIEXPORT void JNICALL Java_com_taosdata_jdbc_TSDBJNIConnector_unsubscribeImp
 JNIEXPORT jint JNICALL Java_com_taosdata_jdbc_TSDBJNIConnector_validateCreateTableSqlImp
   (JNIEnv *, jobject, jlong, jbyteArray);
 
-#ifdef __cplusplus
-}
-#endif
 #endif

@@ -18,18 +18,10 @@
 
 #include "bnInt.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void  bnInitDnodes();
 void  bnCleanupDnodes();
 void  bnAccquireDnodes();
 void  bnReleaseDnodes();
 float bnTryCalcDnodeScore(SDnodeObj *pDnode, int32_t extraVnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

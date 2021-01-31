@@ -16,17 +16,9 @@
 #ifndef TDENGINE_RPC_CACHE_H
 #define TDENGINE_RPC_CACHE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void *rpcOpenConnCache(int maxSessions, void (*cleanFp)(void *), void *tmrCtrl, int64_t keepTimer);
 void  rpcCloseConnCache(void *handle);
 void  rpcAddConnIntoCache(void *handle, void *data, char *fqdn, uint16_t port, int8_t connType);
 void *rpcGetConnFromCache(void *handle, char *fqdn, uint16_t port, int8_t connType);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_RPC_CACHE_H

@@ -16,10 +16,7 @@
 #ifndef TDENGINE_QFILL_H
 #define TDENGINE_QFILL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#include <vector>
 #include "os.h"
 #include "qExtbuffer.h"
 #include "taosdef.h"
@@ -37,7 +34,7 @@ typedef struct {
   char*   tagVal;
 } SFillTagColInfo;
   
-typedef struct SFillInfo {
+struct SFillInfo {
   TSKEY     start;                // start timestamp
   TSKEY     end;                  // endKey for fill
   TSKEY     currentKey;           // current active timestamp, the value may be changed during the fill procedure.
@@ -52,46 +49,43 @@ typedef struct SFillInfo {
   int32_t   numOfCols;            // number of columns, including the tags columns
   int32_t   rowSize;              // size of each row
   SInterval interval;
-  char *    prevValues;           // previous row of data, to generate the interpolation results
-  char *    nextValues;           // next row of data
+  std::vector<char>    prevValues;           // previous row of data, to generate the interpolation results
+  std::vector<char>    nextValues;           // next row of data
   char**    pData;                // original result data block involved in filling data
   int32_t   alloc;                // data buffer size in rows
   int8_t    precision;            // time resoluation
 
-  SFillColInfo* pFillCol;         // column info for fill operations
+  std::vector<SFillColInfo> pFillCol;         // column info for fill operations
   SFillTagColInfo* pTags;         // tags value for filling gap
   void*     handle;               // for dubug purpose
-} SFillInfo;
+ private:
+  void    initBeforeAfterDataBuf(std::vector<char> &next);
+  void    copyCurrentRowIntoBuf(char** srcData, std::vector<char> &buf);
+  void    setNullValueForRow(tFilePage** data, int32_t numOfCol, int32_t rowIndex);
+  void    setTagsValue(tFilePage** data, int32_t genRows);
+  int64_t appendFilledResult(tFilePage** output, int64_t resultCapacity);
+  int32_t fillResultImpl(tFilePage** data, int32_t outputRows);
+  void doFillOneRowResult(tFilePage** data, char** srcData, int64_t ts, bool outOfBound);
+  bool isASCOrder() const { return order == TSDB_ORDER_ASC; }
+ public:
+  SFillInfo(int32_t order, TSKEY skey, int32_t numOfTags, int32_t capacity, int32_t numOfCols,
+                              int64_t slidingTime, int8_t slidingUnit, int8_t precision, int32_t fillType,
+                              std::vector<SFillColInfo>&& pFillCol, void* handle);
+  ~SFillInfo();
+  void reset(TSKEY startTimestamp);
+  bool hasMoreResults();
+  int64_t fillResultDataBlock(tFilePage** output, int32_t capacity);
+  int64_t getNumOfResultsAfterFillGap(int64_t ekey, int32_t maxNumOfRows);
+  void    fillCopyInputDataFromOneFilePage(const tFilePage* pInput);
+  void    fillCopyInputDataFromFilePage(const tFilePage** pInput);
+  void    fillSetStartInfo(int32_t numOfRows, TSKEY endKey);
+};
 
 typedef struct SPoint {
   int64_t key;
   void *  val;
 } SPoint;
 
-SFillInfo* taosInitFillInfo(int32_t order, TSKEY skey, int32_t numOfTags, int32_t capacity, int32_t numOfCols,
-                            int64_t slidingTime, int8_t slidingUnit, int8_t precision, int32_t fillType,
-                            SFillColInfo* pFillCol, void* handle);
-
-void taosResetFillInfo(SFillInfo* pFillInfo, TSKEY startTimestamp);
-
-void* taosDestroyFillInfo(SFillInfo *pFillInfo);
-
-void taosFillSetStartInfo(SFillInfo* pFillInfo, int32_t numOfRows, TSKEY endKey);
-
-void taosFillCopyInputDataFromFilePage(SFillInfo* pFillInfo, const tFilePage** pInput);
-
-void taosFillCopyInputDataFromOneFilePage(SFillInfo* pFillInfo, const tFilePage* pInput);
-
-bool taosFillHasMoreResults(SFillInfo* pFillInfo);
-
-int64_t getNumOfResultsAfterFillGap(SFillInfo* pFillInfo, int64_t ekey, int32_t maxNumOfRows);
-
 int32_t taosGetLinearInterpolationVal(int32_t type, SPoint *point1, SPoint *point2, SPoint *point);
-
-int64_t taosFillResultDataBlock(SFillInfo* pFillInfo, tFilePage** output, int32_t capacity);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_QFILL_H

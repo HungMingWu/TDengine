@@ -16,10 +16,6 @@
 #ifndef TDENGINE_GTANT_H
 #define TDENGINE_GTANT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
   TSDB_GRANT_ALL,
   TSDB_GRANT_TIME,
@@ -43,9 +39,5 @@ int32_t grantCheck(EGrantType grant);
 void    grantReset(EGrantType grant, uint64_t value);
 void    grantAdd(EGrantType grant, uint64_t value);
 void    grantRestore(EGrantType grant, uint64_t value);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

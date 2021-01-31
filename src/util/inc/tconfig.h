@@ -16,10 +16,6 @@
 #ifndef TDENGINE_CFG_H
 #define TDENGINE_CFG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define TSDB_CFG_MAX_NUM    110
 #define TSDB_CFG_PRINT_LEN  23
 #define TSDB_CFG_OPTION_LEN 24
@@ -83,9 +79,5 @@ void taosDumpGlobalCfg();
 
 void taosInitConfigOption(SGlobalCfg cfg);
 SGlobalCfg * taosGetConfigOption(const char *option);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TGLOBALCFG_H

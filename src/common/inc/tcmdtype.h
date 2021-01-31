@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSQLMSGTYPE_H
 #define TDENGINE_TSQLMSGTYPE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // sql type
 
 #ifdef TSDB_SQL_C
@@ -107,9 +103,5 @@ enum TSQL_TYPE {
 };
 
 extern char *sqlCmd[];
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TSQLMSGTYPE_H

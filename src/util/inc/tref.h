@@ -17,10 +17,6 @@
 #ifndef TDENGINE_TREF_H
 #define TDENGINE_TREF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // open a reference set, max is the mod used by hash, fp is the pointer to free resource function
 // return rsetId which will be used by other APIs. On error, -1 is returned, and terrno is set appropriately
 int taosOpenRef(int max, void (*fp)(void *)); 
@@ -69,9 +65,5 @@ void demoIterateRefs(int rsetId) {
 }
 
 */
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TREF_H

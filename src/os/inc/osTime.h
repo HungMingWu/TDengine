@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_TIME_H
 #define TDENGINE_OS_TIME_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "taosdef.h"
 
@@ -81,9 +77,5 @@ int32_t parseNatualDuration(const char* token, int32_t tokenLen, int64_t* durati
 
 int32_t taosParseTime(char* timestr, int64_t* time, int32_t len, int32_t timePrec, int8_t dayligth);
 void deltaToUtcInitOnce();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TTIME_H

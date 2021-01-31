@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TCOMPARE_H
 #define TDENGINE_TCOMPARE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 
 #define TSDB_PATTERN_MATCH 0
@@ -45,9 +41,5 @@ __compar_fn_t getKeyComparFunc(int32_t keyType);
 __compar_fn_t getComparFunc(int32_t type, int32_t optr);
 
 int32_t taosArrayCompareString(const void* a, const void* b);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TCOMPARE_H

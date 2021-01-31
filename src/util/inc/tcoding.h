@@ -15,10 +15,6 @@
 #ifndef _TD_CODING_H_
 #define _TD_CODING_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdint.h>
 #include <string.h>
 
@@ -363,9 +359,5 @@ static FORCE_INLINE void *taosDecodeString(void *buf, char **value) {
 
   return POINTER_SHIFT(buf, size);
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

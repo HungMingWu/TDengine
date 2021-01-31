@@ -16,10 +16,6 @@
 #ifndef TDENGINE_MNODE_LOG_H
 #define TDENGINE_MNODE_LOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 #include "monitor.h"
 
@@ -44,9 +40,5 @@ extern int32_t sdbDebugFlag;
 #define mLError(...) { monSaveLog(2, __VA_ARGS__); mError(__VA_ARGS__) }
 #define mLWarn(...)  { monSaveLog(1, __VA_ARGS__); mWarn(__VA_ARGS__)  }
 #define mLInfo(...)  { monSaveLog(0, __VA_ARGS__); mInfo(__VA_ARGS__) }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,17 +16,9 @@
 #ifndef TDENGINE_OS_RAND_H
 #define TDENGINE_OS_RAND_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // TAOS_OS_FUNC_RAND
 uint32_t taosRand(void);
 void taosRandStr(char* str, int32_t size);
 uint32_t taosSafeRand(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

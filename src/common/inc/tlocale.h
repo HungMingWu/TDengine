@@ -16,14 +16,6 @@
 #ifndef TDENGINE_COMMON_LOCALE_H
 #define TDENGINE_COMMON_LOCALE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void tsSetLocale();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

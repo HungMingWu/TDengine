@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TLOG_H
 #define TDENGINE_TLOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define DEBUG_FATAL 1U
 #define DEBUG_ERROR DEBUG_FATAL
 #define DEBUG_WARN  2U
@@ -48,9 +44,5 @@ void    taosPrintLongString(const char * flags, int32_t dflag, const char *forma
 ;
 
 void    taosDumpData(unsigned char *msg, int32_t len);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

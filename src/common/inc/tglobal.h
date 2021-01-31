@@ -16,10 +16,6 @@
 #ifndef TDENGINE_COMMON_GLOBAL_H
 #define TDENGINE_COMMON_GLOBAL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // cluster
 extern char     tsFirst[];
 extern char     tsSecond[];
@@ -203,9 +199,5 @@ void    taosSetAllDebugFlag();
 bool    taosCfgDynamicOptions(char *msg);
 int     taosGetFqdnPortFromEp(const char *ep, char *fqdn, uint16_t *port);
 bool    taosCheckBalanceCfgOptions(const char *option, int32_t *vnodeId, int32_t *dnodeId);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

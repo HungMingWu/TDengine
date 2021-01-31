@@ -16,10 +16,6 @@
 #ifndef TDENGINE_ACCT_H
 #define TDENGINE_ACCT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
   ACCT_GRANT_USER,
   ACCT_GRANT_DB,
@@ -29,9 +25,5 @@ typedef enum {
 int32_t acctInit();
 void    acctCleanUp();
 int32_t acctCheck(void *pAcct, EAcctGrantType type);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

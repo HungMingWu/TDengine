@@ -16,10 +16,6 @@
 #ifndef TDENGINE_STSBUF_H
 #define TDENGINE_STSBUF_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "taosdef.h"
 #include "tvariant.h"
@@ -141,9 +137,5 @@ int32_t dumpFileBlockByGroupId(STSBuf* pTSBuf, int32_t id, void* buf, int32_t* l
 STSElem tsBufFindElemStartPosByTag(STSBuf* pTSBuf, tVariant* pTag);
 
 bool tsBufIsValidElem(STSElem* pElem);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_STSBUF_H

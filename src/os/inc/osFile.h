@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_FILE_H
 #define TDENGINE_OS_FILE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int64_t taosReadImp(int32_t fd, void *buf, int64_t count);
 int64_t taosWriteImp(int32_t fd, void *buf, int64_t count);
 int64_t taosLSeekImp(int32_t fd, int64_t offset, int32_t whence);
@@ -61,8 +57,5 @@ void taosGetTmpfilePath(const char *fileNamePrefix, char *dstPath);
 
 // TAOS_OS_FUNC_FILE_FTRUNCATE
 int32_t taosFtruncate(int32_t fd, int64_t length);
-#ifdef __cplusplus
-}
-#endif
 
 #endif

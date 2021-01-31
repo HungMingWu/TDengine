@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TCACHE_H
 #define TDENGINE_TCACHE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "tlockfree.h"
 #include "hash.h"
@@ -176,9 +172,5 @@ void taosCacheCleanup(SCacheObj *pCacheObj);
  * @return
  */
 void taosCacheRefresh(SCacheObj *pCacheObj, __cache_free_fn_t fp);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TCACHE_H

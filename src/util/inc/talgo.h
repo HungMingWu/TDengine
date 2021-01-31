@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TALGO_H
 #define TDENGINE_TALGO_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef __COMPAR_FN_T
 # define __COMPAR_FN_T
 typedef int (*__compar_fn_t) (const void *, const void *);
@@ -59,7 +55,4 @@ void taosqsort(void *src, size_t numOfElem, size_t size, const void* param, __ex
  */
 void *taosbsearch(const void *key, const void *base, size_t nmemb, size_t size, __compar_fn_t fn, int flags);
 
-#ifdef __cplusplus
-}
-#endif
 #endif  // TDENGINE_TALGO_H

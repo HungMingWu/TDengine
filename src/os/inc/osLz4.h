@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_LZ4_H
 #define TDENGINE_OS_LZ4_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef TAOS_OS_FUNC_LZ4
   #define BUILDIN_CLZL(val) __builtin_clzl(val)
   #define BUILDIN_CTZL(val) __builtin_ctzl(val)
@@ -27,8 +23,5 @@ extern "C" {
   #define BUILDIN_CTZ(val) __builtin_ctz(val)
 #endif
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

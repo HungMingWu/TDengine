@@ -16,18 +16,9 @@
 #ifndef TDENGINE_PLUGINS_SYNC_H
 #define TDENGINE_PLUGINS_SYNC_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <stdbool.h>
 #include <stdint.h>
 
 int32_t syncTest1();
 int32_t syncTest2();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

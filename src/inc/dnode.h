@@ -16,10 +16,6 @@
 #ifndef TDENGINE_DNODE_H
 #define TDENGINE_DNODE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "trpc.h"
 #include "taosmsg.h"
 
@@ -75,9 +71,5 @@ typedef struct {
 int32_t dnodeStepInit(SStep *pSteps, int32_t stepSize);
 void    dnodeStepCleanup(SStep *pSteps, int32_t stepSize);
 void    dnodeReportStep(char *name, char *desc, int8_t finished);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

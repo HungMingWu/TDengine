@@ -15,10 +15,6 @@
 #ifndef TDENGINE_TMEMPOOL_H
 #define TDENGINE_TMEMPOOL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define mpool_h void *
 
 mpool_h taosMemPoolInit(int maxNum, int blockSize);
@@ -28,9 +24,5 @@ char *taosMemPoolMalloc(mpool_h handle);
 void taosMemPoolFree(mpool_h handle, char *p);
 
 void taosMemPoolCleanUp(mpool_h handle);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

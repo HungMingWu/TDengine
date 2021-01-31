@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TIDPOOL_H
 #define TDENGINE_TIDPOOL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void *taosInitIdPool(int maxId);
 
 int taosUpdateIdPool(void *handle, int maxId);
@@ -35,9 +31,5 @@ void taosIdPoolCleanUp(void *handle);
 int taosIdPoolNumOfUsed(void *handle);
 
 void taosIdPoolMarkStatus(void *handle, int id);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

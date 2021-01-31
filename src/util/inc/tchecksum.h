@@ -16,13 +16,8 @@
 #ifndef TDENGINE_TCHECKSUM_H
 #define TDENGINE_TCHECKSUM_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <assert.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,9 +55,5 @@ static FORCE_INLINE int taosCheckChecksumWhole(const uint8_t *stream, uint32_t s
   return *((TSCKSUM *)(stream + ssize - sizeof(TSCKSUM))) == (*crc32c)(0, stream, (size_t)(ssize - sizeof(TSCKSUM)));
 #endif
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TCHECKSUM_H

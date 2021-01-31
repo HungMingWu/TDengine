@@ -15,10 +15,6 @@
 #ifndef _TD_LIST_
 #define _TD_LIST_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum { TD_LIST_FORWARD, TD_LIST_BACKWARD } TD_LIST_DIRECTION_T;
 
 typedef struct _list_node {
@@ -64,9 +60,5 @@ void       tdListDiscard(SList *list);
 void       tdListNodeGetData(SList *list, SListNode *node, void *target);
 void       tdListInitIter(SList *list, SListIter *pIter, TD_LIST_DIRECTION_T direction);
 SListNode *tdListNext(SListIter *pIter);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

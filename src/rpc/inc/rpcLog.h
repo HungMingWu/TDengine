@@ -16,10 +16,6 @@
 #ifndef TDENGINE_RPC_LOG_H
 #define TDENGINE_RPC_LOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "tlog.h"
 
 extern int32_t rpcDebugFlag;
@@ -32,9 +28,5 @@ extern int8_t  tscEmbedded;
 #define tDebug(...) { if (rpcDebugFlag & DEBUG_DEBUG) { taosPrintLog("RPC ", rpcDebugFlag, __VA_ARGS__); }}
 #define tTrace(...) { if (rpcDebugFlag & DEBUG_TRACE) { taosPrintLog("RPC ", rpcDebugFlag, __VA_ARGS__); }}
 #define tDump(x, y) { if (rpcDebugFlag & DEBUG_DUMP)  { taosDumpData((unsigned char *)x, y); }}
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_RPC_LOG_H

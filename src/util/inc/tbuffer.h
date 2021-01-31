@@ -17,11 +17,6 @@
 #define TDENGINE_TBUFFER_H
 
 #include <stdint.h>
-#include <stdbool.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // usage example
@@ -170,9 +165,5 @@ void tbufWriteFloat( SBufferWriter* buf, float data );
 void tbufWriteFloatAt( SBufferWriter* buf, size_t pos, float data );
 void tbufWriteDouble( SBufferWriter* buf, double data );
 void tbufWriteDoubleAt( SBufferWriter* buf, size_t pos, double data );
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_BALANCE_H
 #define TDENGINE_BALANCE_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct SVgObj;
 struct SDnodeObj;
 
@@ -31,9 +27,5 @@ void    bnReset();
 int32_t bnAllocVnodes(struct SVgObj *pVgroup);
 int32_t bnAlterDnode(struct SDnodeObj *pDnode, int32_t vnodeId, int32_t dnodeId);
 int32_t bnDropDnode(struct SDnodeObj *pDnode);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

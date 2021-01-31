@@ -12,6 +12,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+#include <vector>
 #include "os.h"
 #include "qFill.h"
 #include "taosmsg.h"
@@ -2055,7 +2056,7 @@ static void teardownQueryRuntimeEnv(SQueryRuntimeEnv *pRuntimeEnv) {
     tfree(pRuntimeEnv->sasArray);
   }
 
-  pRuntimeEnv->pFillInfo = (SFillInfo*)taosDestroyFillInfo(pRuntimeEnv->pFillInfo);
+  pRuntimeEnv->pFillInfo.reset();
 
   destroyResultBuf(pRuntimeEnv->pResultBuf);
   doFreeQueryHandle(pQInfo);
@@ -4180,7 +4181,7 @@ static void stableApplyFunctionsOnBlock(SQueryRuntimeEnv *pRuntimeEnv, SDataBloc
 
 bool hasNotReturnedResults(SQueryRuntimeEnv* pRuntimeEnv) {
   SQuery *pQuery = pRuntimeEnv->pQuery;
-  SFillInfo *pFillInfo = pRuntimeEnv->pFillInfo;
+  auto &pFillInfo = pRuntimeEnv->pFillInfo;
 
   if (pQuery->limit.limit > 0 && pQuery->rec.total >= pQuery->limit.limit) {
     return false;
@@ -4188,7 +4189,7 @@ bool hasNotReturnedResults(SQueryRuntimeEnv* pRuntimeEnv) {
 
   if (pQuery->fillType != TSDB_FILL_NONE && !isPointInterpoQuery(pQuery)) {
     // There are results not returned to client yet, so filling applied to the remain result is required firstly.
-    if (taosFillHasMoreResults(pFillInfo)) {
+    if (pFillInfo->hasMoreResults()) {
       return true;
     }
 
@@ -4202,7 +4203,7 @@ bool hasNotReturnedResults(SQueryRuntimeEnv* pRuntimeEnv) {
      * first result row in the actual result set will fill nothing.
      */
     if (Q_STATUS_EQUAL(pQuery->status, QUERY_COMPLETED)) {
-      int32_t numOfTotal = (int32_t)getNumOfResultsAfterFillGap(pFillInfo, pQuery->window.ekey, (int32_t)pQuery->rec.capacity);
+      int32_t numOfTotal = (int32_t)pFillInfo->getNumOfResultsAfterFillGap(pQuery->window.ekey, (int32_t)pQuery->rec.capacity);
       return numOfTotal > 0;
     }
 
@@ -4280,10 +4281,10 @@ static void doCopyQueryResultToMsg(SQInfo *pQInfo, int32_t numOfRows, char *data
 int32_t doFillGapsInResults(SQueryRuntimeEnv* pRuntimeEnv, tFilePage **pDst, int32_t *numOfFilled) {
   SQInfo* pQInfo = GET_QINFO_ADDR(pRuntimeEnv);
   SQuery *pQuery = pRuntimeEnv->pQuery;
-  SFillInfo* pFillInfo = pRuntimeEnv->pFillInfo;
+  auto &pFillInfo = pRuntimeEnv->pFillInfo;
 
   while (1) {
-    int32_t ret = (int32_t)taosFillResultDataBlock(pFillInfo, (tFilePage**)pQuery->sdata, (int32_t)pQuery->rec.capacity);
+    int32_t ret = (int32_t)pFillInfo->fillResultDataBlock((tFilePage**)pQuery->sdata, (int32_t)pQuery->rec.capacity);
 
     // todo apply limit output function
     /* reached the start position of according to offset value, return immediately */
@@ -4639,14 +4640,11 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
   return terrno;
 }
 
-static SFillColInfo* createFillColInfo(SQuery* pQuery) {
+static std::vector<SFillColInfo> createFillColInfo(SQuery* pQuery) {
   int32_t numOfCols = getNumOfFinalResCol(pQuery);
   int32_t offset = 0;
 
-  SFillColInfo* pFillCol = (SFillColInfo*)calloc(numOfCols, sizeof(SFillColInfo));
-  if (pFillCol == NULL) {
-    return NULL;
-  }
+  std::vector<SFillColInfo> pFillCol(numOfCols);
 
   // TODO refactor
   for(int32_t i = 0; i < numOfCols; ++i) {
@@ -4749,7 +4747,7 @@ int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bo
   }
 
   if (pQuery->fillType != TSDB_FILL_NONE && !isPointInterpoQuery(pQuery)) {
-    SFillColInfo* pColInfo = createFillColInfo(pQuery);
+    auto pColInfo = createFillColInfo(pQuery);
     STimeWindow w = TSWINDOW_INITIALIZER;
 
     TSKEY sk = MIN(pQuery->window.skey, pQuery->window.ekey);
@@ -4757,9 +4755,9 @@ int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bo
     getAlignQueryTimeWindow(pQuery, pQuery->window.skey, sk, ek, &w);
 
     int32_t numOfCols = getNumOfFinalResCol(pQuery);
-    pRuntimeEnv->pFillInfo = taosInitFillInfo(pQuery->order.order, w.skey, 0, (int32_t)pQuery->rec.capacity, numOfCols,
+    pRuntimeEnv->pFillInfo.reset(new SFillInfo(pQuery->order.order, w.skey, 0, (int32_t)pQuery->rec.capacity, numOfCols,
                                               pQuery->interval.sliding, pQuery->interval.slidingUnit, (int8_t)pQuery->precision,
-                                              pQuery->fillType, pColInfo, pQInfo);
+                                              pQuery->fillType, std::move(pColInfo), pQInfo));
   }
 
   setQueryStatus(pQuery, QUERY_NOT_COMPLETED);
@@ -5757,8 +5755,8 @@ static void tableIntervalProcess(SQInfo *pQInfo, STableQueryInfo* pTableInfo) {
     copyFromWindowResToSData(pQInfo, &pRuntimeEnv->windowResInfo);
     doSecondaryArithmeticProcess(pQuery);
 
-    taosFillSetStartInfo(pRuntimeEnv->pFillInfo, (int32_t)pQuery->rec.rows, pQuery->window.ekey);
-    taosFillCopyInputDataFromFilePage(pRuntimeEnv->pFillInfo, (const tFilePage **)pQuery->sdata);
+    pRuntimeEnv->pFillInfo->fillSetStartInfo((int32_t)pQuery->rec.rows, pQuery->window.ekey);
+    pRuntimeEnv->pFillInfo->fillCopyInputDataFromFilePage((const tFilePage **)pQuery->sdata);
 
     int32_t numOfFilled = 0;
     pQuery->rec.rows = doFillGapsInResults(pRuntimeEnv, (tFilePage **)pQuery->sdata, &numOfFilled);

@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TTIMER_H
 #define TDENGINE_TTIMER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef void *tmr_h;
 typedef void (*TAOS_TMR_CALLBACK)(void *, void *);
 
@@ -43,9 +39,5 @@ void taosTmrCleanUp(void *handle);
 int32_t taosInitTimer(void (*callback)(int), int32_t ms);
 
 void taosUninitTimer();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TTIMER_H

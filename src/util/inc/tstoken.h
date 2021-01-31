@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TTOKEN_H
 #define TDENGINE_TTOKEN_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "os.h"
 #include "tutil.h"
 #include "ttokendef.h"
@@ -180,9 +176,5 @@ static FORCE_INLINE int32_t tGetNumericStringType(const SStrToken* pToken) {
 }
 
 void taosCleanupKeywordsTable();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // TDENGINE_TTOKEN_H

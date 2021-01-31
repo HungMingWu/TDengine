@@ -16,10 +16,6 @@
 #ifndef TDENGINE_OS_MATH_H
 #define TDENGINE_OS_MATH_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define POW2(x) ((x) * (x))
 #define ABS(x) ((x) > 0 ? (x) : -(x))
 
@@ -44,10 +40,6 @@ extern "C" {
         typeof(b) __b = (b);     \
         (__a < __b) ? __a : __b; \
     })
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif

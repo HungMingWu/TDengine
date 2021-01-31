@@ -16,10 +16,6 @@
 #ifndef TDENGINE_TSYSTEM_H
 #define TDENGINE_TSYSTEM_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 bool taosGetSysMemory(float *memoryUsedMB);
 bool taosGetProcMemory(float *memoryUsedMB);
 bool taosGetDisk();
@@ -30,9 +26,5 @@ void taosGetSystemInfo();
 void taosPrintOsInfo();
 void taosKillSystem();
 void taosSetCoreDump();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

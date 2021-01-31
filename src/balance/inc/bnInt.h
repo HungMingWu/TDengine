@@ -37,10 +37,6 @@ typedef struct {
 } SBnThread;
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int32_t bnInit();
 void    bnCleanUp();
 bool    bnStart();
@@ -49,9 +45,5 @@ void    bnCheckModules();
 
 extern SBnDnodes tsBnDnodes;
 extern void *tsMnodeTmr;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
