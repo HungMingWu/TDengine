@@ -574,7 +574,7 @@ int32_t simExecuteRestFulCommand(SScript *script, char *command) {
 
   int32_t mallocSize = 2000;
   int32_t alreadyReadSize = 0;
-  char *  content = malloc(mallocSize);
+  char *  content = (char*)malloc(mallocSize);
 
   while (!feof(fp)) {
     int32_t availSize = mallocSize - alreadyReadSize;
@@ -582,7 +582,7 @@ int32_t simExecuteRestFulCommand(SScript *script, char *command) {
     if (len >= availSize) {
       alreadyReadSize += len;
       mallocSize *= 2;
-      content = realloc(content, mallocSize);
+      content = (char*)realloc(content, mallocSize);
     }
   }
 

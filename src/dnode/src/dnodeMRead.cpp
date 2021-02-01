@@ -77,7 +77,7 @@ void dnodeCleanupMRead() {
 
   dDebug("dnode mread is closed, qset:%p", tsMReadQset);
 
-  taosCloseQset();
+  taosCloseQset(tsMReadQset);
   tsMReadQset = NULL;
   free(tsMReadWP.worker);
 }

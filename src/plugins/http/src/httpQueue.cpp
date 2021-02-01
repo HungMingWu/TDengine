@@ -146,7 +146,7 @@ void httpCleanupResultQueue() {
     }
   }
 
-  taosCloseQset();
+  taosCloseQset(tsHttpQset);
   free(tsHttpPool.httpWorker);
 
   httpInfo("http result queue is closed");

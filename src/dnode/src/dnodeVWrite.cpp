@@ -64,7 +64,7 @@ void dnodeCleanupVWrite() {
     if (pWorker->thread) {
       pthread_join(pWorker->thread, NULL);
       taosFreeQall(pWorker->qall);
-      taosCloseQset();
+      taosCloseQset(pWorker->qset);
     }
   }
 
@@ -129,7 +129,7 @@ void *dnodeAllocVWriteQueue(void *pVnode) {
     taosAddIntoQset(pWorker->qset, queue, pVnode);
     pWorker->qall = taosAllocateQall();
     if (pWorker->qall == NULL) {
-      taosCloseQset();
+      taosCloseQset(pWorker->qset);
       taosCloseQueue(queue);
       pthread_mutex_unlock(&tsVWriteWP.mutex);
       return NULL;
@@ -141,7 +141,7 @@ void *dnodeAllocVWriteQueue(void *pVnode) {
     if (pthread_create(&pWorker->thread, &thAttr, dnodeProcessVWriteQueue, pWorker) != 0) {
       dError("failed to create thread to process vwrite queue since %s", strerror(errno));
       taosFreeQall(pWorker->qall);
-      taosCloseQset();
+      taosCloseQset(pWorker->qset);
       taosCloseQueue(queue);
       queue = NULL;
     } else {

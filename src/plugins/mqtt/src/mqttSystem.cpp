@@ -14,8 +14,10 @@
  */
 
 #define _DEFAULT_SOURCE
+extern "C" {
+    #include "mqtt.h"
+}
 #include "os.h"
-#include "mqtt.h"
 #include "mqttInit.h"
 #include "mqttLog.h"
 #include "mqttPayload.h"

@@ -982,7 +982,7 @@ static int32_t sdbAllocQueue() {
 
   tsSdbWQall = taosAllocateQall();
   if (tsSdbWQall == NULL) {
-    taosCloseQset();
+    taosCloseQset(tsSdbWQset);
     taosCloseQueue(tsSdbWQueue);
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
@@ -998,7 +998,7 @@ static int32_t sdbAllocQueue() {
     if (pthread_create(&pWorker->thread, &thAttr, sdbWorkerFp, pWorker) != 0) {
       mError("failed to create thread to process sdb write queue, reason:%s", strerror(errno));
       taosFreeQall(tsSdbWQall);
-      taosCloseQset();
+      taosCloseQset(tsSdbWQset);
       taosCloseQueue(tsSdbWQueue);
       return TSDB_CODE_MND_OUT_OF_MEMORY;
     }
@@ -1014,7 +1014,7 @@ static int32_t sdbAllocQueue() {
 static void sdbFreeQueue() {
   taosCloseQueue(tsSdbWQueue);
   taosFreeQall(tsSdbWQall);
-  taosCloseQset();
+  taosCloseQset(tsSdbWQset);
   tsSdbWQall = NULL;
   tsSdbWQset = NULL;
   tsSdbWQueue = NULL;

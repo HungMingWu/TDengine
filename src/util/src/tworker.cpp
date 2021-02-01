@@ -48,7 +48,7 @@ void tWorkerCleanup(SWorkerPool *pPool) {
   }
 
   free(pPool->worker);
-  taosCloseQset();
+  taosCloseQset(pPool->qset);
 
   uInfo("worker:%s is closed", pPool->name);
 }

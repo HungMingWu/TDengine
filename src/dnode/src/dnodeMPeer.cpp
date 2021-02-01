@@ -77,7 +77,7 @@ void dnodeCleanupMPeer() {
 
   dDebug("dnode mpeer is closed, qset:%p", tsMPeerQset);
 
-  taosCloseQset();
+  taosCloseQset(tsMPeerQset);
   tsMPeerQset = NULL;
   tfree(tsMPeerWP.worker);
 }

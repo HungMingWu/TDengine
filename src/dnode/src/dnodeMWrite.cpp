@@ -77,7 +77,7 @@ void dnodeCleanupMWrite() {
 
   dDebug("dnode mwrite is closed, qset:%p", tsMWriteQset);
 
-  taosCloseQset();
+  taosCloseQset(tsMWriteQset);
   tsMWriteQset = NULL;
   tfree(tsMWriteWP.worker);
 }

@@ -15,7 +15,7 @@
 
 #include "os.h"
 #include "tulog.h"
-#include <stdbool.h>
+#include "tidpool.h"
 
 typedef struct {
   int             maxId;
@@ -120,7 +120,7 @@ void taosIdPoolMarkStatus(void *handle, int id) {
   pthread_mutex_unlock(&pIdPool->mutex);
 }
 
-int taosUpdateIdPool(id_pool_t *handle, int maxId) {
+int taosUpdateIdPool(void *handle, int maxId) {
   id_pool_t *pIdPool = (id_pool_t*)handle;
   if (maxId <= pIdPool->maxId) {
     return 0;

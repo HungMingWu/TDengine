@@ -121,7 +121,7 @@ void vnodeCleanupMWorker() {
 
   vDebug("vmworker is closed, qset:%p", tsVMWorkerQset);
 
-  taosCloseQset();
+  taosCloseQset(tsVMWorkerQset);
   tsVMWorkerQset = NULL;
   tfree(tsVMWorkerPool.worker);
 
