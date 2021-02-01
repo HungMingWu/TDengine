@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "taoserror.h"
 #include "taosmsg.h"
@@ -44,15 +45,14 @@ typedef struct {
 
 static SVMWorkerPool tsVMWorkerPool;
 static taos_qset     tsVMWorkerQset;
-static taos_queue    tsVMWorkerQueue;
+static std::unique_ptr<STaosQueue>   tsVMWorkerQueue;
 
 static void *vnodeMWorkerFunc(void *param);
 
 static int32_t vnodeStartMWorker() {
-  tsVMWorkerQueue = taosOpenQueue();
-  if (tsVMWorkerQueue == NULL) return TSDB_CODE_DND_OUT_OF_MEMORY;
+  tsVMWorkerQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsVMWorkerQset, tsVMWorkerQueue, NULL);
+  taosAddIntoQset(tsVMWorkerQset, tsVMWorkerQueue.get(), NULL);
 
   for (int32_t i = tsVMWorkerPool.curNum; i < tsVMWorkerPool.maxNum; ++i) {
     SVMWorker *pWorker = tsVMWorkerPool.worker + i;
@@ -72,7 +72,7 @@ static int32_t vnodeStartMWorker() {
     vDebug("vmworker:%d is launched, total:%d", pWorker->workerId, tsVMWorkerPool.maxNum);
   }
 
-  vDebug("vmworker queue:%p is allocated", tsVMWorkerQueue);
+  vDebug("vmworker queue:%p is allocated", tsVMWorkerQueue.get());
   return TSDB_CODE_SUCCESS;
 }
 
@@ -96,9 +96,8 @@ int32_t vnodeInitMWorker() {
 }
 
 static void vnodeStopMWorker() {
-  vDebug("vmworker queue:%p is freed", tsVMWorkerQueue);
-  taosCloseQueue(tsVMWorkerQueue);
-  tsVMWorkerQueue = NULL;
+  vDebug("vmworker queue:%p is freed", tsVMWorkerQueue.get());
+  tsVMWorkerQueue.reset();
 }
 
 void vnodeCleanupMWorker() {
@@ -137,7 +136,7 @@ static int32_t vnodeWriteIntoMWorker(SVnodeObj *pVnode, EVMWorkerAction action, 
   pMsg->rpcHandle = rpcHandle;
   pMsg->action = action;
 
-  int32_t code = taosWriteQitem(tsVMWorkerQueue, TAOS_QTYPE_RPC, pMsg);
+  int32_t code = tsVMWorkerQueue->writeQitem(TAOS_QTYPE_RPC, pMsg);
   if (code == 0) code = TSDB_CODE_DND_ACTION_IN_PROGRESS;
 
   return code;

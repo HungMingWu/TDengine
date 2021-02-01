@@ -21,7 +21,7 @@
 int32_t dnodeInitVWrite();
 void    dnodeCleanupVWrite();
 void    dnodeDispatchToVWriteQueue(SRpcMsg *pMsg);
-void *  dnodeAllocVWriteQueue(void *pVnode);
+std::unique_ptr<STaosQueue> dnodeAllocVWriteQueue(void *pVnode);
 void    dnodeFreeVWriteQueue(void *pWqueue);
 void    dnodeSendRpcVWriteRsp(void *pVnode, void *pWrite, int32_t code);
 

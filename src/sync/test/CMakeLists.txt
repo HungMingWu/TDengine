@@ -4,11 +4,11 @@ PROJECT(TDengine)
 IF (TD_LINUX)
   INCLUDE_DIRECTORIES(../inc)
 
-  LIST(APPEND CLIENT_SRC ./syncClient.c)
+  LIST(APPEND CLIENT_SRC ./syncClient.cpp)
   ADD_EXECUTABLE(syncClient ${CLIENT_SRC})
   TARGET_LINK_LIBRARIES(syncClient sync trpc common)
 
-  LIST(APPEND SERVER_SRC ./syncServer.c)
+  LIST(APPEND SERVER_SRC ./syncServer.cpp)
   ADD_EXECUTABLE(syncServer ${SERVER_SRC})
   TARGET_LINK_LIBRARIES(syncServer sync trpc common)
 ENDIF ()

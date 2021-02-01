@@ -215,8 +215,8 @@ int32_t vnodeOpen(int32_t vgId) {
   pVnode->fversion = pVnode->version;
   
   pVnode->wqueue = dnodeAllocVWriteQueue(pVnode);
-  pVnode->qqueue = dnodeAllocVQueryQueue(pVnode);
-  pVnode->fqueue = dnodeAllocVFetchQueue(pVnode);
+  pVnode->qqueue.reset(dnodeAllocVQueryQueue(pVnode));
+  pVnode->fqueue.reset(dnodeAllocVFetchQueue(pVnode));
   if (pVnode->wqueue == NULL || pVnode->qqueue == NULL || pVnode->fqueue == NULL) {
     pVnode->CleanUp();
     return terrno;
@@ -367,17 +367,9 @@ void SVnodeObj::Destroy() {
     walClose(wal);
   }
 
-  if (wqueue) {
-    dnodeFreeVWriteQueue(wqueue);
-  }
-
-  if (qqueue) {
-    taosCloseQueue(qqueue);
-  }
-
-  if (fqueue) {
-    taosCloseQueue(fqueue);
-  }
+  wqueue.reset();
+  qqueue.reset();
+  fqueue.reset();
 
   tfree(rootDir);
 

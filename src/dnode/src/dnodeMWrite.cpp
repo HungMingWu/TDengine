@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "ttimer.h"
 #include "tqueue.h"
@@ -34,7 +35,7 @@ typedef struct {
 
 static SMWriteWorkerPool tsMWriteWP;
 static taos_qset         tsMWriteQset;
-static taos_queue        tsMWriteQueue;
+static std::unique_ptr<STaosQueue>        tsMWriteQueue;
 extern void *            tsDnodeTmr;
 
 static void *dnodeProcessMWriteQueue(void *param);
@@ -83,10 +84,9 @@ void dnodeCleanupMWrite() {
 }
 
 int32_t dnodeAllocMWritequeue() {
-  tsMWriteQueue = taosOpenQueue();
-  if (tsMWriteQueue == NULL) return TSDB_CODE_DND_OUT_OF_MEMORY;
+  tsMWriteQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsMWriteQset, tsMWriteQueue, NULL);
+  taosAddIntoQset(tsMWriteQset, tsMWriteQueue.get(), NULL);
 
   for (int32_t i = tsMWriteWP.curNum; i < tsMWriteWP.maxNum; ++i) {
     SMWriteWorker *pWorker = tsMWriteWP.worker + i;
@@ -105,14 +105,13 @@ int32_t dnodeAllocMWritequeue() {
     dDebug("dnode mwrite worker:%d is launched, total:%d", pWorker->workerId, tsMWriteWP.maxNum);
   }
 
-  dDebug("dnode mwrite queue:%p is allocated", tsMWriteQueue);
+  dDebug("dnode mwrite queue:%p is allocated", tsMWriteQueue.get());
   return TSDB_CODE_SUCCESS;
 }
 
 void dnodeFreeMWritequeue() {
-  dDebug("dnode mwrite queue:%p is freed", tsMWriteQueue);
-  taosCloseQueue(tsMWriteQueue);
-  tsMWriteQueue = NULL;
+  dDebug("dnode mwrite queue:%p is freed", tsMWriteQueue.get());
+  tsMWriteQueue.reset();
 }
 
 void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
@@ -121,8 +120,8 @@ void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
   } else {
     SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(mnodeCreateMsg(pMsg));
     dTrace("msg:%p, app:%p type:%s is put into mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
-           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue);
-    taosWriteQitem(tsMWriteQueue, TAOS_QTYPE_RPC, pWrite);
+           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get());
+    tsMWriteQueue->writeQitem(TAOS_QTYPE_RPC, pWrite);
   }
 
   rpcFreeCont(pMsg->pCont);
@@ -130,7 +129,7 @@ void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
 
 static void dnodeFreeMWriteMsg(SMnodeMsg *pWrite) {
   dTrace("msg:%p, app:%p type:%s is freed from mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
-         taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue);
+         taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get());
 
   mnodeCleanupMsg(pWrite);
   taosFreeQitem(pWrite);
@@ -199,9 +198,9 @@ void dnodeReprocessMWriteMsg(void *pMsg) {
     dnodeFreeMWriteMsg(pWrite);
   } else {
     dDebug("msg:%p, app:%p type:%s is reput into mwrite queue:%p, retry times:%d", pWrite, pWrite->rpcMsg.ahandle,
-           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue, pWrite->retry);
+           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get(), pWrite->retry);
 
-    taosWriteQitem(tsMWriteQueue, TAOS_QTYPE_RPC, pWrite);
+    tsMWriteQueue->writeQitem(TAOS_QTYPE_RPC, pWrite);
   }
 }
 

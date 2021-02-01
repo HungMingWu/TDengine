@@ -16,7 +16,8 @@
 #ifndef TDENGINE_VNODE_INT_H
 #define TDENGINE_VNODE_INT_H
 
-#include <mutex>
+#include <memory>
+#include "tqueue.h"
 #include "tlog.h"
 #include "tsync.h"
 #include "tcq.h"
@@ -62,9 +63,9 @@ struct SVnodeObj {
   uint64_t   version = 0;   // current version
   uint64_t   cversion;      // version while commit start
   uint64_t   fversion = 0;  // version on saved data file
-  void*      wqueue;        // write queue
-  void*      qqueue;        // read query queue
-  void*      fqueue;        // read fetch/cancel queue
+  std::unique_ptr<STaosQueue> wqueue;        // write queue
+  std::unique_ptr<STaosQueue> qqueue;        // read query queue
+  std::unique_ptr<STaosQueue> fqueue;        // read fetch/cancel queue
   void*      wal;
   void*      tsdb;
   int64_t    sync;

@@ -130,7 +130,7 @@ static int32_t syncRetrieveFile(SSyncPeer *pPeer) {
       break;
     }
 
-    ret = syncCheckHead((SSyncHead*)(&fileAck));
+    ret = ((SSyncHead*)(&fileAck))->check();
     if (ret != 0) {
       code = -1;
       sError("%s, failed to check file:%s ack while retrieve file since %s", pPeer->id, fileInfo.name, strerror(ret));

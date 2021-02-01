@@ -449,8 +449,8 @@ static bool bnMonitorVgroups() {
   return hasUpdatingVgroup;
 }
 
-static bool bnMonitorDnodeDropping(SDnodeObj *pDnode) {
-  mDebug("dnode:%d, in dropping state", pDnode->dnodeId);
+bool SDnodeObj::monitorDropping() {
+  mDebug("dnode:%d, in dropping state", dnodeId);
 
   void *  pIter = NULL;
   bool    hasThisDnode = false;
@@ -459,7 +459,7 @@ static bool bnMonitorDnodeDropping(SDnodeObj *pDnode) {
     pIter = mnodeGetNextVgroup(pIter, &pVgroup);
     if (pVgroup == NULL) break;
 
-    hasThisDnode = bnCheckDnodeInVgroup(pDnode, pVgroup);
+    hasThisDnode = bnCheckDnodeInVgroup(this, pVgroup);
     mnodeDecVgroupRef(pVgroup);
 
     if (hasThisDnode) {
@@ -469,8 +469,8 @@ static bool bnMonitorDnodeDropping(SDnodeObj *pDnode) {
   }
 
   if (!hasThisDnode) {
-    mInfo("dnode:%d, dropped for all vnodes are moving to other dnodes", pDnode->dnodeId);
-    mnodeDropDnode(pDnode, NULL);
+    mInfo("dnode:%d, dropped for all vnodes are moving to other dnodes", dnodeId);
+    drop(nullptr);
     return true;
   }
 
@@ -494,15 +494,14 @@ static bool bnMontiorDropping() {
       mLInfo("dnode:%d, set to removing state for it offline:%d seconds", pDnode->dnodeId,
               tsAccessSquence - pDnode->lastAccess);
 
-      pDnode->status = TAOS_DN_STATUS_DROPPING;
-      mnodeUpdateDnode(pDnode);
+      pDnode->update(TAOS_DN_STATUS_DROPPING);
       mnodeDecDnodeRef(pDnode);
       mnodeCancelGetNextDnode(pIter);
       return true;
     }
 
     if (pDnode->status == TAOS_DN_STATUS_DROPPING) {
-      bool ret = bnMonitorDnodeDropping(pDnode);
+      bool ret = pDnode->monitorDropping();
       mnodeDecDnodeRef(pDnode);
       mnodeCancelGetNextDnode(pIter);
       return ret;
@@ -620,8 +619,7 @@ int32_t bnDropDnode(SDnodeObj *pDnode) {
     return TSDB_CODE_MND_NO_ENOUGH_DNODES;
   }
 
-  pDnode->status = TAOS_DN_STATUS_DROPPING;
-  mnodeUpdateDnode(pDnode);
+  pDnode->update(TAOS_DN_STATUS_DROPPING);
   
   bnStartTimer(1100);
 

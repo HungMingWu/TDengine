@@ -135,11 +135,11 @@ int32_t vnodeWriteToRQueue(void *vparam, void *pCont, int32_t contLen, int8_t qt
   if (pRead->code == TSDB_CODE_RPC_NETWORK_UNAVAIL || pRead->msgType == TSDB_MSG_TYPE_FETCH) {
     vTrace("vgId:%d, write into vfetch queue, refCount:%d queued:%d", pVnode->vgId, pVnode->refCount,
            pVnode->queuedRMsg);
-    return taosWriteQitem(pVnode->fqueue, qtype, pRead);
+    return pVnode->fqueue->writeQitem(qtype, pRead);
   } else {
     vTrace("vgId:%d, write into vquery queue, refCount:%d queued:%d", pVnode->vgId, pVnode->refCount,
            pVnode->queuedRMsg);
-    return taosWriteQitem(pVnode->qqueue, qtype, pRead);
+    return pVnode->qqueue->writeQitem(qtype, pRead);
   }
 }
 

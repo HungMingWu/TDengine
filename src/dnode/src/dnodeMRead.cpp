@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "tqueue.h"
 #include "mnode.h"
@@ -33,7 +34,7 @@ typedef struct {
 
 static SMReadWorkerPool tsMReadWP;
 static taos_qset        tsMReadQset;
-static taos_queue       tsMReadQueue;
+static std::unique_ptr<STaosQueue>       tsMReadQueue;
 
 static void *dnodeProcessMReadQueue(void *param);
 
@@ -83,10 +84,9 @@ void dnodeCleanupMRead() {
 }
 
 int32_t dnodeAllocMReadQueue() {
-  tsMReadQueue = taosOpenQueue();
-  if (tsMReadQueue == NULL) return TSDB_CODE_DND_OUT_OF_MEMORY;
+  tsMReadQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsMReadQset, tsMReadQueue, NULL);
+  taosAddIntoQset(tsMReadQset, tsMReadQueue.get(), NULL);
 
   for (int32_t i = tsMReadWP.curNum; i < tsMReadWP.maxNum; ++i) {
     SMReadWorker *pWorker = tsMReadWP.worker + i;
@@ -105,14 +105,13 @@ int32_t dnodeAllocMReadQueue() {
     dDebug("dnode mread worker:%d is launched, total:%d", pWorker->workerId, tsMReadWP.maxNum);
   }
 
-  dDebug("dnode mread queue:%p is allocated", tsMReadQueue);
+  dDebug("dnode mread queue:%p is allocated", tsMReadQueue.get());
   return TSDB_CODE_SUCCESS;
 }
 
 void dnodeFreeMReadQueue() {
-  dDebug("dnode mread queue:%p is freed", tsMReadQueue);
-  taosCloseQueue(tsMReadQueue);
-  tsMReadQueue = NULL;
+  dDebug("dnode mread queue:%p is freed", tsMReadQueue.get());
+  tsMReadQueue.reset();
 }
 
 void dnodeDispatchToMReadQueue(SRpcMsg *pMsg) {
@@ -120,7 +119,7 @@ void dnodeDispatchToMReadQueue(SRpcMsg *pMsg) {
     dnodeSendRedirectMsg(pMsg, true);
   } else {
     SMnodeMsg *pRead = static_cast<SMnodeMsg * >(mnodeCreateMsg(pMsg));
-    taosWriteQitem(tsMReadQueue, TAOS_QTYPE_RPC, pRead);
+    tsMReadQueue->writeQitem(TAOS_QTYPE_RPC, pRead);
   }
 
   rpcFreeCont(pMsg->pCont);

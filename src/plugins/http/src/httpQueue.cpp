@@ -47,7 +47,7 @@ typedef struct {
 
 static SHttpWorkerPool tsHttpPool;
 static taos_qset tsHttpQset;
-static taos_queue tsHttpQueue;
+static std::unique_ptr<STaosQueue> tsHttpQueue;
 
 void httpDispatchToResultQueue(void *param, TAOS_RES *result, int32_t code, int32_t rows, FHttpResultFp fp) {
   if (tsHttpQueue != NULL) {
@@ -57,7 +57,7 @@ void httpDispatchToResultQueue(void *param, TAOS_RES *result, int32_t code, int3
     pMsg->code = code;
     pMsg->rows = rows;
     pMsg->fp = fp;
-    taosWriteQitem(tsHttpQueue, TAOS_QTYPE_RPC, pMsg);
+    tsHttpQueue->writeQitem(TAOS_QTYPE_RPC, pMsg);
   } else {
     (*fp)(param, result, code, rows);
   }
@@ -84,10 +84,9 @@ static void *httpProcessResultQueue(void *param) {
 }
 
 static bool httpAllocateResultQueue() {
-  tsHttpQueue = taosOpenQueue();
-  if (tsHttpQueue == NULL) return false;
+  tsHttpQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsHttpQset, tsHttpQueue, NULL);
+  taosAddIntoQset(tsHttpQset, tsHttpQueue.get(), NULL);
 
   for (int32_t i = 0; i < tsHttpPool.num; ++i) {
     SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
@@ -110,8 +109,7 @@ static bool httpAllocateResultQueue() {
 }
 
 static void httpFreeResultQueue() {
-  taosCloseQueue(tsHttpQueue);
-  tsHttpQueue = NULL;
+  tsHttpQueue.reset();
 }
 
 bool httpInitResultQueue() {

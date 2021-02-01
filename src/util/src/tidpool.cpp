@@ -13,140 +13,59 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "os.h"
-#include "tulog.h"
 #include "tidpool.h"
 
-typedef struct {
-  int             maxId;
-  int             numOfFree;
-  int             freeSlot;
-  bool *          freeList;
-  pthread_mutex_t mutex;
-} id_pool_t;
+id_pool_t::id_pool_t(int maxId) : freeList(maxId), numOfFree(maxId), freeSlot(0) {}
 
-void *taosInitIdPool(int maxId) {
-  id_pool_t *pIdPool = (id_pool_t*)calloc(1, sizeof(id_pool_t));
-  if (pIdPool == NULL) return NULL;
-
-  pIdPool->freeList = (bool*)calloc(maxId, sizeof(bool));
-  if (pIdPool->freeList == NULL) {
-    free(pIdPool);
-    return NULL;
-  }
-
-  pIdPool->maxId = maxId;
-  pIdPool->numOfFree = maxId;
-  pIdPool->freeSlot = 0;
-
-  pthread_mutex_init(&pIdPool->mutex, NULL);
-
-  uDebug("pool:%p is setup, maxId:%d", pIdPool, pIdPool->maxId);
-
-  return pIdPool;
-}
-
-int taosAllocateId(void *handle) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  if (handle == NULL) {
-    return -1;
-  }
-
+int id_pool_t::alloc() {
   int slot = -1;
-  pthread_mutex_lock(&pIdPool->mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
-  if (pIdPool->numOfFree > 0) {
-    for (int i = 0; i < pIdPool->maxId; ++i) {
-      slot = (i + pIdPool->freeSlot) % pIdPool->maxId;
-      if (!pIdPool->freeList[slot]) {
-        pIdPool->freeList[slot] = true;
-        pIdPool->freeSlot = slot + 1;
-        pIdPool->numOfFree--;
+  if (numOfFree > 0) {
+    const auto maxId = freeList.size();
+    for (int i = 0; i < freeList.size(); ++i) {
+      slot = (i + freeSlot) % maxId;
+      if (!freeList[slot]) {
+        freeList[slot] = true;
+        freeSlot = slot + 1;
+        numOfFree--;
         break;
       }
     }
   }
 
-  pthread_mutex_unlock(&pIdPool->mutex);
   return slot + 1;
 }
 
-void taosFreeId(void *handle, int id) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  if (handle == NULL) return;
+void id_pool_t::dealloc(int id) {
+  std::lock_guard<std::mutex> lock(mutex);
 
-  pthread_mutex_lock(&pIdPool->mutex);
-
-  int slot = (id - 1) % pIdPool->maxId;
-  if (pIdPool->freeList[slot]) {
-    pIdPool->freeList[slot] = false;
-    pIdPool->numOfFree++;
+  int slot = (id - 1) % freeList.size();
+  if (freeList[slot]) {
+    freeList[slot] = false;
+    numOfFree++;
   }
-
-  pthread_mutex_unlock(&pIdPool->mutex);
 }
 
-void taosIdPoolCleanUp(void *handle) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
+int id_pool_t::numOfUsed() { return freeList.size() - numOfFree; }
 
-  if (pIdPool == NULL) return;
+void id_pool_t::markStatus(int id) {
+  std::lock_guard<std::mutex> lock(mutex);
 
-  uDebug("pool:%p is cleaned", pIdPool);
-
-  if (pIdPool->freeList) free(pIdPool->freeList);
-
-  pthread_mutex_destroy(&pIdPool->mutex);
-
-  memset(pIdPool, 0, sizeof(id_pool_t));
-
-  free(pIdPool);
-}
-
-int taosIdPoolNumOfUsed(void *handle) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  return pIdPool->maxId - pIdPool->numOfFree;
-}
-
-void taosIdPoolMarkStatus(void *handle, int id) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  pthread_mutex_lock(&pIdPool->mutex);
-
-  int slot = (id - 1) % pIdPool->maxId;
-  if (!pIdPool->freeList[slot]) {
-    pIdPool->freeList[slot] = true;
-    pIdPool->numOfFree--;
+  int slot = (id - 1) % freeList.size();
+  if (!freeList[slot]) {
+    freeList[slot] = true;
+    numOfFree--;
   }
-
-  pthread_mutex_unlock(&pIdPool->mutex);
 }
 
-int taosUpdateIdPool(void *handle, int maxId) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  if (maxId <= pIdPool->maxId) {
+int id_pool_t::update(int maxId) {
+  if (maxId <= freeList.size()) {
     return 0;
   }
 
-  bool *idList = (bool*)calloc(maxId, sizeof(bool));
-  if (idList == NULL) {
-    return -1;
-  }
-
-  pthread_mutex_lock(&pIdPool->mutex);
-
-  memcpy(idList, pIdPool->freeList, sizeof(bool) * pIdPool->maxId);
-  pIdPool->numOfFree += (maxId - pIdPool->maxId);
-  pIdPool->maxId = maxId;
-
-  bool *oldIdList = pIdPool->freeList;
-  pIdPool->freeList = idList;
-  free(oldIdList);
-
-  pthread_mutex_unlock(&pIdPool->mutex);
-
+  std::lock_guard<std::mutex> lock(mutex);
+  numOfFree += maxId - freeList.size();
+  freeList.resize(maxId);
   return 0;
-}
-
-int taosIdPoolMaxSize(void *handle) {
-  id_pool_t *pIdPool = (id_pool_t*)handle;
-  return pIdPool->maxId;
 }

@@ -391,8 +391,7 @@ void syncConfirmForward(int64_t rid, uint64_t version, int32_t code) {
 
   SSyncPeer *pPeer = pNode->pMaster;
   if (pPeer && pNode->quorum > 1) {
-    SFwdRsp rsp;
-    syncBuildSyncFwdRsp(&rsp, pNode->vgId, version, code);
+    SFwdRsp rsp(pNode->vgId, version, code);
 
     if (taosWriteMsg(pPeer->peerFd, &rsp, sizeof(SFwdRsp)) == sizeof(SFwdRsp)) {
       sTrace("%s, forward-rsp is sent, code:0x%x hver:%" PRIu64, pPeer->id, code, version);
@@ -1021,7 +1020,7 @@ static int32_t syncReadPeerMsg(SSyncPeer *pPeer, SSyncHead *pHead) {
     return -1;
   }
 
-  int32_t code = syncCheckHead(pHead);
+  int32_t code = pHead->check();
   if (code != 0) {
     sError("%s, failed to check msg head since %s, type:%d", pPeer->id, tstrerror(code), pHead->type);
     return -1;
@@ -1190,7 +1189,7 @@ static void syncProcessIncommingConnection(int32_t connFd, uint32_t sourceIp) {
     return;
   }
 
-  int32_t code = syncCheckHead((SSyncHead *)(&msg));
+  int32_t code = ((SSyncHead *)(&msg))->check();
   if (code != 0) {
     sError("failed to check peer sync msg from ip:%s since %s", ipstr, strerror(code));
     taosCloseSocket(connFd);
@@ -1412,7 +1411,7 @@ static int32_t syncForwardToPeerImpl(SSyncNode *pNode, void *data, void *mhandle
 
     // a hacker way to improve the performance
   pSyncHead = (SSyncHead *)(((char *)pWalHead) - sizeof(SSyncHead));
-  syncBuildSyncFwdMsg(pSyncHead, pNode->vgId, sizeof(SWalHead) + pWalHead->len);
+  pSyncHead->buildFwdMsg(pNode->vgId, sizeof(SWalHead) + pWalHead->len);
   fwdLen = pSyncHead->len + sizeof(SSyncHead);  // include the WAL and SYNC head
 
   std::lock_guard<std::mutex> lock(pNode->mutex);

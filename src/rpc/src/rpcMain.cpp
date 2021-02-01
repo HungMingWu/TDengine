@@ -13,6 +13,9 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <memory>
+#include <mutex>
+#include <vector>
 #include "os.h"
 #include "tidpool.h"
 #include "tmd5.h"
@@ -40,7 +43,47 @@
 #define rpcContLenFromMsg(msgLen) (msgLen - sizeof(SRpcHead))
 #define rpcIsReq(type) (type & 1U)
 
-typedef struct {
+struct SRpcInfo;
+struct SRpcReqContext;
+
+struct SRpcConn {
+  char            info[48];                 // debug info: label + pConn + ahandle
+  int             sid;                      // session ID
+  uint32_t        ownId;                    // own link ID
+  uint32_t        peerId;                   // peer link ID
+  char            user[TSDB_UNI_LEN];       // user ID for the link
+  char            spi;                      // security parameter index
+  char            encrypt;                  // encryption, 0:1
+  char            secret[TSDB_KEY_LEN];     // secret for the link
+  char            ckey[TSDB_KEY_LEN];       // ciphering key
+  char            secured;                  // if set to 1, no authentication
+  uint16_t        localPort;                // for UDP only
+  uint32_t        linkUid;                  // connection unique ID assigned by client
+  uint32_t        peerIp;                   // peer IP
+  uint16_t        peerPort;                 // peer port
+  char            peerFqdn[TSDB_FQDN_LEN];  // peer FQDN or ip string
+  uint16_t        tranId;                   // outgoing transcation ID, for build message
+  uint16_t        outTranId;                // outgoing transcation ID
+  uint16_t        inTranId;                 // transcation ID for incoming msg
+  uint8_t         outType;                  // message type for outgoing request
+  uint8_t         inType;                   // message type for incoming request
+  void *          chandle;                  // handle passed by TCP/UDP connection layer
+  void *          ahandle;                  // handle provided by upper app layter
+  int             retry;                    // number of retry for sending request
+  int             tretry;                   // total retry
+  void *          pTimer;                   // retry timer to monitor the response
+  void *          pIdleTimer;               // idle timer
+  char *          pRspMsg;                  // response message including header
+  int             rspMsgLen;                // response messag length
+  char *          pReqMsg;                  // request message including header
+  int             reqMsgLen;                // request message length
+  SRpcInfo *      pRpc;                     // the associated SRpcInfo
+  int8_t          connType;                 // connection type
+  int64_t         lockedBy;                 // lock for connection
+  SRpcReqContext *pContext;                 // request context
+};
+
+struct SRpcInfo {
   int      sessions;     // number of sessions allowed
   int      numOfThreads; // number of threads to process incoming messages
   int      idleTime;     // milliseconds;
@@ -59,17 +102,17 @@ typedef struct {
   int    (*afp)(char *user, char *spi, char *encrypt, char *secret, char *ckey); 
 
   int32_t   refCount;
-  void     *idPool;   // handle to ID pool
+  std::unique_ptr<id_pool_t> idPool;   // handle to ID pool
   void     *tmrCtrl;  // handle to timer
   SHashObj *hash;     // handle returned by hash utility
   void     *tcphandle;// returned handle from TCP initialization
   void     *udphandle;// returned handle from UDP initialization
   void     *pCache;   // connection cache
-  pthread_mutex_t  mutex;
-  struct SRpcConn *connList;  // connection list
-} SRpcInfo;
+  std::mutex  mutex;
+  std::vector<SRpcConn> connList;  // connection list
+};
 
-typedef struct {
+struct SRpcReqContext {
   SRpcInfo *pRpc;       // associated SRpcInfo
   SRpcEpSet epSet;      // ip list provided by app
   void     *ahandle;    // handle provided by app
@@ -87,44 +130,7 @@ typedef struct {
   tsem_t   *pSem;       // for synchronous API
   SRpcEpSet *pSet;      // for synchronous API 
   char      msg[0];     // RpcHead starts from here
-} SRpcReqContext;
-
-typedef struct SRpcConn {
-  char      info[48];// debug info: label + pConn + ahandle
-  int       sid;     // session ID
-  uint32_t  ownId;   // own link ID
-  uint32_t  peerId;  // peer link ID
-  char      user[TSDB_UNI_LEN]; // user ID for the link
-  char      spi;     // security parameter index
-  char      encrypt; // encryption, 0:1 
-  char      secret[TSDB_KEY_LEN]; // secret for the link
-  char      ckey[TSDB_KEY_LEN];   // ciphering key 
-  char      secured;              // if set to 1, no authentication
-  uint16_t  localPort;      // for UDP only
-  uint32_t  linkUid;        // connection unique ID assigned by client
-  uint32_t  peerIp;         // peer IP
-  uint16_t  peerPort;       // peer port
-  char      peerFqdn[TSDB_FQDN_LEN]; // peer FQDN or ip string
-  uint16_t  tranId;         // outgoing transcation ID, for build message
-  uint16_t  outTranId;      // outgoing transcation ID
-  uint16_t  inTranId;       // transcation ID for incoming msg
-  uint8_t   outType;        // message type for outgoing request
-  uint8_t   inType;         // message type for incoming request  
-  void     *chandle;  // handle passed by TCP/UDP connection layer
-  void     *ahandle;  // handle provided by upper app layter
-  int       retry;    // number of retry for sending request
-  int       tretry;   // total retry
-  void     *pTimer;   // retry timer to monitor the response
-  void     *pIdleTimer; // idle timer
-  char     *pRspMsg;    // response message including header
-  int       rspMsgLen;  // response messag length
-  char     *pReqMsg;    // request message including header
-  int       reqMsgLen;  // request message length
-  SRpcInfo *pRpc;       // the associated SRpcInfo
-  int8_t    connType;   // connection type
-  int64_t   lockedBy;   // lock for connection
-  SRpcReqContext *pContext; // request context
-} SRpcConn;
+};
 
 int tsRpcMaxUdpSize = 15000;  // bytes
 int tsProgressTimer = 100;
@@ -237,11 +243,9 @@ void rpcCleanup(void) {
 }
  
 void *rpcOpen(const SRpcInit *pInit) {
-  SRpcInfo *pRpc;
-
   //pthread_once(&tsRpcInit, rpcInit);
 
-  pRpc = (SRpcInfo *)calloc(1, sizeof(SRpcInfo));
+  auto pRpc = new SRpcInfo;
   if (pRpc == NULL) return NULL;
 
   if(pInit->label) tstrncpy(pRpc->label, pInit->label, sizeof(pRpc->label));
@@ -261,15 +265,9 @@ void *rpcOpen(const SRpcInit *pInit) {
 
   atomic_add_fetch_32(&tsRpcNum, 1);
 
-  size_t size = sizeof(SRpcConn) * pRpc->sessions;
-  pRpc->connList = (SRpcConn *)calloc(1, size);
-  if (pRpc->connList == NULL) {
-    tError("%s failed to allocate memory for taos connections, size:%" PRId64, pRpc->label, (int64_t)size);
-    rpcClose(pRpc);
-    return NULL;
-  }
+  pRpc->connList.resize(pRpc->sessions);
 
-  pRpc->idPool = taosInitIdPool(pRpc->sessions-1);
+  pRpc->idPool.reset(new id_pool_t(pRpc->sessions - 1));
   if (pRpc->idPool == NULL) {
     tError("%s failed to init ID pool", pRpc->label);
     rpcClose(pRpc);
@@ -299,8 +297,6 @@ void *rpcOpen(const SRpcInit *pInit) {
     }
   }
 
-  pthread_mutex_init(&pRpc->mutex, NULL);
-
   pRpc->tcphandle = (*taosInitConn[pRpc->connType|RPC_CONN_TCP])(0, pRpc->localPort, pRpc->label, 
                                                   pRpc->numOfThreads, (void *)rpcProcessMsgFromPeer, pRpc);
   pRpc->udphandle = (*taosInitConn[pRpc->connType])(0, pRpc->localPort, pRpc->label, 
@@ -326,8 +322,8 @@ void rpcClose(void *param) {
 
   // close all connections 
   for (int i = 0; i < pRpc->sessions; ++i) {
-    if (pRpc->connList && pRpc->connList[i].user[0]) {
-      rpcCloseConn((void *)(pRpc->connList + i));
+    if (pRpc->connList[i].user[0]) {
+      rpcCloseConn((void *)(&pRpc->connList[i]));
     }
   }
 
@@ -660,7 +656,7 @@ static void rpcReleaseConn(SRpcConn *pConn) {
   pConn->pContext = NULL;
   pConn->chandle = NULL;
 
-  taosFreeId(pRpc->idPool, pConn->sid);
+  pRpc->idPool->dealloc(pConn->sid);
   tDebug("%s, rpc connection is released", pConn->info);
 }
 
@@ -679,12 +675,12 @@ static void rpcCloseConn(void *thandle) {
 static SRpcConn *rpcAllocateClientConn(SRpcInfo *pRpc) {
   SRpcConn *pConn = NULL;
 
-  int sid = taosAllocateId(pRpc->idPool);
+  int sid = pRpc->idPool->alloc();
   if (sid <= 0) {
     tError("%s maximum number of sessions:%d is reached", pRpc->label, pRpc->sessions);
     terrno = TSDB_CODE_RPC_MAX_SESSIONS;
   } else {
-    pConn = pRpc->connList + sid;
+    pConn = &pRpc->connList[sid];
 
     pConn->pRpc = pRpc;
     pConn->sid = sid;
@@ -721,12 +717,12 @@ static SRpcConn *rpcAllocateServerConn(SRpcInfo *pRpc, SRecvInfo *pRecv) {
     return NULL;
   }
 
-  int sid = taosAllocateId(pRpc->idPool);
+  int sid = pRpc->idPool->alloc();
   if (sid <= 0) {
     tError("%s maximum number of sessions:%d is reached", pRpc->label, pRpc->sessions);
     terrno = TSDB_CODE_RPC_MAX_SESSIONS;
   } else {
-    pConn = pRpc->connList + sid;
+    pConn = &pRpc->connList[sid];
     memcpy(pConn->user, pHead->user, tListLen(pConn->user));
     pConn->pRpc = pRpc;
     pConn->sid = sid;
@@ -741,7 +737,7 @@ static SRpcConn *rpcAllocateServerConn(SRpcInfo *pRpc, SRecvInfo *pRecv) {
       }
 
       if (terrno != 0) {
-        taosFreeId(pRpc->idPool, sid);  // sid shall be released
+        pRpc->idPool->dealloc(sid);  // sid shall be released
         pConn = NULL;
       }
     }
@@ -766,7 +762,7 @@ static SRpcConn *rpcGetConnObj(SRpcInfo *pRpc, int sid, SRecvInfo *pRecv) {
   SRpcHead *pHead = (SRpcHead *)pRecv->msg;
 
   if (sid) {
-    pConn = pRpc->connList + sid;
+    pConn = &pRpc->connList[sid];
     if (pConn->user[0] == 0) pConn = NULL;
   } 
 
@@ -1632,12 +1628,8 @@ static void rpcDecRef(SRpcInfo *pRpc)
     rpcCloseConnCache(pRpc->pCache);
     taosHashCleanup(pRpc->hash);
     taosTmrCleanUp(pRpc->tmrCtrl);
-    taosIdPoolCleanUp(pRpc->idPool);
-
-    tfree(pRpc->connList);
-    pthread_mutex_destroy(&pRpc->mutex);
     tDebug("%s rpc resources are released", pRpc->label);
-    tfree(pRpc);
+    delete pRpc;
 
     atomic_sub_fetch_32(&tsRpcNum, 1);
   }

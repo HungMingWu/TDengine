@@ -16,8 +16,10 @@
 #ifndef TDENGINE_DNODE_H
 #define TDENGINE_DNODE_H
 
+#include <memory>
 #include "trpc.h"
 #include "taosmsg.h"
+struct STaosQueue;
 
 typedef struct {
   int32_t queryReqNum;
@@ -44,11 +46,10 @@ void  dnodeSendMsgToMnodeRecv(SRpcMsg *rpcMsg, SRpcMsg *rpcRsp);
 void  dnodeSendMsgToDnodeRecv(SRpcMsg *rpcMsg, SRpcMsg *rpcRsp, SRpcEpSet *epSet);
 void *dnodeSendCfgTableToRecv(int32_t vgId, int32_t tid);
 
-void *dnodeAllocVWriteQueue(void *pVnode);
-void  dnodeFreeVWriteQueue(void *pWqueue);
+std::unique_ptr<STaosQueue> dnodeAllocVWriteQueue(void *pVnode);
 void  dnodeSendRpcVWriteRsp(void *pVnode, void *pWrite, int32_t code);
-void *dnodeAllocVQueryQueue(void *pVnode);
-void *dnodeAllocVFetchQueue(void *pVnode);
+STaosQueue *dnodeAllocVQueryQueue(void *pVnode);
+STaosQueue *dnodeAllocVFetchQueue(void *pVnode);
 
 int32_t dnodeAllocateMPeerQueue();
 void    dnodeFreeMPeerQueue();

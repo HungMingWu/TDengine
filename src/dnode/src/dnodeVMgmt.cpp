@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "tqueue.h"
 #include "tworker.h"
@@ -27,7 +28,7 @@ typedef struct {
 } SMgmtMsg;
 
 static SWorkerPool tsVMgmtWP;
-static taos_queue  tsVMgmtQueue = NULL;
+static std::unique_ptr<STaosQueue> tsVMgmtQueue;
 
 static void *  dnodeProcessMgmtQueue(void *param);
 static int32_t dnodeProcessCreateVnodeMsg(SRpcMsg *pMsg);
@@ -55,17 +56,16 @@ int32_t dnodeInitVMgmt() {
   tsVMgmtWP.max = 1;
   if (tWorkerInit(&tsVMgmtWP) != 0) return -1;
 
-  tsVMgmtQueue = tWorkerAllocQueue(&tsVMgmtWP, NULL);
+  tsVMgmtQueue.reset(tWorkerAllocQueue(&tsVMgmtWP, NULL));
 
   dInfo("dnode vmgmt is initialized");
   return TSDB_CODE_SUCCESS;
 }
 
 void dnodeCleanupVMgmt() {
-  taosCloseQueue(tsVMgmtQueue);
+  tsVMgmtQueue.reset();
   tWorkerCleanup(&tsVMgmtWP);
 
-  tsVMgmtQueue = NULL;
   vnodeCleanupMgmt();
 }
 
@@ -77,7 +77,7 @@ static int32_t dnodeWriteToMgmtQueue(SRpcMsg *pMsg) {
   pMgmt->rpcMsg = *pMsg;
   pMgmt->rpcMsg.pCont = pMgmt->pCont;
   memcpy(pMgmt->pCont, pMsg->pCont, pMsg->contLen);
-  taosWriteQitem(tsVMgmtQueue, TAOS_QTYPE_RPC, pMgmt);
+  tsVMgmtQueue->writeQitem(TAOS_QTYPE_RPC, pMgmt);
 
   return TSDB_CODE_SUCCESS;
 }

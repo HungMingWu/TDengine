@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "tqueue.h"
 #include "dnodeVWrite.h"
@@ -31,7 +32,7 @@ typedef struct {
   int32_t max;     // max number of workers
   int32_t nextId;  // from 0 to max-1, cyclic
   SVWriteWorker * worker;
-  pthread_mutex_t mutex;
+  std::mutex mutex;
 } SVWriteWorkerPool;
 
 static SVWriteWorkerPool tsVWriteWP;
@@ -41,7 +42,6 @@ int32_t dnodeInitVWrite() {
   tsVWriteWP.max = tsNumOfCores;
   tsVWriteWP.worker = static_cast<SVWriteWorker *>(tcalloc(sizeof(SVWriteWorker), tsVWriteWP.max));
   if (tsVWriteWP.worker == NULL) return -1;
-  pthread_mutex_init(&tsVWriteWP.mutex, NULL);
 
   for (int32_t i = 0; i < tsVWriteWP.max; ++i) {
     tsVWriteWP.worker[i].workerId = i;
@@ -68,7 +68,6 @@ void dnodeCleanupVWrite() {
     }
   }
 
-  pthread_mutex_destroy(&tsVWriteWP.mutex);
   tfree(tsVWriteWP.worker);
   dInfo("dnode vwrite is closed");
 }
@@ -109,29 +108,21 @@ void dnodeDispatchToVWriteQueue(SRpcMsg *pRpcMsg) {
   rpcFreeCont(pRpcMsg->pCont);
 }
 
-void *dnodeAllocVWriteQueue(void *pVnode) {
-  pthread_mutex_lock(&tsVWriteWP.mutex);
+std::unique_ptr<STaosQueue> dnodeAllocVWriteQueue(void *pVnode) {
+  std::lock_guard<std::mutex> lock(tsVWriteWP.mutex);
   SVWriteWorker *pWorker = tsVWriteWP.worker + tsVWriteWP.nextId;
-  taos_queue *queue = static_cast<taos_queue *>(taosOpenQueue());
-  if (queue == NULL) {
-    pthread_mutex_unlock(&tsVWriteWP.mutex);
-    return NULL;
-  }
+  std::unique_ptr<STaosQueue> queue(new STaosQueue);
 
   if (pWorker->qset == NULL) {
     pWorker->qset = taosOpenQset();
     if (pWorker->qset == NULL) {
-      taosCloseQueue(queue);
-      pthread_mutex_unlock(&tsVWriteWP.mutex);
       return NULL;
     }
 
-    taosAddIntoQset(pWorker->qset, queue, pVnode);
+    taosAddIntoQset(pWorker->qset, queue.get(), pVnode);
     pWorker->qall = taosAllocateQall();
     if (pWorker->qall == NULL) {
       taosCloseQset(pWorker->qset);
-      taosCloseQueue(queue);
-      pthread_mutex_unlock(&tsVWriteWP.mutex);
       return NULL;
     }
     pthread_attr_t thAttr;
@@ -142,8 +133,7 @@ void *dnodeAllocVWriteQueue(void *pVnode) {
       dError("failed to create thread to process vwrite queue since %s", strerror(errno));
       taosFreeQall(pWorker->qall);
       taosCloseQset(pWorker->qset);
-      taosCloseQueue(queue);
-      queue = NULL;
+      queue.reset();
     } else {
       dDebug("dnode vwrite worker:%d is launched", pWorker->workerId);
       tsVWriteWP.nextId = (tsVWriteWP.nextId + 1) % tsVWriteWP.max;
@@ -151,18 +141,13 @@ void *dnodeAllocVWriteQueue(void *pVnode) {
 
     pthread_attr_destroy(&thAttr);
   } else {
-    taosAddIntoQset(pWorker->qset, queue, pVnode);
+    taosAddIntoQset(pWorker->qset, queue.get(), pVnode);
     tsVWriteWP.nextId = (tsVWriteWP.nextId + 1) % tsVWriteWP.max;
   }
 
-  pthread_mutex_unlock(&tsVWriteWP.mutex);
-  dDebug("pVnode:%p, dnode vwrite queue:%p is allocated", pVnode, queue);
+  dDebug("pVnode:%p, dnode vwrite queue:%p is allocated", pVnode, queue.get());
 
   return queue;
-}
-
-void dnodeFreeVWriteQueue(void *pWqueue) {
-  taosCloseQueue(pWqueue);
 }
 
 void dnodeSendRpcVWriteRsp(void *pVnode, void *wparam, int32_t code) {

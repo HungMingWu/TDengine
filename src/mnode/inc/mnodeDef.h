@@ -16,8 +16,10 @@
 #ifndef TDENGINE_MNODE_DEF_H
 #define TDENGINE_MNODE_DEF_H
 
+#include <memory>
 #include "taosdef.h"
 #include "taosmsg.h"
+#include "tidpool.h"
 
 struct SVgObj;
 struct SDbObj;
@@ -40,7 +42,7 @@ typedef struct SClusterObj {
   int32_t refCount;
 } SClusterObj;
 
-typedef struct SDnodeObj {
+struct SDnodeObj {
   int32_t    dnodeId;
   int32_t    openVnodes;
   int64_t    createdTime;
@@ -67,7 +69,13 @@ typedef struct SDnodeObj {
   int16_t    bandwidthUsage;   // calc from sys.band
   int8_t     offlineReason;
   int8_t     reserved2[1];
-} SDnodeObj;
+
+ private:
+  int32_t drop(void *pMsg);
+ public:
+  bool monitorDropping();
+  void update(int status);
+};
 
 typedef struct SMnodeObj {
   int32_t    mnodeId;
@@ -128,7 +136,7 @@ typedef struct {
   SDnodeObj *pDnode;
 } SVnodeGid;
 
-typedef struct SVgObj {
+struct SVgObj {
   uint32_t       vgId;
   int32_t        numOfVnodes;
   int64_t        createdTime;
@@ -149,8 +157,8 @@ typedef struct SVgObj {
   int64_t        compStorage;
   int64_t        pointsWritten;
   struct SDbObj *pDb;
-  void *         idPool;
-} SVgObj;
+  std::unique_ptr<id_pool_t> idPool;
+};
 
 typedef struct {
   int32_t cacheBlockSize;

@@ -16,6 +16,8 @@
 #ifndef TAOS_QUEUE_H
 #define TAOS_QUEUE_H
 
+#include <mutex>
+
 /*
 
 This set of API for queue is designed specially for vnode/mnode. The main purpose is to 
@@ -37,11 +39,29 @@ typedef void* taos_queue;
 typedef void* taos_qset;
 typedef void* taos_qall;
 
-taos_queue taosOpenQueue();
-void       taosCloseQueue(taos_queue);
+typedef struct STaosQnode {
+  int                type;
+  struct STaosQnode *next;
+  char               item[];
+} STaosQnode;
+
+struct STaosQueue {
+  int32_t            itemSize;
+  int32_t            numOfItems;
+  struct STaosQnode *head;
+  struct STaosQnode *tail;
+  struct STaosQueue *next;     // for queue set
+  struct STaosQset * qset;     // for queue set
+  void *             ahandle;  // for queue set
+  std::mutex         mutex;
+
+ public:
+  ~STaosQueue();
+  int writeQitem(int type, void *item);
+};
+
 void      *taosAllocateQitem(int size);
 void       taosFreeQitem(void *item);
-int        taosWriteQitem(taos_queue, int type, void *item);
 int        taosReadQitem(taos_queue, int *type, void **pitem);
 
 taos_qall  taosAllocateQall();

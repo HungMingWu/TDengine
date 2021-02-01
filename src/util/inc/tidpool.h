@@ -16,20 +16,24 @@
 #ifndef TDENGINE_TIDPOOL_H
 #define TDENGINE_TIDPOOL_H
 
-void *taosInitIdPool(int maxId);
+#include <mutex>
+#include <deque>
 
-int taosUpdateIdPool(void *handle, int maxId);
+struct id_pool_t {
+  int             numOfFree;
+  int             freeSlot;
+  std::deque<bool> freeList;
+  std::mutex mutex;
 
-int taosIdPoolMaxSize(void *handle);
-
-int taosAllocateId(void *handle);
-
-void taosFreeId(void *handle, int id);
-
-void taosIdPoolCleanUp(void *handle);
-
-int taosIdPoolNumOfUsed(void *handle);
-
-void taosIdPoolMarkStatus(void *handle, int id);
+ public:
+  id_pool_t(int maxId);
+  ~id_pool_t() = default;
+  int update(int maxId);
+  int alloc();
+  void dealloc(int id);
+  int  MaxSize() const { return freeList.size(); }
+  void markStatus(int id);
+  int  numOfUsed();
+};
 
 #endif

@@ -86,11 +86,11 @@ void dnodeDispatchToVReadQueue(SRpcMsg *pMsg) {
   rpcFreeCont(pMsg->pCont);
 }
 
-void *dnodeAllocVQueryQueue(void *pVnode) {
+STaosQueue *dnodeAllocVQueryQueue(void *pVnode) {
   return tWorkerAllocQueue(&tsVQueryWP, pVnode);
 }
 
-void *dnodeAllocVFetchQueue(void *pVnode) {
+STaosQueue *dnodeAllocVFetchQueue(void *pVnode) {
   return tWorkerAllocQueue(&tsVFetchWP, pVnode);
 }
 

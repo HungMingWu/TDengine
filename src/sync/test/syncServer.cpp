@@ -27,7 +27,7 @@
 int       msgSize = 128;
 int       commit = 0;
 int       dataFd = -1;
-void *    qhandle = NULL;
+STaosQueue* qhandle = nullptr;
 int       walNum = 0;
 uint64_t  tversion = 0;
 int64_t   syncHandle;
@@ -220,11 +220,11 @@ int retrieveAuthInfo(char *meterId, char *spi, char *encrypt, char *secret, char
 void processRequestMsg(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   SRpcMsg *pTemp;
 
-  pTemp = taosAllocateQitem(sizeof(SRpcMsg));
+  pTemp = (SRpcMsg*)taosAllocateQitem(sizeof(SRpcMsg));
   memcpy(pTemp, pMsg, sizeof(SRpcMsg));
 
   uDebug("request is received, type:%d, len:%d", pMsg->msgType, pMsg->contLen);
-  taosWriteQitem(qhandle, TAOS_QTYPE_RPC, pTemp);
+  qhandle->writeQitem(TAOS_QTYPE_RPC, pTemp);
 }
 
 uint32_t getFileInfo(int32_t vgId, char *name, uint32_t *index, uint32_t eindex, int64_t *size, uint64_t *fversion) {
@@ -273,14 +273,14 @@ int getWalInfo(int32_t vgId, char *name, int64_t *index) {
 }
 
 int writeToCache(int32_t vgId, void *data, int type) {
-  SWalHead *pHead = data;
+  SWalHead *pHead = (SWalHead*)data;
 
   uDebug("rsp from peer is received, ver:%" PRIu64 " len:%d type:%d", pHead->version, pHead->len, type);
 
   int   msgSize = pHead->len + sizeof(SWalHead);
   void *pMsg = taosAllocateQitem(msgSize);
   memcpy(pMsg, pHead, msgSize);
-  taosWriteQitem(qhandle, type, pMsg);
+  qhandle->writeQitem(type, pMsg);
 
   return 0;
 }
@@ -298,7 +298,7 @@ void initSync() {
   syncInfo.vgId = 1;
   syncInfo.getFileInfo = getFileInfo;
   syncInfo.getWalInfo = getWalInfo;
-  syncInfo.writeToCache = writeToCache;
+  syncInfo.writeToCache = (int32_t  (*)(int32_t, void *, int32_t, void *))writeToCache;
   syncInfo.confirmForward = confirmForward;
   syncInfo.notifyRole = notifyRole;
 
@@ -408,7 +408,7 @@ int main(int argc, char *argv[]) {
   }
 
   tsSyncPort = rpcInit.localPort + 10;
-  qhandle = taosOpenQueue();
+  qhandle = new STaosQueue;
 
   doSync();
 

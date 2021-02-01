@@ -74,7 +74,7 @@ static int32_t syncRestoreFile(SSyncPeer *pPeer, uint64_t *fversion) {
     }
 
     assert(ret == sizeof(SFileInfo));
-    ret = syncCheckHead((SSyncHead *)(&minfo));
+    ret = ((SSyncHead *)(&minfo))->check();
     if (ret != 0) {
       sError("%s, failed to check fileinfo while restore file since %s", pPeer->id, strerror(ret));
       break;

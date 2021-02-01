@@ -94,7 +94,7 @@ typedef struct tOrderDescriptor {
   SColumnOrderInfo orderInfo;
 } tOrderDescriptor;
 
-typedef struct tExtMemBuffer {
+struct tExtMemBuffer {
   int32_t inMemCapacity;
   int32_t nElemSize;
   int32_t pageSize;
@@ -112,7 +112,10 @@ typedef struct tExtMemBuffer {
 
   SColumnModel *         pColumnModel;
   EXT_BUFFER_FLUSH_MODEL flushModel;
-} tExtMemBuffer;
+
+ public:
+  ~tExtMemBuffer();
+};
 
 /**
  *
@@ -122,13 +125,6 @@ typedef struct tExtMemBuffer {
  * @return
  */
 tExtMemBuffer *createExtMemBuffer(int32_t inMemSize, int32_t elemSize, int32_t pagesize, SColumnModel *pModel);
-
-/**
- *
- * @param pMemBuffer
- * @return
- */
-void *destoryExtMemBuffer(tExtMemBuffer *pMemBuffer);
 
 /**
  * @param pMemBuffer

@@ -50,7 +50,7 @@ typedef enum {
 
 #pragma pack(push, 1)
 
-typedef struct {
+struct SSyncHead {
   int8_t   type;       // msg type
   int8_t   protocol;   // protocol version
   uint16_t signature;  // fixed value
@@ -59,7 +59,11 @@ typedef struct {
   int32_t  vgId;       // vg ID
   int32_t  len;        // content length, does not include head
   uint32_t cksum;
-} SSyncHead;
+
+ public:
+  int32_t check();
+  void    buildFwdMsg(int32_t vgId, int32_t len);
+} ;
 
 typedef struct {
   SSyncHead head;
@@ -107,11 +111,14 @@ typedef struct {
   int8_t    sync;
 } SFileAck;
 
-typedef struct {
+struct SFwdRsp {
   SSyncHead head;
   uint64_t  version;
   int32_t   code;
-} SFwdRsp;
+
+ public:
+  SFwdRsp(int32_t vgId, uint64_t version, int32_t code);
+};
 
 #pragma pack(pop)
 
@@ -121,10 +128,7 @@ typedef struct {
 extern char *statusType[];
 
 uint16_t syncGenTranId();
-int32_t  syncCheckHead(SSyncHead *pHead);
 
-void syncBuildSyncFwdMsg(SSyncHead *pHead, int32_t vgId, int32_t len);
-void syncBuildSyncFwdRsp(SFwdRsp *pMsg, int32_t vgId, uint64_t version, int32_t code);
 void syncBuildSyncReqMsg(SSyncMsg *pMsg, int32_t vgId);
 void syncBuildSyncDataMsg(SSyncMsg *pMsg, int32_t vgId);
 void syncBuildSyncSetupMsg(SSyncMsg *pMsg, int32_t vgId);

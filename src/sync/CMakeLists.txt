@@ -14,5 +14,5 @@ IF (TD_LINUX)
   ADD_EXECUTABLE(tarbitrator ${BIN_SRC})
   TARGET_LINK_LIBRARIES(tarbitrator sync common osdetail tutil)
 
-  #ADD_SUBDIRECTORY(test)
+  ADD_SUBDIRECTORY(test)
 ENDIF ()

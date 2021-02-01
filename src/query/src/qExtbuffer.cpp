@@ -56,19 +56,15 @@ tExtMemBuffer* createExtMemBuffer(int32_t inMemSize, int32_t elemSize, int32_t p
   return pMemBuffer;
 }
 
-void* destoryExtMemBuffer(tExtMemBuffer *pMemBuffer) {
-  if (pMemBuffer == NULL) {
-    return NULL;
-  }
-
+tExtMemBuffer::~tExtMemBuffer() {
   // release flush out info link
-  SExtFileInfo *pFileMeta = &pMemBuffer->fileMeta;
+  SExtFileInfo *pFileMeta = &fileMeta;
   if (pFileMeta->flushoutData.nAllocSize != 0 && pFileMeta->flushoutData.pFlushoutInfo != NULL) {
     tfree(pFileMeta->flushoutData.pFlushoutInfo);
   }
 
   // release all in-memory buffer pages
-  tFilePagesItem *pFilePages = pMemBuffer->pHead;
+  tFilePagesItem *pFilePages = pHead;
   while (pFilePages != NULL) {
     tFilePagesItem *pTmp = pFilePages;
     pFilePages = pFilePages->pNext;
@@ -76,21 +72,18 @@ void* destoryExtMemBuffer(tExtMemBuffer *pMemBuffer) {
   }
 
   // close temp file
-  if (pMemBuffer->file != 0) {
-    if (fclose(pMemBuffer->file) != 0) {
-      uError("failed to close file:%s, reason:%s", pMemBuffer->path, strerror(errno));
+  if (file != 0) {
+    if (fclose(file) != 0) {
+      uError("failed to close file:%s, reason:%s", path, strerror(errno));
     }
     
-    uDebug("remove temp file:%s for external buffer", pMemBuffer->path);
-    unlink(pMemBuffer->path);
+    uDebug("remove temp file:%s for external buffer", path);
+    unlink(path);
   }
 
-  destroyColumnModel(pMemBuffer->pColumnModel);
+  destroyColumnModel(pColumnModel);
 
-  tfree(pMemBuffer->path);
-  tfree(pMemBuffer);
-  
-  return NULL;
+  tfree(path); 
 }
 
 /*

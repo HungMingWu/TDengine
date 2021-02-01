@@ -23,7 +23,7 @@
 int msgSize = 128;
 int commit = 0;
 int dataFd = -1;
-void *qhandle = NULL;
+STaosQueue *qhandle = nullptr;
 void *qset = NULL;
 
 void processShellMsg() {
@@ -110,7 +110,7 @@ void processRequestMsg(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   memcpy(pTemp, pMsg, sizeof(SRpcMsg));
 
   tDebug("request is received, type:%d, contLen:%d, item:%p", pMsg->msgType, pMsg->contLen, pTemp);
-  taosWriteQitem(qhandle, TAOS_QTYPE_RPC, pTemp); 
+  qhandle->writeQitem(TAOS_QTYPE_RPC, pTemp);
 }
 
 int main(int argc, char *argv[]) {
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
       tInfo("failed to open data file, reason:%s", strerror(errno));
   }
 
-  qhandle = taosOpenQueue();
+  qhandle = new STaosQueue;
   qset = taosOpenQset();
   taosAddIntoQset(qset, qhandle, NULL);
 

@@ -14,7 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
-#include <mutex>
+#include <memory>
 #include "os.h"
 #include "taoserror.h"
 #include "hash.h"
@@ -106,7 +106,7 @@ static void *     tsSdbTmr;
 static SSdbMgmt   tsSdbMgmt = {static_cast<ESyncRole>(0)};
 static taos_qset  tsSdbWQset;
 static taos_qall  tsSdbWQall;
-static taos_queue tsSdbWQueue;
+static std::unique_ptr<STaosQueue>     tsSdbWQueue;
 static SSdbWorkerPool tsSdbPool;
 
 static int32_t sdbProcessWrite(void *pRow, void *pHead, int32_t qtype, void *unused);
@@ -970,20 +970,19 @@ static void sdbCleanupWorker() {
 }
 
 static int32_t sdbAllocQueue() {
-  tsSdbWQueue = taosOpenQueue();
-  if (tsSdbWQueue == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+  tsSdbWQueue.reset(new STaosQueue());
 
   tsSdbWQset = taosOpenQset();
   if (tsSdbWQset == NULL) {
-    taosCloseQueue(tsSdbWQueue);
+    tsSdbWQueue.reset();
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
-  taosAddIntoQset(tsSdbWQset, tsSdbWQueue, NULL);
+  taosAddIntoQset(tsSdbWQset, tsSdbWQueue.get(), NULL);
 
   tsSdbWQall = taosAllocateQall();
   if (tsSdbWQall == NULL) {
     taosCloseQset(tsSdbWQset);
-    taosCloseQueue(tsSdbWQueue);
+    tsSdbWQueue.reset();
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
   
@@ -999,7 +998,7 @@ static int32_t sdbAllocQueue() {
       mError("failed to create thread to process sdb write queue, reason:%s", strerror(errno));
       taosFreeQall(tsSdbWQall);
       taosCloseQset(tsSdbWQset);
-      taosCloseQueue(tsSdbWQueue);
+      tsSdbWQueue.reset();
       return TSDB_CODE_MND_OUT_OF_MEMORY;
     }
 
@@ -1007,17 +1006,16 @@ static int32_t sdbAllocQueue() {
     mDebug("sdb write worker:%d is launched, total:%d", pWorker->workerId, tsSdbPool.num);
   }
 
-  mDebug("sdb write queue:%p is allocated", tsSdbWQueue);
+  mDebug("sdb write queue:%p is allocated", tsSdbWQueue.get());
   return TSDB_CODE_SUCCESS;
 }
 
 static void sdbFreeQueue() {
-  taosCloseQueue(tsSdbWQueue);
+  tsSdbWQueue.reset();
   taosFreeQall(tsSdbWQall);
   taosCloseQset(tsSdbWQset);
   tsSdbWQall = NULL;
   tsSdbWQset = NULL;
-  tsSdbWQueue = NULL;
 }
 
 static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
@@ -1038,7 +1036,7 @@ static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
   sdbIncRef(pRow->pTable, pRow->pObj);
 
   sdbTrace("vgId:1, msg:%p qtype:%s write into to sdb queue, queued:%d", pRow->pMsg, qtypeStr[qtype], queued);
-  taosWriteQitem(tsSdbWQueue, qtype, pRow);
+  tsSdbWQueue->writeQitem(qtype, pRow);
 
   return TSDB_CODE_MND_ACTION_IN_PROGRESS;
 }

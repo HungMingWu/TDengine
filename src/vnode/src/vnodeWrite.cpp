@@ -273,7 +273,7 @@ static int32_t vnodeWriteToWQueueImp(SVWriteMsg *pWrite) {
 
   vTrace("vgId:%d, write into vwqueue, refCount:%d queued:%d", pVnode->vgId, pVnode->refCount, pVnode->queuedWMsg);
 
-  taosWriteQitem(pVnode->wqueue, pWrite->qtype, pWrite);
+  pVnode->wqueue->writeQitem(pWrite->qtype, pWrite);
   return TSDB_CODE_SUCCESS;
 }
 

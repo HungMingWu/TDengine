@@ -65,12 +65,7 @@ static int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg) ;
 static void    mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle);
 
 static void mnodeDestroyVgroup(SVgObj *pVgroup) {
-  if (pVgroup->idPool) {
-    taosIdPoolCleanUp(pVgroup->idPool);
-    pVgroup->idPool = NULL;
-  }
-
-  tfree(pVgroup);
+  delete pVgroup;
 }
 
 static int32_t mnodeVgroupActionDestroy(SSdbRow *pRow) {
@@ -360,14 +355,14 @@ static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup) {
     SVgObj *pVgroup = pDb->vgList[v];
     if (pVgroup == NULL) continue;
 
-    int32_t idPoolSize = taosIdPoolMaxSize(pVgroup->idPool);
+    int32_t idPoolSize = pVgroup->idPool->MaxSize();
     minIdPoolSize = MIN(minIdPoolSize, idPoolSize);
     maxIdPoolSize = MAX(maxIdPoolSize, idPoolSize);
   }
 
   // new vgroup
   if (pInputVgroup->idPool == NULL) {
-    pInputVgroup->idPool = taosInitIdPool(maxIdPoolSize);
+    pInputVgroup->idPool.reset(new id_pool_t(maxIdPoolSize));
     if (pInputVgroup->idPool == NULL) {
       mError("vgId:%d, failed to init idPool for vgroup, size:%d", pInputVgroup->vgId, maxIdPoolSize);
       return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -399,10 +394,10 @@ static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup) {
     SVgObj *pVgroup = pDb->vgList[v];
     if (pVgroup == NULL) continue;
 
-    int32_t oldIdPoolSize = taosIdPoolMaxSize(pVgroup->idPool);
+    int32_t oldIdPoolSize = pVgroup->idPool->MaxSize();
     if (newIdPoolSize == oldIdPoolSize) continue;
 
-    if (taosUpdateIdPool(pVgroup->idPool, newIdPoolSize) < 0) {
+    if (pVgroup->idPool->update(newIdPoolSize) < 0) {
       mError("vgId:%d, failed to update idPoolSize from %d to %d", pVgroup->vgId, oldIdPoolSize, newIdPoolSize);
       return TSDB_CODE_MND_NO_ENOUGH_DNODES;
     } else {
@@ -426,7 +421,7 @@ int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSi
       return TSDB_CODE_MND_APP_ERROR;
     }
 
-    int32_t sid = taosAllocateId(pVgroup->idPool);
+    int32_t sid = pVgroup->idPool->alloc();
     if (sid <= 0) {
       mDebug("msg:%p, app:%p db:%s, no enough sid in vgId:%d", pMsg, pMsg->rpcMsg.ahandle, pDb->name, pVgroup->vgId);
       continue;
@@ -479,7 +474,7 @@ int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSi
     return code;
   }
 
-  int32_t sid = taosAllocateId(pVgroup->idPool);
+  int32_t sid = pVgroup->idPool->alloc();
   if (sid <= 0) {
     mError("msg:%p, app:%p db:%s, no enough sid in vgId:%d", pMsg, pMsg->rpcMsg.ahandle, pDb->name, pVgroup->vgId);
     pthread_mutex_unlock(&pDb->mutex);
@@ -801,13 +796,13 @@ static int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, v
 }
 
 void mnodeAddTableIntoVgroup(SVgObj *pVgroup, SCTableObj *pTable) {
-  int32_t idPoolSize = taosIdPoolMaxSize(pVgroup->idPool);
+  int32_t idPoolSize = pVgroup->idPool->MaxSize();
   if (pTable->tid > idPoolSize) {
     mnodeAllocVgroupIdPool(pVgroup);
   }
 
   if (pTable->tid >= 1) {
-    taosIdPoolMarkStatus(pVgroup->idPool, pTable->tid);
+    pVgroup->idPool->markStatus(pTable->tid);
     pVgroup->numOfTables++;
     // The create vgroup message may be received later than the create table message
     // and the writing order in sdb is therefore uncertain
@@ -818,7 +813,7 @@ void mnodeAddTableIntoVgroup(SVgObj *pVgroup, SCTableObj *pTable) {
 
 void mnodeRemoveTableFromVgroup(SVgObj *pVgroup, SCTableObj *pTable) {
   if (pTable->tid >= 1) {
-    taosFreeId(pVgroup->idPool, pTable->tid);
+    pVgroup->idPool->dealloc(pTable->tid);
     pVgroup->numOfTables--;
     // The create vgroup message may be received later than the create table message
     // and the writing order in sdb is therefore uncertain
@@ -835,7 +830,7 @@ static SCreateVnodeMsg *mnodeBuildVnodeMsg(SVgObj *pVgroup) {
   if (pVnode == NULL) return NULL;
 
   strcpy(pVnode->db, pVgroup->dbName);
-  int32_t maxTables = taosIdPoolMaxSize(pVgroup->idPool);
+  int32_t maxTables = pVgroup->idPool->MaxSize();
   //TODO: dynamic alloc tables in tsdb
   maxTables = MAX(10000, tsMaxTablePerVnode);
 

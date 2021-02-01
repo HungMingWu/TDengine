@@ -788,7 +788,7 @@ void tscLocalReducerEnvDestroy(tExtMemBuffer **pMemBuffer, tOrderDescriptor *pDe
   tOrderDescDestroy(pDesc);
 
   for (int32_t i = 0; i < numOfVnodes; ++i) {
-    pMemBuffer[i] = (tExtMemBuffer*)destoryExtMemBuffer(pMemBuffer[i]);
+    delete pMemBuffer[i];
   }
 
   tfree(pMemBuffer);

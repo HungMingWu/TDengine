@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "tqueue.h"
 #include "twal.h"
@@ -35,7 +36,7 @@ typedef struct {
 
 static SMPeerWorkerPool tsMPeerWP;
 static taos_qset        tsMPeerQset;
-static taos_queue       tsMPeerQueue;
+static std::unique_ptr<STaosQueue> tsMPeerQueue;
 
 static void *dnodeProcessMPeerQueue(void *param);
 
@@ -83,10 +84,8 @@ void dnodeCleanupMPeer() {
 }
 
 int32_t dnodeAllocateMPeerQueue() {
-  tsMPeerQueue = taosOpenQueue();
-  if (tsMPeerQueue == NULL) return TSDB_CODE_DND_OUT_OF_MEMORY;
-
-  taosAddIntoQset(tsMPeerQset, tsMPeerQueue, NULL);
+  tsMPeerQueue.reset(new STaosQueue);
+  taosAddIntoQset(tsMPeerQset, tsMPeerQueue.get(), NULL);
 
   for (int32_t i = tsMPeerWP.curNum; i < tsMPeerWP.maxNum; ++i) {
     SMPeerWorker *pWorker = tsMPeerWP.worker + i;
@@ -106,22 +105,21 @@ int32_t dnodeAllocateMPeerQueue() {
     dDebug("dnode mpeer worker:%d is launched, total:%d", pWorker->workerId, tsMPeerWP.maxNum);
   }
 
-  dDebug("dnode mpeer queue:%p is allocated", tsMPeerQueue);
+  dDebug("dnode mpeer queue:%p is allocated", tsMPeerQueue.get());
   return TSDB_CODE_SUCCESS;
 }
 
 void dnodeFreeMPeerQueue() {
-  dDebug("dnode mpeer queue:%p is freed", tsMPeerQueue);
-  taosCloseQueue(tsMPeerQueue);
-  tsMPeerQueue = NULL;
+  dDebug("dnode mpeer queue:%p is freed", tsMPeerQueue.get());
+  tsMPeerQueue.reset();
 }
 
 void dnodeDispatchToMPeerQueue(SRpcMsg *pMsg) {
-  if (!mnodeIsRunning() || tsMPeerQueue == NULL) {
+  if (!mnodeIsRunning() || !tsMPeerQueue) {
     dnodeSendRedirectMsg(pMsg, false);
   } else {
     SMnodeMsg *pPeer = static_cast<SMnodeMsg *>(mnodeCreateMsg(pMsg));
-    taosWriteQitem(tsMPeerQueue, TAOS_QTYPE_RPC, pPeer);
+    tsMPeerQueue->writeQitem(TAOS_QTYPE_RPC, pPeer);
   }
 
   rpcFreeCont(pMsg->pCont);

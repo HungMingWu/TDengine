@@ -39,6 +39,6 @@ struct SWorkerPool {
 
 int32_t tWorkerInit(SWorkerPool *pPool);
 void    tWorkerCleanup(SWorkerPool *pPool);
-void *  tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle);
+STaosQueue* tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle);
 
 #endif

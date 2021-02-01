@@ -43,32 +43,32 @@ static void syncBuildHead(SSyncHead *pHead) {
   taosCalcChecksumAppend(0, (uint8_t *)pHead, sizeof(SSyncHead));
 }
 
-int32_t syncCheckHead(SSyncHead *pHead) {
-  if (pHead->protocol != SYNC_PROTOCOL_VERSION) return TSDB_CODE_SYN_MISMATCHED_PROTOCOL;
-  if (pHead->signature != SYNC_SIGNATURE) return TSDB_CODE_SYN_MISMATCHED_SIGNATURE;
-  if (pHead->cId != 0) return TSDB_CODE_SYN_MISMATCHED_CLUSTERID;
-  if (pHead->len <= 0 || pHead->len > TSDB_MAX_WAL_SIZE) return TSDB_CODE_SYN_INVALID_MSGLEN;
-  if (pHead->type <= TAOS_SMSG_START || pHead->type >= TAOS_SMSG_END) return TSDB_CODE_SYN_INVALID_MSGTYPE;
-  if (!taosCheckChecksumWhole((uint8_t *)pHead, sizeof(SSyncHead))) return TSDB_CODE_SYN_INVALID_CHECKSUM;
+int32_t SSyncHead::check() {
+  if (protocol != SYNC_PROTOCOL_VERSION) return TSDB_CODE_SYN_MISMATCHED_PROTOCOL;
+  if (signature != SYNC_SIGNATURE) return TSDB_CODE_SYN_MISMATCHED_SIGNATURE;
+  if (cId != 0) return TSDB_CODE_SYN_MISMATCHED_CLUSTERID;
+  if (len <= 0 || len > TSDB_MAX_WAL_SIZE) return TSDB_CODE_SYN_INVALID_MSGLEN;
+  if (type <= TAOS_SMSG_START || type >= TAOS_SMSG_END) return TSDB_CODE_SYN_INVALID_MSGTYPE;
+  if (!taosCheckChecksumWhole((uint8_t *)this, sizeof(SSyncHead))) return TSDB_CODE_SYN_INVALID_CHECKSUM;
 
   return TSDB_CODE_SUCCESS;
 }
 
-void syncBuildSyncFwdMsg(SSyncHead *pHead, int32_t vgId, int32_t len) {
-  pHead->type = TAOS_SMSG_SYNC_FWD;
-  pHead->vgId = vgId;
-  pHead->len = len;
-  syncBuildHead(pHead);
+void SSyncHead::buildFwdMsg(int32_t vgId, int32_t len) {
+  this->type = TAOS_SMSG_SYNC_FWD;
+  this->vgId = vgId;
+  this->len = len;
+  syncBuildHead(this);
 }
 
-void syncBuildSyncFwdRsp(SFwdRsp *pMsg, int32_t vgId, uint64_t version, int32_t code) {
-  pMsg->head.type = TAOS_SMSG_SYNC_FWD_RSP;
-  pMsg->head.vgId = vgId;
-  pMsg->head.len = sizeof(SFwdRsp) - sizeof(SSyncHead);
-  syncBuildHead(&pMsg->head);
+SFwdRsp::SFwdRsp(int32_t vgId, uint64_t version, int32_t code) {
+  head.type = TAOS_SMSG_SYNC_FWD_RSP;
+  head.vgId = vgId;
+  head.len = sizeof(SFwdRsp) - sizeof(SSyncHead);
+  syncBuildHead(&head);
 
-  pMsg->version = version;
-  pMsg->code = code;
+  this->version = version;
+  this->code = code;
 }
 
 static void syncBuildMsg(SSyncMsg *pMsg, int32_t vgId, ESyncMsgType type) {

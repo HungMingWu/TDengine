@@ -53,12 +53,9 @@ void tWorkerCleanup(SWorkerPool *pPool) {
   uInfo("worker:%s is closed", pPool->name);
 }
 
-void *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
+STaosQueue *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
   std::lock_guard<std::mutex> lock(pPool->mutex);
-  taos_queue pQueue = taosOpenQueue();
-  if (pQueue == NULL) {
-    return NULL;
-  }
+  auto pQueue = new STaosQueue;
 
   taosAddIntoQset(pPool->qset, pQueue, ahandle);
 
