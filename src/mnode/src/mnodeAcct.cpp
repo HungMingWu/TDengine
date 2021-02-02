@@ -33,16 +33,13 @@ static int32_t mnodeCreateRootAcct();
 
 static int32_t mnodeAcctActionDestroy(SSdbRow *pRow) {
   SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  pthread_mutex_destroy(&pAcct->mutex);
   tfree(pRow->pObj);
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t mnodeAcctActionInsert(SSdbRow *pRow) {
   SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  memset(&pAcct->acctInfo, 0, sizeof(SAcctInfo));
   pAcct->acctInfo.accessState = TSDB_VN_ALL_ACCCESS;
-  pthread_mutex_init(&pAcct->mutex, NULL);
   return TSDB_CODE_SUCCESS;
 }
 

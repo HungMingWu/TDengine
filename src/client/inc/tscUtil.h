@@ -142,8 +142,6 @@ bool tscIsInsertData(char* sqlstr);
 // todo remove it
 void tscGetDBInfoFromTableFullName(char* tableId, char* db);
 
-int tscAllocPayload(SSqlCmd* pCmd, int size);
-
 TAOS_FIELD tscCreateField(int8_t type, const char* name, int16_t bytes);
 
 SInternalField* tscFieldInfoAppend(SFieldInfo* pFieldInfo, TAOS_FIELD* pField);

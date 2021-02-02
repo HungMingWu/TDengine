@@ -215,8 +215,7 @@ enum {
   QUERY_RESULT_READY     = 2,
 };
 
-typedef struct SQInfo {
-  void*            signature;
+struct SQInfo {
   int32_t          code;   // error code to returned to client
   int64_t          owner;  // if it is in execution
   void*            tsdb;
@@ -242,6 +241,6 @@ typedef struct SQInfo {
   void*            rspContext;  // response context
   int64_t          startExecTs; // start to exec timestamp
   char*            sql;         // query sql string
-} SQInfo;
+};
 
 #endif  // TDENGINE_QUERYEXECUTOR_H

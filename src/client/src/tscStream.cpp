@@ -422,7 +422,7 @@ static int32_t tscSetSlidingWindowInfo(SSqlObj *pSql, SSqlStream *pStream) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
 
   if (!pStream->isProject && pQueryInfo->interval.interval == 0) {
-    sprintf(pSql->cmd.payload, "the interval value is 0");
+    pSql->cmd.payload = std::string("the interval value is 0");
     return -1;
   }
   
@@ -566,14 +566,13 @@ void tscSetStreamDestTable(SSqlStream* pStream, const char* dstTable) {
 TAOS_STREAM *taos_open_stream(TAOS *taos, const char *sqlstr, void (*fp)(void *param, TAOS_RES *, TAOS_ROW row),
                               int64_t stime, void *param, void (*callback)(void *)) {
   STscObj *pObj = (STscObj *)taos;
-  if (pObj == NULL || pObj->signature != pObj) return NULL;
+  if (pObj == NULL) return NULL;
 
   SSqlObj *pSql = (SSqlObj *)calloc(1, sizeof(SSqlObj));
   if (pSql == NULL) {
     return NULL;
   }
 
-  pSql->signature = pSql;
   pSql->pTscObj = pObj;
 
   SSqlCmd *pCmd = &pSql->cmd;
@@ -637,17 +636,15 @@ void taos_close_stream(TAOS_STREAM *handle) {
    * stream may be closed twice, 1. drop dst table, 2. kill stream
    * Here, we need a check before release memory
    */
-  if (pSql->signature == pSql) {
-    tscRemoveFromStreamList(pStream, pSql);
+  tscRemoveFromStreamList(pStream, pSql);
 
-    taosTmrStopA(&(pStream->pTimer));
+  taosTmrStopA(&(pStream->pTimer));
 
-    tscDebug("%p stream:%p is closed", pSql, pStream);
+  tscDebug("%p stream:%p is closed", pSql, pStream);
     // notify CQ to release the pStream object
-    pStream->fp(pStream->param, NULL, NULL);
-    pStream->pSql = NULL;
+  pStream->fp(pStream->param, NULL, NULL);
+  pStream->pSql = NULL;
 
-    taos_free_result(pSql);
-    tfree(pStream);
-  }
+  taos_free_result(pSql);
+  tfree(pStream);
 }

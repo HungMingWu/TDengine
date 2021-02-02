@@ -21,7 +21,7 @@
 typedef struct STaosQset {
   STaosQueue        *head;
   STaosQueue        *current;
-  pthread_mutex_t    mutex;
+  std::mutex         mutex;
   int32_t            numOfQueues;
   int32_t            numOfItems;
   tsem_t             sem;
@@ -88,24 +88,23 @@ int STaosQueue::writeQitem(int type, void *item) {
   return 0;
 }
 
-int taosReadQitem(taos_queue param, int *type, void **pitem) {
-  STaosQueue *queue = (STaosQueue *)param;
+int STaosQueue::readQitem(int *type, void **pitem) {
   STaosQnode *pNode = NULL;
   int         code = 0;
 
-  std::lock_guard<std::mutex> lock(queue->mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
-  if (queue->head) {
-      pNode = queue->head;
+  if (head) {
+      pNode = head;
       *pitem = pNode->item;
       *type = pNode->type;
-      queue->head = pNode->next;
-      if (queue->head == NULL) 
-        queue->tail = NULL;
-      queue->numOfItems--;
-      if (queue->qset) atomic_sub_fetch_32(&queue->qset->numOfItems, 1);
+      head = pNode->next;
+      if (head == NULL) 
+        tail = NULL;
+      numOfItems--;
+      if (qset) atomic_sub_fetch_32(&qset->numOfItems, 1);
       code = 1;
-      uDebug("item:%p is read out from queue:%p, type:%d items:%d", *pitem, queue, *type, queue->numOfItems);
+      uDebug("item:%p is read out from queue:%p, type:%d items:%d", *pitem, this, *type, numOfItems);
   } 
 
   return code;
@@ -170,13 +169,8 @@ void taosResetQitems(taos_qall param) {
 
 taos_qset taosOpenQset() {
 
-  STaosQset *qset = (STaosQset *) calloc(sizeof(STaosQset), 1);
-  if (qset == NULL) {
-    terrno = TSDB_CODE_COM_OUT_OF_MEMORY;
-    return NULL;
-  }
+  auto qset = new STaosQset;
 
-  pthread_mutex_init(&qset->mutex, NULL);
   tsem_init(&qset->sem, 0, 0);
 
   uTrace("qset:%p is opened", qset);
@@ -188,7 +182,6 @@ void taosCloseQset(taos_qset param) {
   STaosQset *qset = (STaosQset *)param;
 
   // remove all the queues from qset
-  pthread_mutex_lock(&qset->mutex);
   while (qset->head) {
     STaosQueue *queue = qset->head;
     qset->head = qset->head->next;
@@ -196,11 +189,8 @@ void taosCloseQset(taos_qset param) {
     queue->qset = NULL;
     queue->next = NULL;
   }
-  pthread_mutex_unlock(&qset->mutex);
-
-  pthread_mutex_destroy(&qset->mutex);
   tsem_destroy(&qset->sem);
-  free(qset);
+  delete qset;
   uTrace("qset:%p is closed", qset);
 }
 
@@ -219,7 +209,7 @@ int taosAddIntoQset(taos_qset p1, taos_queue p2, void *ahandle) {
 
   if (queue->qset) return -1; 
 
-  pthread_mutex_lock(&qset->mutex);
+  std::lock_guard<std::mutex> _(qset->mutex);
 
   queue->next = qset->head;
   queue->ahandle = ahandle;
@@ -231,8 +221,6 @@ int taosAddIntoQset(taos_qset p1, taos_queue p2, void *ahandle) {
   queue->qset = qset;
   queue->mutex.unlock();
 
-  pthread_mutex_unlock(&qset->mutex);
-
   uTrace("queue:%p is added into qset:%p", queue, qset);
   return 0;
 }
@@ -243,7 +231,7 @@ void taosRemoveFromQset(taos_qset p1, taos_queue p2) {
  
   STaosQueue *tqueue = NULL;
 
-  pthread_mutex_lock(&qset->mutex);
+  std::lock_guard<std::mutex> _(qset->mutex);
 
   if (qset->head) {
     if (qset->head == queue) {
@@ -274,8 +262,6 @@ void taosRemoveFromQset(taos_qset p1, taos_queue p2) {
       queue->next = NULL;
     }
   } 
-  
-  pthread_mutex_unlock(&qset->mutex);
 
   uTrace("queue:%p is removed from qset:%p", queue, qset);
 }
@@ -291,7 +277,7 @@ int taosReadQitemFromQset(taos_qset param, int *type, void **pitem, void **phand
    
   tsem_wait(&qset->sem);
 
-  pthread_mutex_lock(&qset->mutex);
+  std::lock_guard<std::mutex> _(qset->mutex);
 
   for(int i=0; i<qset->numOfQueues; ++i) {
     if (qset->current == NULL) 
@@ -320,8 +306,6 @@ int taosReadQitemFromQset(taos_qset param, int *type, void **pitem, void **phand
     if (pNode) break;
   }
 
-  pthread_mutex_unlock(&qset->mutex);
-
   return code; 
 }
 
@@ -332,7 +316,7 @@ int taosReadAllQitemsFromQset(taos_qset param, taos_qall p2, void **phandle) {
   int         code = 0;
 
   tsem_wait(&qset->sem);
-  pthread_mutex_lock(&qset->mutex);
+  std::lock_guard<std::mutex> _(qset->mutex);
 
   for(int i=0; i<qset->numOfQueues; ++i) {
     if (qset->current == NULL) 
@@ -362,7 +346,6 @@ int taosReadAllQitemsFromQset(taos_qset param, taos_qall p2, void **phandle) {
     if (code != 0) break;  
   }
 
-  pthread_mutex_unlock(&qset->mutex);
   return code;
 }
 

@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <mutex>
 #include "os.h"
 #include "taoserror.h"
 #include "tulog.h"
@@ -44,12 +45,10 @@ typedef struct {
 } SRefSet;
 
 static SRefSet         tsRefSetList[TSDB_REF_OBJECTS];
-static pthread_once_t  tsRefModuleInit = PTHREAD_ONCE_INIT;
-static pthread_mutex_t tsRefMutex;
+static std::mutex      tsRefMutex;
 static int             tsRefSetNum = 0;
 static int             tsNextId = 0;
 
-static void taosInitRefModule(void);
 static void taosLockList(int64_t *lockedBy);
 static void taosUnlockList(int64_t *lockedBy);
 static void taosIncRsetCount(SRefSet *pSet);
@@ -62,9 +61,7 @@ int taosOpenRef(int max, void (*fp)(void *))
   SRefSet   *pSet;
   int64_t   *lockedBy;
   int        i, rsetId;
-  
-  pthread_once(&tsRefModuleInit, taosInitRefModule);
-   
+     
   nodeList = (SRefNode**)calloc(sizeof(SRefNode *), (size_t)max);
   if (nodeList == NULL)  {
     terrno = TSDB_CODE_REF_NO_MEMORY;
@@ -78,7 +75,7 @@ int taosOpenRef(int max, void (*fp)(void *))
     return -1;
   }
 
-  pthread_mutex_lock(&tsRefMutex);
+  std::lock_guard<std::mutex> _(tsRefMutex);
  
   for (i = 0; i < TSDB_REF_OBJECTS; ++i) {
     tsNextId = (tsNextId + 1) % TSDB_REF_OBJECTS;
@@ -107,8 +104,6 @@ int taosOpenRef(int max, void (*fp)(void *))
     uTrace("run out of Ref ID, maximum:%d refSetNum:%d", TSDB_REF_OBJECTS, tsRefSetNum);
   } 
 
-  pthread_mutex_unlock(&tsRefMutex);
-
   return rsetId;
 }
 
@@ -125,7 +120,7 @@ int taosCloseRef(int rsetId)
 
   pSet = tsRefSetList + rsetId;
 
-  pthread_mutex_lock(&tsRefMutex);
+  std::lock_guard<std::mutex> _(tsRefMutex);
 
   if (pSet->state == TSDB_REF_STATE_ACTIVE) { 
     pSet->state = TSDB_REF_STATE_DELETED;
@@ -134,8 +129,6 @@ int taosCloseRef(int rsetId)
   } else {
     uTrace("rsetId:%d is already closed, count:%d", rsetId, pSet->count);
   }
-
-  pthread_mutex_unlock(&tsRefMutex);
 
   if (deleted) taosDecRsetCount(pSet);
 
@@ -346,7 +339,7 @@ int taosListRef() {
   SRefNode *pNode;
   int       num = 0;
 
-  pthread_mutex_lock(&tsRefMutex);
+  std::lock_guard<std::mutex> _(tsRefMutex);
 
   for (int i = 0; i < TSDB_REF_OBJECTS; ++i) {
     pSet = tsRefSetList + i;
@@ -366,8 +359,6 @@ int taosListRef() {
       }
     }  
   } 
-
-  pthread_mutex_unlock(&tsRefMutex);
 
   return num;
 }
@@ -463,10 +454,6 @@ static void taosUnlockList(int64_t *lockedBy) {
   }
 }
 
-static void taosInitRefModule(void) {
-  pthread_mutex_init(&tsRefMutex, NULL);
-}
-
 static void taosIncRsetCount(SRefSet *pSet) {
   atomic_add_fetch_32(&pSet->count, 1);
   // uTrace("rsetId:%d inc count:%d", pSet->rsetId, count);
@@ -478,7 +465,7 @@ static void taosDecRsetCount(SRefSet *pSet) {
 
   if (count > 0) return;
 
-  pthread_mutex_lock(&tsRefMutex);
+  std::lock_guard<std::mutex> _(tsRefMutex);
 
   if (pSet->state != TSDB_REF_STATE_EMPTY) {
     pSet->state = TSDB_REF_STATE_EMPTY;
@@ -491,7 +478,5 @@ static void taosDecRsetCount(SRefSet *pSet) {
     tsRefSetNum--;
     uTrace("rsetId:%d is cleaned, refSetNum:%d count:%d", pSet->rsetId, tsRefSetNum, pSet->count);
   }
-
-  pthread_mutex_unlock(&tsRefMutex);
 } 
 

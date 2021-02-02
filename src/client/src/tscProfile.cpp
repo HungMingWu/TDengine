@@ -48,7 +48,7 @@ void tscAddIntoSqlList(SSqlObj *pSql) {
   STscObj *pObj = pSql->pTscObj;
   if (pSql->listed) return;
 
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   assert(pSql != pObj->sqlList);
   pSql->next = pObj->sqlList;
@@ -56,7 +56,7 @@ void tscAddIntoSqlList(SSqlObj *pSql) {
   pObj->sqlList = pSql;
   pSql->queryId = queryId++;
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   pSql->stime = taosGetTimestampMs();
   pSql->listed = 1;
@@ -125,7 +125,7 @@ void tscRemoveFromSqlList(SSqlObj *pSql) {
   STscObj *pObj = pSql->pTscObj;
   if (pSql->listed == 0) return;
 
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   if (pSql->prev)
     pSql->prev->next = pSql->next;
@@ -134,7 +134,7 @@ void tscRemoveFromSqlList(SSqlObj *pSql) {
 
   if (pSql->next) pSql->next->prev = pSql->prev;
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   pSql->next = NULL;
   pSql->prev = NULL;
@@ -145,7 +145,7 @@ void tscRemoveFromSqlList(SSqlObj *pSql) {
 }
 
 void tscKillQuery(STscObj *pObj, uint32_t killId) {
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   SSqlObj *pSql = pObj->sqlList;
   while (pSql) {
@@ -153,7 +153,7 @@ void tscKillQuery(STscObj *pObj, uint32_t killId) {
     pSql = pSql->next;
   }
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   if (pSql == NULL) {
     tscError("failed to kill query, id:%d, it may have completed/terminated", killId);
@@ -167,14 +167,14 @@ void tscAddIntoStreamList(SSqlStream *pStream) {
   static uint32_t streamId = 1;
   STscObj *       pObj = pStream->pSql->pTscObj;
 
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   pStream->next = pObj->streamList;
   if (pObj->streamList) pObj->streamList->prev = pStream;
   pObj->streamList = pStream;
   pStream->streamId = streamId++;
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   pStream->listed = 1;
 }
@@ -184,7 +184,7 @@ void tscRemoveFromStreamList(SSqlStream *pStream, SSqlObj *pSqlObj) {
 
   STscObj *pObj = pSqlObj->pTscObj;
 
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   if (pStream->prev)
     pStream->prev->next = pStream->next;
@@ -193,7 +193,7 @@ void tscRemoveFromStreamList(SSqlStream *pStream, SSqlObj *pSqlObj) {
 
   if (pStream->next) pStream->next->prev = pStream->prev;
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   pStream->next = NULL;
   pStream->prev = NULL;
@@ -202,7 +202,7 @@ void tscRemoveFromStreamList(SSqlStream *pStream, SSqlObj *pSqlObj) {
 }
 
 void tscKillStream(STscObj *pObj, uint32_t killId) {
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   SSqlStream *pStream = pObj->streamList;
   while (pStream) {
@@ -210,7 +210,7 @@ void tscKillStream(STscObj *pObj, uint32_t killId) {
     pStream = pStream->next;
   }
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   if (pStream) {
     tscDebug("%p stream:%p is killed, streamId:%d", pStream->pSql, pStream, killId);
@@ -293,7 +293,7 @@ int tscBuildQueryStreamDesc(void *pMsg, STscObj *pObj) {
 }
 
 void tscKillConnection(STscObj *pObj) {
-  pthread_mutex_lock(&pObj->mutex);
+  pObj->mutex.lock();
 
   SSqlObj *pSql = pObj->sqlList;
   while (pSql) {
@@ -308,7 +308,7 @@ void tscKillConnection(STscObj *pObj) {
     pStream = tmp;
   }
 
-  pthread_mutex_unlock(&pObj->mutex);
+  pObj->mutex.unlock();
 
   tscDebug("connection:%p is killed", pObj);
   taos_close(pObj);

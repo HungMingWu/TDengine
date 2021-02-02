@@ -482,7 +482,7 @@ void tscFreeMetaSqlObj(int64_t *rid){
 }
 
 void tscFreeSqlObj(SSqlObj* pSql) {
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     return;
   }
 
@@ -502,7 +502,6 @@ void tscFreeSqlObj(SSqlObj* pSql) {
     tscRemoveFromSqlList(pSql);
   }
 
-  pSql->signature = NULL;
   pSql->fp = NULL;
   tfree(pSql->sqlstr);
 
@@ -515,14 +514,9 @@ void tscFreeSqlObj(SSqlObj* pSql) {
 
   tfree(pCmd->tagData.data);
   pCmd->tagData.dataLen = 0;
-  
-  memset(pCmd->payload, 0, (size_t)pCmd->allocSize);
-  tfree(pCmd->payload);
-  pCmd->allocSize = 0;
-  
+    
   tsem_destroy(&pSql->rspSem);
-  memset(pSql, 0, sizeof(*pSql));
-  free(pSql);
+  delete pSql;
 }
 
 void tscDestroyDataBlock(STableDataBlocks* pDataBlock) {
@@ -618,26 +612,9 @@ int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, STableDataBlocks* pDataBlock) {
     assert(strncmp(pTableMetaInfo->name, pDataBlock->tableName, tListLen(pDataBlock->tableName)) == 0);
   }
 
-  /*
-   * the submit message consists of : [RPC header|message body|digest]
-   * the dataBlock only includes the RPC Header buffer and actual submit message body, space for digest needs
-   * additional space.
-   */
-  int ret = tscAllocPayload(pCmd, pDataBlock->size + 100);
-  if (TSDB_CODE_SUCCESS != ret) {
-    return ret;
-  }
-
   assert(pDataBlock->size <= pDataBlock->nAllocSize);
-  memcpy(pCmd->payload, pDataBlock->pData, pDataBlock->size);
+  pCmd->payload = std::string(pDataBlock->pData, pDataBlock->size);
 
-  /*
-   * the payloadLen should be actual message body size
-   * the old value of payloadLen is the allocated payload size
-   */
-  pCmd->payloadLen = pDataBlock->size;
-
-  assert(pCmd->allocSize >= (uint32_t)(pCmd->payloadLen + 100) && pCmd->payloadLen > 0);
   return TSDB_CODE_SUCCESS;
 }
 
@@ -901,7 +878,6 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
 void tscCloseTscObj(void *param) {
   STscObj *pObj = (STscObj*)param;
 
-  pObj->signature = NULL;
   taosTmrStopA(&(pObj->pTimer));
 
   void* p = pObj->pDnodeConn;
@@ -911,10 +887,9 @@ void tscCloseTscObj(void *param) {
   }
 
   tfree(pObj->tscCorMgmtEpSet);
-  pthread_mutex_destroy(&pObj->mutex);
 
   tscDebug("%p DB connection is closed, dnodeConn:%p", pObj, p);
-  tfree(pObj);
+  delete pObj;
 }
 
 bool tscIsInsertData(char* sqlstr) {
@@ -926,30 +901,6 @@ bool tscIsInsertData(char* sqlstr) {
       return t0.type == TK_INSERT || t0.type == TK_IMPORT;
     }
   } while (1);
-}
-
-int tscAllocPayload(SSqlCmd* pCmd, int size) {
-  assert(size > 0);
-
-  if (pCmd->payload == NULL) {
-    assert(pCmd->allocSize == 0);
-
-    pCmd->payload = (char*)calloc(1, size);
-    if (pCmd->payload == NULL) return TSDB_CODE_TSC_OUT_OF_MEMORY;
-    pCmd->allocSize = size;
-  } else {
-    if (pCmd->allocSize < (uint32_t)size) {
-      char* b = (char*)realloc(pCmd->payload, size);
-      if (b == NULL) return TSDB_CODE_TSC_OUT_OF_MEMORY;
-      pCmd->payload = b;
-      pCmd->allocSize = size;
-    }
-    
-    memset(pCmd->payload, 0, pCmd->allocSize);
-  }
-
-  assert(pCmd->allocSize >= (uint32_t)size);
-  return TSDB_CODE_SUCCESS;
 }
 
 TAOS_FIELD tscCreateField(int8_t type, const char* name, int16_t bytes) {
@@ -1618,7 +1569,7 @@ void tscGetSrcColumnInfo(SSrcColumnInfo* pColInfo, SQueryInfo* pQueryInfo) {
  * If connection need to be recycled, the SqlObj also should be freed.
  */
 bool tscShouldBeFreed(SSqlObj* pSql) {
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     return false;
   }
   
@@ -1927,7 +1878,6 @@ SSqlObj* createSimpleSubObj(SSqlObj* pSql, __async_cb_func_t fp, void* param, in
   }
 
   pNew->pTscObj = pSql->pTscObj;
-  pNew->signature = pNew;
 
   SSqlCmd* pCmd = &pNew->cmd;
   pCmd->command = cmd;
@@ -2017,15 +1967,12 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
   STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, tableIndex);
 
   pNew->pTscObj   = pSql->pTscObj;
-  pNew->signature = pNew;
   pNew->sqlstr    = strdup(pSql->sqlstr);
 
   SSqlCmd* pnCmd = &pNew->cmd;
   memcpy(pnCmd, pCmd, sizeof(SSqlCmd));
   
   pnCmd->command = cmd;
-  pnCmd->payload = NULL;
-  pnCmd->allocSize = 0;
 
   pnCmd->pQueryInfo = NULL;
   pnCmd->numOfClause = 0;
@@ -2084,12 +2031,8 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
     memcpy(pNewQueryInfo->fillVal, pQueryInfo->fillVal, pQueryInfo->fieldsInfo.numOfOutput * sizeof(int64_t));
   }
 
-  if (tscAllocPayload(pnCmd, TSDB_DEFAULT_PAYLOAD_SIZE) != TSDB_CODE_SUCCESS) {
-    tscError("%p new subquery failed, tableIndex:%d, vgroupIndex:%d", pSql, tableIndex, pTableMetaInfo->vgroupIndex);
-    terrno = TSDB_CODE_TSC_OUT_OF_MEMORY;
-    return NULL;
-  }
-  
+  pnCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
+ 
   tscColumnListCopy(pNewQueryInfo->colList, pQueryInfo->colList, (int16_t)tableIndex);
 
   // set the correct query type
@@ -2257,7 +2200,7 @@ int16_t tscGetTagColIndexById(STableMeta* pTableMeta, int16_t colId) {
 }
 
 bool tscIsUpdateQuery(SSqlObj* pSql) {
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     terrno = TSDB_CODE_TSC_DISCONNECTED;
     return TSDB_CODE_TSC_DISCONNECTED;
   }
@@ -2266,17 +2209,18 @@ bool tscIsUpdateQuery(SSqlObj* pSql) {
   return ((pCmd->command >= TSDB_SQL_INSERT && pCmd->command <= TSDB_SQL_DROP_DNODE) || TSDB_SQL_USE_DB == pCmd->command);
 }
 
-int32_t tscSQLSyntaxErrMsg(char* msg, const char* additionalInfo,  const char* sql) {
+int32_t tscSQLSyntaxErrMsg(std::string &msg, const char* additionalInfo,  const char* sql) {
   const char* msgFormat1 = "syntax error near \'%s\'";
   const char* msgFormat2 = "syntax error near \'%s\' (%s)";
   const char* msgFormat3 = "%s";
 
   const char* prefix = "syntax error"; 
   const int32_t BACKWARD_CHAR_STEP = 0;
-
+  char          buffer[1024];
   if (sql == NULL) {
     assert(additionalInfo != NULL);
-    sprintf(msg, msgFormat1, additionalInfo);
+    sprintf(buffer, msgFormat1, additionalInfo);
+    msg = std::string(buffer);
     return TSDB_CODE_TSC_SQL_SYNTAX_ERROR;
   }
 
@@ -2284,26 +2228,29 @@ int32_t tscSQLSyntaxErrMsg(char* msg, const char* additionalInfo,  const char* s
   strncpy(buf, (sql - BACKWARD_CHAR_STEP), tListLen(buf) - 1);
 
   if (additionalInfo != NULL) {
-    sprintf(msg, msgFormat2, buf, additionalInfo);
+    sprintf(buffer, msgFormat2, buf, additionalInfo);
+    msg = std::string(buffer);
   } else {
     const char* msgFormat = (0 == strncmp(sql, prefix, strlen(prefix))) ? msgFormat3 : msgFormat1; 
-    sprintf(msg, msgFormat, buf);
+    sprintf(buffer, msgFormat, buf);
+    msg = std::string(buffer);
   }
 
   return TSDB_CODE_TSC_SQL_SYNTAX_ERROR;
   
 }
 
-int32_t tscInvalidSQLErrMsg(char* msg, const char* additionalInfo, const char* sql) {
+int32_t tscInvalidSQLErrMsg(std::string &msg, const char* additionalInfo, const char* sql) {
   const char* msgFormat1 = "invalid SQL: %s";
   const char* msgFormat2 = "invalid SQL: \'%s\' (%s)";
   const char* msgFormat3 = "invalid SQL: \'%s\'";
 
   const int32_t BACKWARD_CHAR_STEP = 0;
-
+  char          buffer[1024];
   if (sql == NULL) {
     assert(additionalInfo != NULL);
-    sprintf(msg, msgFormat1, additionalInfo);
+    sprintf(buffer, msgFormat1, additionalInfo);
+    msg = std::string(buffer);
     return TSDB_CODE_TSC_INVALID_SQL;
   }
 
@@ -2311,9 +2258,11 @@ int32_t tscInvalidSQLErrMsg(char* msg, const char* additionalInfo, const char* s
   strncpy(buf, (sql - BACKWARD_CHAR_STEP), tListLen(buf) - 1);
 
   if (additionalInfo != NULL) {
-    sprintf(msg, msgFormat2, buf, additionalInfo);
+    sprintf(buffer, msgFormat2, buf, additionalInfo);
+    msg = std::string(buffer);
   } else {
-    sprintf(msg, msgFormat3, buf);  // no additional information for invalid sql error
+    sprintf(buffer, msgFormat3, buf);  // no additional information for invalid sql error
+    msg = std::string(buffer);
   }
 
   return TSDB_CODE_TSC_INVALID_SQL;
@@ -2323,8 +2272,6 @@ bool tscHasReachLimitation(SQueryInfo* pQueryInfo, SSqlRes* pRes) {
   assert(pQueryInfo != NULL && pQueryInfo->clauseLimit != 0);
   return (pQueryInfo->clauseLimit > 0 && pRes->numOfClauseTotal >= pQueryInfo->clauseLimit);
 }
-
-char* tscGetErrorMsgPayload(SSqlCmd* pCmd) { return pCmd->payload; }
 
 /**
  *  If current vnode query does not return results anymore (pRes->numOfRows == 0), try the next vnode if exists,

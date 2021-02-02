@@ -58,11 +58,11 @@ struct STaosQueue {
  public:
   ~STaosQueue();
   int writeQitem(int type, void *item);
+  int readQitem(int *type, void **pitem);
 };
 
 void      *taosAllocateQitem(int size);
 void       taosFreeQitem(void *item);
-int        taosReadQitem(taos_queue, int *type, void **pitem);
 
 taos_qall  taosAllocateQall();
 void       taosFreeQall(taos_qall);

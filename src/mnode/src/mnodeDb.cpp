@@ -52,9 +52,8 @@ static int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg);
 
 static void mnodeDestroyDb(SDbObj *pDb) {
-  pthread_mutex_destroy(&pDb->mutex);
   tfree(pDb->vgList);
-  tfree(pDb);
+  delete pDb;
 }
 
 static int32_t mnodeDbActionDestroy(SSdbRow *pRow) {
@@ -70,12 +69,11 @@ static int32_t mnodeDbActionInsert(SSdbRow *pRow) {
   SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
   SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
 
-  pthread_mutex_init(&pDb->mutex, NULL);
-  pthread_mutex_lock(&pDb->mutex);
+  pDb->mutex.lock();
   pDb->vgListSize = VG_LIST_SIZE;
   pDb->vgList = static_cast<SVgObj **>(calloc(pDb->vgListSize, sizeof(SVgObj *)));
   pDb->numOfVgroups = 0;
-  pthread_mutex_unlock(&pDb->mutex);
+  pDb->mutex.unlock();
 
   pDb->numOfTables = 0;
   pDb->numOfSuperTables = 0;
@@ -471,7 +469,7 @@ void mnodePrintVgroups(SDbObj *pDb, char *row) {
 void mnodeAddVgroupIntoDb(SVgObj *pVgroup) {
   SDbObj *pDb = pVgroup->pDb;
 
-  pthread_mutex_lock(&pDb->mutex);
+  std::lock_guard<std::mutex> _(pDb->mutex);
   int32_t vgPos = pDb->numOfVgroups++;
   if (vgPos >= pDb->vgListSize) {
     pDb->vgList = static_cast<SVgObj **>(realloc(pDb->vgList, pDb->vgListSize * 2 * sizeof(SVgObj *)));
@@ -480,13 +478,12 @@ void mnodeAddVgroupIntoDb(SVgObj *pVgroup) {
   }
 
   pDb->vgList[vgPos] = pVgroup;
-  pthread_mutex_unlock(&pDb->mutex);
 }
 
 void mnodeRemoveVgroupFromDb(SVgObj *pVgroup) {
   SDbObj *pDb = pVgroup->pDb;
 
-  pthread_mutex_lock(&pDb->mutex);
+  std::lock_guard<std::mutex> _(pDb->mutex);
   for (int32_t v1 = 0; v1 < pDb->numOfVgroups; ++v1) {
     if (pDb->vgList[v1] == pVgroup) {
       for (int32_t v2 = v1; v2 < pDb->numOfVgroups - 1; ++v2) {
@@ -497,8 +494,6 @@ void mnodeRemoveVgroupFromDb(SVgObj *pVgroup) {
       break;
     }
   }
-
-  pthread_mutex_unlock(&pDb->mutex);
 }
 
 void mnodeCleanupDbs() {

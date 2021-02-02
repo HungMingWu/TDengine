@@ -410,14 +410,13 @@ static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup) {
 
 int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSid) {
   SDbObj *pDb = pMsg->pDb;
-  pthread_mutex_lock(&pDb->mutex);
+  std::lock_guard<std::mutex> _(pDb->mutex);
   
   for (int32_t v = 0; v < pDb->numOfVgroups; ++v) {
     int vgIndex = (v + pDb->vgListIndex) % pDb->numOfVgroups;
     SVgObj *pVgroup = pDb->vgList[vgIndex];
     if (pVgroup == NULL) {
       mError("db:%s, index:%d vgroup is null", pDb->name, vgIndex);
-      pthread_mutex_unlock(&pDb->mutex);
       return TSDB_CODE_MND_APP_ERROR;
     }
 
@@ -431,7 +430,6 @@ int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSi
     *ppVgroup = pVgroup;
     pDb->vgListIndex = vgIndex;
 
-    pthread_mutex_unlock(&pDb->mutex);
     return TSDB_CODE_SUCCESS;
   }
 
@@ -446,17 +444,13 @@ int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSi
   if (pDb->numOfVgroups < maxVgroupsPerDb) {
     mDebug("msg:%p, app:%p db:%s, try to create a new vgroup, numOfVgroups:%d maxVgroupsPerDb:%d", pMsg,
            pMsg->rpcMsg.ahandle, pDb->name, pDb->numOfVgroups, maxVgroupsPerDb);
-    pthread_mutex_unlock(&pDb->mutex);
     code = mnodeCreateVgroup(pMsg);
     if (code == TSDB_CODE_MND_ACTION_IN_PROGRESS) {
       return code;
-    } else {
-      pthread_mutex_lock(&pDb->mutex);
     }
   }
 
   if (pDb->numOfVgroups < 1) {
-    pthread_mutex_unlock(&pDb->mutex);
     mDebug("msg:%p, app:%p db:%s, failed create new vgroup since:%s, numOfVgroups:%d maxVgroupsPerDb:%d ", pMsg,
            pMsg->rpcMsg.ahandle, pDb->name, tstrerror(code), pDb->numOfVgroups, maxVgroupsPerDb);
     return code;
@@ -464,27 +458,23 @@ int32_t mnodeGetAvailableVgroup(SMnodeMsg *pMsg, SVgObj **ppVgroup, int32_t *pSi
 
   SVgObj *pVgroup = pDb->vgList[0];
   if (pVgroup == NULL) {
-    pthread_mutex_unlock(&pDb->mutex);
     return code;
   }
 
   code = mnodeAllocVgroupIdPool(pVgroup);
   if (code != TSDB_CODE_SUCCESS) {
-    pthread_mutex_unlock(&pDb->mutex);
     return code;
   }
 
   int32_t sid = pVgroup->idPool->alloc();
   if (sid <= 0) {
     mError("msg:%p, app:%p db:%s, no enough sid in vgId:%d", pMsg, pMsg->rpcMsg.ahandle, pDb->name, pVgroup->vgId);
-    pthread_mutex_unlock(&pDb->mutex);
     return TSDB_CODE_MND_NO_ENOUGH_DNODES;
   }
 
   *pSid = sid;
   *ppVgroup = pVgroup;
   pDb->vgListIndex = 0;
-  pthread_mutex_unlock(&pDb->mutex);
 
   return TSDB_CODE_SUCCESS;
 }

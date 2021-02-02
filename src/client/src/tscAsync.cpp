@@ -37,7 +37,6 @@ static void tscAsyncFetchRowsProxy(void *param, TAOS_RES *tres, int numOfRows);
 void doAsyncQuery(STscObj* pObj, SSqlObj* pSql, __async_cb_func_t fp, void* param, const char* sqlstr, size_t sqlLen) {
   SSqlCmd* pCmd = &pSql->cmd;
 
-  pSql->signature = pSql;
   pSql->param     = param;
   pSql->pTscObj   = pObj;
   pSql->parseRetry= 0;
@@ -75,7 +74,7 @@ void doAsyncQuery(STscObj* pObj, SSqlObj* pSql, __async_cb_func_t fp, void* para
 // TODO return the correct error code to client in tscQueueAsyncError
 void taos_query_a(TAOS *taos, const char *sqlstr, __async_cb_func_t fp, void *param) {
   STscObj *pObj = (STscObj *)taos;
-  if (pObj == NULL || pObj->signature != pObj) {
+  if (pObj == NULL) {
     tscError("bug!!! pObj:%p", pObj);
     terrno = TSDB_CODE_TSC_DISCONNECTED;
     tscQueueAsyncError((void*)fp, param, TSDB_CODE_TSC_DISCONNECTED);
@@ -188,7 +187,7 @@ static void tscAsyncQueryRowsForNextVnode(void *param, TAOS_RES *tres, int numOf
 
 void taos_fetch_rows_a(TAOS_RES *taosa, __async_cb_func_t fp, void *param) {
   SSqlObj *pSql = (SSqlObj *)taosa;
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     tscError("sql object is NULL");
     tscQueueAsyncError((void*)fp, param, TSDB_CODE_TSC_DISCONNECTED);
     return;
@@ -274,7 +273,7 @@ void tscQueueAsyncError(void(*fp), void *param, int32_t code) {
 }
 
 void tscAsyncResultOnError(SSqlObj *pSql) {
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     tscDebug("%p SqlObj is freed, not add into queue async res", pSql);
     return;
   }
@@ -297,7 +296,7 @@ void tscTableMetaCallBack(void *param, TAOS_RES *res, int code) {
   SSqlObj* pSql = (SSqlObj*)taosAcquireRef(tscObjRef, (int64_t)param);
   if (pSql == NULL) return;
 
-  assert(pSql->signature == pSql && (int64_t)param == pSql->self);
+  assert((int64_t)param == pSql->self);
 
   SSqlCmd *pCmd = &pSql->cmd;
   SSqlRes *pRes = &pSql->res;

@@ -146,7 +146,6 @@ static SSub* tscCreateSubscription(STscObj* pObj, const char* topic, const char*
     return NULL;
   }
 
-  pSql->signature = pSql;
   pSql->pTscObj = pObj;
   pSql->pSubscription = pSub;
   pSub->pSql = pSql;
@@ -174,12 +173,7 @@ static SSub* tscCreateSubscription(STscObj* pObj, const char* topic, const char*
   pRes->qhandle = 0;
   pRes->numOfRows = 1;
 
-  code = tscAllocPayload(pCmd, TSDB_DEFAULT_PAYLOAD_SIZE);
-  if (code != TSDB_CODE_SUCCESS) {
-    line = __LINE__;
-    return NULL;
-  }
-
+  pCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
   registerSqlObj(pSql);
 
   code = tsParseSql(pSql, true);
@@ -386,7 +380,7 @@ void tscSaveSubscriptionProgress(void* sub) {
 
 TAOS_SUB *taos_subscribe(TAOS *taos, int restart, const char* topic, const char *sql, TAOS_SUBSCRIBE_CALLBACK fp, void *param, int interval) {
   STscObj* pObj = (STscObj*)taos;
-  if (pObj == NULL || pObj->signature != pObj) {
+  if (pObj == NULL) {
     terrno = TSDB_CODE_TSC_DISCONNECTED;
     tscError("connection disconnected");
     return NULL;
@@ -428,7 +422,6 @@ SSqlObj* recreateSqlObj(SSub* pSub) {
     return NULL;
   }
 
-  pSql->signature = pSql;
   pSql->pTscObj = (STscObj*)pSub->taos;
 
   SSqlCmd* pCmd = &pSql->cmd;
@@ -451,15 +444,10 @@ SSqlObj* recreateSqlObj(SSub* pSub) {
   pRes->qhandle = 0;
   pRes->numOfRows = 1;
 
-  int code = tscAllocPayload(pCmd, TSDB_DEFAULT_PAYLOAD_SIZE);
-  if (code != TSDB_CODE_SUCCESS) {
-    tscFreeSqlObj(pSql);
-    return NULL;
-  }
-
+  pCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
   registerSqlObj(pSql);
 
-  code = tsParseSql(pSql, true);
+  int code = tsParseSql(pSql, true);
   if (code == TSDB_CODE_TSC_ACTION_IN_PROGRESS) {
     tsem_wait(&pSub->sem);
     code = pSql->res.code;
@@ -518,11 +506,7 @@ TAOS_RES *taos_consume(TAOS_SUB *tsub) {
 
   size_t size = taosArrayGetSize(pSub->progress) * sizeof(STableIdInfo);
   size += sizeof(SQueryTableMsg) + 4096;
-  int code = tscAllocPayload(&pSql->cmd, (int)size);
-  if (code != TSDB_CODE_SUCCESS) {
-    tscError("failed to alloc payload");
-    return NULL;
-  }
+  pSql->cmd.payload.resize(size);
 
   for (int retry = 0; retry < 3; retry++) {
     tscRemoveFromSqlList(pSql);

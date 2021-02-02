@@ -17,6 +17,7 @@
 #define TDENGINE_MNODE_DEF_H
 
 #include <memory>
+#include <mutex>
 #include "taosdef.h"
 #include "taosmsg.h"
 #include "tidpool.h"
@@ -182,7 +183,7 @@ typedef struct {
   int8_t  reserved[10];
 } SDbCfg;
 
-typedef struct SDbObj {
+struct SDbObj {
   char    name[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   int8_t  reserved0[4];
   char    acct[TSDB_USER_LEN];
@@ -200,8 +201,8 @@ typedef struct SDbObj {
   int32_t vgListIndex;
   SVgObj **vgList;
   struct SAcctObj *pAcct;
-  pthread_mutex_t  mutex;
-} SDbObj;
+  std::mutex  mutex;
+};
 
 typedef struct SUserObj {
   char              user[TSDB_USER_LEN];
@@ -235,7 +236,7 @@ typedef struct {
   int8_t  reserved[3];
 } SAcctInfo;
 
-typedef struct SAcctObj {
+struct SAcctObj {
   char      user[TSDB_USER_LEN];
   char      pass[TSDB_KEY_LEN];
   SAcctCfg  cfg;
@@ -247,8 +248,8 @@ typedef struct SAcctObj {
   int32_t   refCount;
   int8_t    reserved1[4];
   SAcctInfo acctInfo;
-  pthread_mutex_t  mutex;
-} SAcctObj;
+  std::mutex  mutex;
+};
 
 typedef struct {
   char     db[TSDB_DB_NAME_LEN];

@@ -12,6 +12,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+#include <mutex>
 #include <vector>
 #include "os.h"
 #include "qFill.h"
@@ -6535,7 +6536,6 @@ static SQInfo *createQInfoImpl(SQueryTableMsg *pQueryMsg, SSqlGroupbyExpr *pGrou
   }
 
   // to make sure third party won't overwrite this structure
-  pQInfo->signature = pQInfo;
   pQInfo->tableGroupInfo = *pTableGroupInfo;
 
   SQuery *pQuery = (SQuery*)calloc(1, sizeof(SQuery));
@@ -6726,20 +6726,6 @@ static SQInfo *createQInfoImpl(SQueryTableMsg *pQueryMsg, SSqlGroupbyExpr *pGrou
   return pQInfo;
 }
 
-static bool isValidQInfo(void *param) {
-  SQInfo *pQInfo = (SQInfo *)param;
-  if (pQInfo == NULL) {
-    return false;
-  }
-
-  /*
-   * pQInfo->signature may be changed by another thread, so we assign value of signature
-   * into local variable, then compare by using local variable
-   */
-  uint64_t sig = (uint64_t)pQInfo->signature;
-  return (sig == (uint64_t)pQInfo);
-}
-
 static int32_t initQInfo(SQueryTableMsg *pQueryMsg, void *tsdb, int32_t vgId, SQInfo *pQInfo, bool isSTable) {
   int32_t code = TSDB_CODE_SUCCESS;
   SQuery *pQuery = pQInfo->runtimeEnv.pQuery;
@@ -6840,10 +6826,6 @@ static void* destroyQueryFuncExpr(SExprInfo* pExprInfo, int32_t numOfExpr) {
 }
 
 static void freeQInfo(SQInfo *pQInfo) {
-  if (!isValidQInfo(pQInfo)) {
-    return;
-  }
-
   qDebug("QInfo:%p start to free QInfo", pQInfo);
 
   releaseQueryBuf(pQInfo->tableqinfoGroupInfo.numOfTables);
@@ -6901,8 +6883,6 @@ static void freeQInfo(SQInfo *pQInfo) {
   taosHashCleanup(pQInfo->arrTableIdInfo);
 
   taosArrayDestroy(pQInfo->groupResInfo.pRows);
-
-  pQInfo->signature = 0;
 
   qDebug("QInfo:%p QInfo is freed", pQInfo);
 
@@ -6978,12 +6958,12 @@ static int32_t doDumpQueryResult(SQInfo *pQInfo, char *data) {
   return TSDB_CODE_SUCCESS;
 }
 
-typedef struct SQueryMgmt {
+struct SQueryMgmt {
   SCacheObj      *qinfoPool;      // query handle pool
   int32_t         vgId;
   bool            closed;
-  pthread_mutex_t lock;
-} SQueryMgmt;
+  std::mutex      lock;
+};
 
 int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qinfo_t* pQInfo) {
   assert(pQueryMsg != NULL && tsdb != NULL);
@@ -7135,10 +7115,6 @@ int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qi
 
 void qDestroyQueryInfo(qinfo_t qHandle) {
   SQInfo* pQInfo = (SQInfo*) qHandle;
-  if (!isValidQInfo(pQInfo)) {
-    return;
-  }
-
   qDebug("QInfo:%p query completed", pQInfo);
   queryCostStatis(pQInfo);   // print the query cost summary
   freeQInfo(pQInfo);
@@ -7166,7 +7142,7 @@ static bool doBuildResCheck(SQInfo* pQInfo) {
 
 bool qTableQuery(qinfo_t qinfo) {
   SQInfo *pQInfo = (SQInfo *)qinfo;
-  assert(pQInfo && pQInfo->signature == pQInfo);
+  assert(pQInfo);
   int64_t threadId = taosGetSelfPthreadId();
 
   int64_t curOwner = 0;
@@ -7225,7 +7201,7 @@ bool qTableQuery(qinfo_t qinfo) {
 int32_t qRetrieveQueryResultInfo(qinfo_t qinfo, bool* buildRes, void* pRspContext) {
   SQInfo *pQInfo = (SQInfo *)qinfo;
 
-  if (pQInfo == NULL || !isValidQInfo(pQInfo)) {
+  if (pQInfo == NULL) {
     qError("QInfo:%p invalid qhandle", pQInfo);
     return TSDB_CODE_QRY_INVALID_QHANDLE;
   }
@@ -7270,7 +7246,7 @@ int32_t qRetrieveQueryResultInfo(qinfo_t qinfo, bool* buildRes, void* pRspContex
 int32_t qDumpRetrieveResult(qinfo_t qinfo, SRetrieveTableRsp **pRsp, int32_t *contLen, bool* continueExec) {
   SQInfo *pQInfo = (SQInfo *)qinfo;
 
-  if (pQInfo == NULL || !isValidQInfo(pQInfo)) {
+  if (pQInfo == NULL) {
     return TSDB_CODE_QRY_INVALID_QHANDLE;
   }
 
@@ -7325,7 +7301,7 @@ int32_t qDumpRetrieveResult(qinfo_t qinfo, SRetrieveTableRsp **pRsp, int32_t *co
 int32_t qQueryCompleted(qinfo_t qinfo) {
   SQInfo *pQInfo = (SQInfo *)qinfo;
 
-  if (pQInfo == NULL || !isValidQInfo(pQInfo)) {
+  if (pQInfo == NULL) {
     return TSDB_CODE_QRY_INVALID_QHANDLE;
   }
 
@@ -7336,7 +7312,7 @@ int32_t qQueryCompleted(qinfo_t qinfo) {
 int32_t qKillQuery(qinfo_t qinfo) {
   SQInfo *pQInfo = (SQInfo *)qinfo;
 
-  if (pQInfo == NULL || !isValidQInfo(pQInfo)) {
+  if (pQInfo == NULL) {
     return TSDB_CODE_QRY_INVALID_QHANDLE;
   }
 
@@ -7565,17 +7541,10 @@ void* qOpenQueryMgmt(int32_t vgId) {
   char cacheName[128] = {0};
   sprintf(cacheName, "qhandle_%d", vgId);
 
-  SQueryMgmt* pQueryMgmt = (SQueryMgmt*)calloc(1, sizeof(SQueryMgmt));
-  if (pQueryMgmt == NULL) {
-    terrno = TSDB_CODE_QRY_OUT_OF_MEMORY;
-    return NULL;
-  }
-
+  auto pQueryMgmt = new SQueryMgmt;
   pQueryMgmt->qinfoPool = taosCacheInit(TSDB_CACHE_PTR_KEY, REFRESH_HANDLE_INTERVAL, true, freeqinfoFn, cacheName);
   pQueryMgmt->closed    = false;
   pQueryMgmt->vgId      = vgId;
-
-  pthread_mutex_init(&pQueryMgmt->lock, NULL);
 
   qDebug("vgId:%d, open querymgmt success", vgId);
   return pQueryMgmt;
@@ -7594,9 +7563,9 @@ void qQueryMgmtNotifyClosed(void* pQMgmt) {
   SQueryMgmt* pQueryMgmt = (SQueryMgmt*)pQMgmt;
   qDebug("vgId:%d, set querymgmt closed, wait for all queries cancelled", pQueryMgmt->vgId);
 
-  pthread_mutex_lock(&pQueryMgmt->lock);
+  pQueryMgmt->lock.lock();
   pQueryMgmt->closed = true;
-  pthread_mutex_unlock(&pQueryMgmt->lock);
+  pQueryMgmt->lock.unlock();
 
   taosCacheRefresh(pQueryMgmt->qinfoPool, queryMgmtKillQueryFn);
 }
@@ -7609,9 +7578,9 @@ void qQueryMgmtReOpen(void *pQMgmt) {
   SQueryMgmt *pQueryMgmt = (SQueryMgmt*)pQMgmt;
   qDebug("vgId:%d, set querymgmt reopen", pQueryMgmt->vgId);
 
-  pthread_mutex_lock(&pQueryMgmt->lock);
+  pQueryMgmt->lock.lock();
   pQueryMgmt->closed = false;
-  pthread_mutex_unlock(&pQueryMgmt->lock);
+  pQueryMgmt->lock.unlock();
 }
 
 void qCleanupQueryMgmt(void* pQMgmt) {
@@ -7628,7 +7597,6 @@ void qCleanupQueryMgmt(void* pQMgmt) {
   pQueryMgmt->qinfoPool = NULL;
 
   taosCacheCleanup(pqinfoPool);
-  pthread_mutex_destroy(&pQueryMgmt->lock);
   tfree(pQueryMgmt);
 
   qDebug("vgId:%d, queryMgmt cleanup completed", vgId);
@@ -7647,9 +7615,8 @@ void** qRegisterQInfo(void* pMgmt, uint64_t qInfo) {
     return NULL;
   }
 
-  pthread_mutex_lock(&pQueryMgmt->lock);
+  std::lock_guard<std::mutex> _(pQueryMgmt->lock);
   if (pQueryMgmt->closed) {
-    pthread_mutex_unlock(&pQueryMgmt->lock);
     qError("QInfo:%p failed to add qhandle into cache, since qMgmt is colsing", (void *)qInfo);
     terrno = TSDB_CODE_VND_INVALID_VGROUP_ID;
     return NULL;
@@ -7657,7 +7624,6 @@ void** qRegisterQInfo(void* pMgmt, uint64_t qInfo) {
     TSDB_CACHE_PTR_TYPE handleVal = (TSDB_CACHE_PTR_TYPE) qInfo;
     void** handle = (void**)taosCachePut(pQueryMgmt->qinfoPool, &handleVal, sizeof(TSDB_CACHE_PTR_TYPE), &qInfo, sizeof(TSDB_CACHE_PTR_TYPE),
         (getMaximumIdleDurationSec()*1000));
-    pthread_mutex_unlock(&pQueryMgmt->lock);
 
     return handle;
   }

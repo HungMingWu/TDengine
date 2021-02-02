@@ -1427,7 +1427,7 @@ int32_t tscDoLocalMerge(SSqlObj *pSql) {
 
   tscResetForNextRetrieve(pRes);
 
-  if (pSql->signature != pSql || pRes == NULL || pRes->pLocalReducer == NULL) {  // all data has been processed
+  if (pRes == NULL || pRes->pLocalReducer == NULL) {  // all data has been processed
     tscError("%p local merge abort due to error occurs, code:%s", pSql, tstrerror(pRes->code));
     return pRes->code;
   }

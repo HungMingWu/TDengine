@@ -16,6 +16,8 @@
 #ifndef TDENGINE_TSCLIENT_H
 #define TDENGINE_TSCLIENT_H
 
+#include <mutex>
+#include <string>
 #include "os.h"
 
 #include "taos.h"
@@ -191,7 +193,7 @@ typedef struct STableDataBlocks {
   SParamInfo *params;
 } STableDataBlocks;
 
-typedef struct SQueryInfo {
+struct SQueryInfo {
   int16_t          command;       // the command may be different for each subclause, so keep it seperately.
   uint32_t         type;          // query/insert type
 
@@ -211,7 +213,7 @@ typedef struct SQueryInfo {
   STableMetaInfo **pTableMetaInfo;
   struct STSBuf   *tsBuf;
   int64_t *        fillVal;       // default value for fill
-  char *           msg;           // pointer to the pCmd->payload to keep error message temporarily
+  std::string      msg;           // pointer to the pCmd->payload to keep error message temporarily
   int64_t          clauseLimit;   // limit for current sub clause
 
   int64_t          prjOffset;     // offset value in the original sql expression, only applied at client side
@@ -219,7 +221,7 @@ typedef struct SQueryInfo {
 
   int32_t          udColumnId;    // current user-defined constant output field column id, monotonically decreases from TSDB_UD_COLUMN_INDEX
   int16_t          resColumnId;   // result column id
-} SQueryInfo;
+};
 
 typedef struct {
   int     command;
@@ -238,9 +240,7 @@ typedef struct {
   int8_t       parseFinished;
 
   int16_t      numOfCols;
-  uint32_t     allocSize;
-  char *       payload;
-  int32_t      payloadLen;
+  std::string  payload;
   SQueryInfo **pQueryInfo;
   int32_t      numOfClause;
   int32_t      batchSize;    // for parameter ('?') binding and batch processing
@@ -291,8 +291,7 @@ typedef struct {
   struct SLocalReducer *pLocalReducer;
 } SSqlRes;
 
-typedef struct STscObj {
-  void *             signature;
+struct STscObj {
   void *             pTimer;
   char               user[TSDB_USER_LEN];
   char               pass[TSDB_KEY_LEN];
@@ -308,9 +307,9 @@ typedef struct STscObj {
   struct SSqlStream *streamList;
   SRpcCorEpSet       *tscCorMgmtEpSet;
   void*              pDnodeConn;
-  pthread_mutex_t    mutex;
+  std::mutex         mutex;
   int32_t            numOfObj; // number of sqlObj from this tscObj
-} STscObj;
+};
 
 typedef struct SSubqueryState {
   int32_t  numOfRemain;         // the number of remain unfinished subquery
@@ -318,8 +317,7 @@ typedef struct SSubqueryState {
   uint64_t numOfRetrievedRows;  // total number of points in this query
 } SSubqueryState;
 
-typedef struct SSqlObj {
-  void            *signature;
+struct SSqlObj {
   pthread_t        owner;        // owner of sql object, by which it is executed
   STscObj         *pTscObj;
   int64_t          rpcRid;
@@ -350,7 +348,7 @@ typedef struct SSqlObj {
 
   struct SSqlObj  *prev, *next;
   int64_t          self;
-} SSqlObj;
+};
 
 typedef struct SSqlStream {
   SSqlObj *pSql;
@@ -436,10 +434,8 @@ void tscInitResObjForLocalQuery(SSqlObj *pObj, int32_t numOfRes, int32_t rowLen)
 bool tscIsUpdateQuery(SSqlObj* pSql);
 bool tscHasReachLimitation(SQueryInfo *pQueryInfo, SSqlRes *pRes);
 
-char *tscGetErrorMsgPayload(SSqlCmd *pCmd);
-
-int32_t tscInvalidSQLErrMsg(char *msg, const char *additionalInfo, const char *sql);
-int32_t tscSQLSyntaxErrMsg(char* msg, const char* additionalInfo,  const char* sql);
+int32_t tscInvalidSQLErrMsg(std::string &msg, const char *additionalInfo, const char *sql);
+int32_t tscSQLSyntaxErrMsg(std::string &msg, const char* additionalInfo,  const char* sql);
 
 int32_t tscToSQLCmd(SSqlObj *pSql, struct SSqlInfo *pInfo);
 

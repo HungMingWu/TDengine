@@ -15,6 +15,7 @@
 
 #define _DEFAULT_SOURCE
 #include <memory>
+#include <mutex>
 #include "os.h"
 #include "taoserror.h"
 #include "hash.h"
@@ -77,7 +78,7 @@ typedef struct SSdbTable {
   std::mutex mutex;
 } SSdbTable;
 
-typedef struct {
+struct SSdbMgmt {
   ESyncRole  role;
   ESdbStatus status;
   uint64_t   version;
@@ -87,8 +88,8 @@ typedef struct {
   int32_t    queuedMsg;
   int32_t    numOfTables;
   SSdbTable *tableList[SDB_TABLE_MAX];
-  pthread_mutex_t mutex;
-} SSdbMgmt;
+  std::mutex mutex;
+};
 
 typedef struct {
   pthread_t thread;
@@ -440,8 +441,6 @@ int32_t sdbInitRef() {
 void sdbCleanUpRef() { taosCloseRef(tsSdbRid); }
 
 int32_t sdbInit() {
-  pthread_mutex_init(&tsSdbMgmt.mutex, NULL);
-
   if (sdbInitWorker() != 0) {
     return -1;
   }
@@ -477,8 +476,6 @@ void sdbCleanUp() {
     walClose(tsSdbMgmt.wal);
     tsSdbMgmt.wal = NULL;
   }
-
-  pthread_mutex_destroy(&tsSdbMgmt.mutex);
 }
 
 void sdbIncRef(void *tparam, void *pRow) {
@@ -659,7 +656,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
 
   if (qtype == TAOS_QTYPE_QUERY) return sdbPerformDeleteAction(pHead, pTable);
 
-  pthread_mutex_lock(&tsSdbMgmt.mutex);
+  std::unique_lock<std::mutex> _(tsSdbMgmt.mutex);
   
   if (pHead->version == 0) {
     // assign version
@@ -668,12 +665,10 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
   } else {
     // for data from WAL or forward, version may be smaller
     if (pHead->version <= tsSdbMgmt.version) {
-      pthread_mutex_unlock(&tsSdbMgmt.mutex);
       sdbDebug("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
                pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont), qtype, pHead->version, tsSdbMgmt.version);
       return TSDB_CODE_SUCCESS;
     } else if (pHead->version != tsSdbMgmt.version + 1) {
-      pthread_mutex_unlock(&tsSdbMgmt.mutex);
       sdbError("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
                pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont), qtype, pHead->version, tsSdbMgmt.version);
       return TSDB_CODE_SYN_INVALID_VERSION;
@@ -684,11 +679,10 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
 
   int32_t code = walWrite(tsSdbMgmt.wal, pHead);
   if (code < 0) {
-    pthread_mutex_unlock(&tsSdbMgmt.mutex);
     return code;
   }
 
-  pthread_mutex_unlock(&tsSdbMgmt.mutex);
+  _.unlock();
 
   // from app, row is created
   if (pRow != NULL) {

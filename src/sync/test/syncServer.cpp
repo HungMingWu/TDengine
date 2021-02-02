@@ -179,7 +179,7 @@ void *processWriteQueue(void *param) {
   void *item;
 
   while (1) {
-    int ret = taosReadQitem(qhandle, &type, &item);
+    int ret = qhandle->readQitem(&type, &item);
     if (ret <= 0) {
       usleep(1000);
       continue;

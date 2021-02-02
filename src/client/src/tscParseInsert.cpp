@@ -54,7 +54,7 @@ static int32_t tscToDouble(SStrToken *pToken, double *value, char **endPtr) {
   return pToken->type;
 }
 
-int tsParseTime(SStrToken *pToken, int64_t *time, char **next, char *error, int16_t timePrec) {
+int tsParseTime(SStrToken *pToken, int64_t *time, char **next, std::string &error, int16_t timePrec) {
   int32_t   index = 0;
   SStrToken sToken;
   int64_t   interval;
@@ -133,7 +133,7 @@ static bool isNullStr(SStrToken* pToken) {
   return (pToken->type == TK_NULL) || ((pToken->type == TK_STRING) && (pToken->n != 0) &&
                                        (strncasecmp(TSDB_DATA_NULL_STR_L, pToken->z, pToken->n) == 0));
 }
-int32_t tsParseOneColumnData(SSchema *pSchema, SStrToken *pToken, char *payload, char *msg, char **str, bool primaryKey,
+int32_t tsParseOneColumnData(SSchema *pSchema, SStrToken *pToken, char *payload, std::string &msg, char **str, bool primaryKey,
                              int16_t timePrec) {
   int64_t iv;
   int32_t ret;
@@ -447,7 +447,7 @@ int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[
         continue;
       }
 
-      strcpy(pCmd->payload, "client out of memory");
+      pCmd->payload = std::string("client out of memory");
       *code = TSDB_CODE_TSC_OUT_OF_MEMORY;
       return -1;
     }
@@ -563,7 +563,7 @@ int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMe
       int32_t tSize;
       *code = tscAllocateMemIfNeed(pDataBlock, tinfo.rowSize, &tSize);
       if (*code != TSDB_CODE_SUCCESS) {  //TODO pass the correct error code to client
-        strcpy(pCmd->payload, "client out of memory");
+        pCmd->payload = std::string("client out of memory");
         return -1;
       }
 
@@ -591,7 +591,7 @@ int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMe
   }
 
   if (numOfRows <= 0) {
-    strcpy(pCmd->payload, "no any data points");
+    pCmd->payload = std::string("no any data points");
     *code = TSDB_CODE_TSC_SQL_SYNTAX_ERROR;
     return -1;
   } else {
@@ -1062,9 +1062,7 @@ int tsParseInsertSql(SSqlObj *pSql) {
     return code;
   }
 
-  if ((code = tscAllocPayload(pCmd, TSDB_DEFAULT_PAYLOAD_SIZE)) != TSDB_CODE_SUCCESS) {
-    return code;
-  }
+  pCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
 
   if (NULL == pCmd->pTableBlockHashList) {
     pCmd->pTableBlockHashList =
@@ -1184,17 +1182,17 @@ int tsParseInsertSql(SSqlObj *pSql) {
         goto _clean;
       }
 
-      strncpy(pCmd->payload, sToken.z, sToken.n);
-      strdequote(pCmd->payload);
+      pCmd->payload = std::string(sToken.z, sToken.n);
+      strdequote(&pCmd->payload[0]);
 
       // todo refactor extract method
       wordexp_t full_path;
-      if (wordexp(pCmd->payload, &full_path, 0) != 0) {
+      if (wordexp(pCmd->payload.data(), &full_path, 0) != 0) {
         code = tscInvalidSQLErrMsg(pCmd->payload, "invalid filename", sToken.z);
         goto _clean;
       }
 
-      tstrncpy(pCmd->payload, full_path.we_wordv[0], pCmd->allocSize);
+      pCmd->payload = std::string(full_path.we_wordv[0]);
       wordfree(&full_path);
 
     } else if (sToken.type == TK_LP) {
@@ -1332,10 +1330,7 @@ int tsParseSql(SSqlObj *pSql, bool initial) {
     tscDebug("%p resume to parse sql: %s", pSql, pCmd->curSql);
   }
 
-  ret = tscAllocPayload(&pSql->cmd, TSDB_DEFAULT_PAYLOAD_SIZE);
-  if (TSDB_CODE_SUCCESS != ret) {
-    return ret;
-  }
+  pSql->cmd.payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
 
   if (tscIsInsertData(pSql->sqlstr)) {
     if (initial && ((ret = tsInsertInitialCheck(pSql)) != TSDB_CODE_SUCCESS)) {
@@ -1531,13 +1526,13 @@ void tscProcessMultiVnodesImportFromFile(SSqlObj *pSql) {
     return;
   }
 
-  assert(pCmd->dataSourceType == DATA_FROM_DATA_FILE  && strlen(pCmd->payload) != 0);
+  assert(pCmd->dataSourceType == DATA_FROM_DATA_FILE  && !pCmd->payload.empty());
 
   SImportFileSupport *pSupporter = (SImportFileSupport*)calloc(1, sizeof(SImportFileSupport));
   SSqlObj *pNew = createSubqueryObj(pSql, 0, parseFileSendDataBlock, pSupporter, TSDB_SQL_INSERT, NULL);
   pCmd->count = 1;
 
-  FILE *fp = fopen(pCmd->payload, "r");
+  FILE *fp = fopen(pCmd->payload.c_str(), "r");
   if (fp == NULL) {
     pSql->res.code = TAOS_SYSTEM_ERROR(errno);
     tscError("%p failed to open file %s to load data from file, code:%s", pSql, pCmd->payload, tstrerror(pSql->res.code));

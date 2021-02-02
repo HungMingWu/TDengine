@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <mutex>
 #include "os.h"
 #include "tsocket.h"
 #include "tutil.h"
@@ -41,10 +42,10 @@ typedef struct SFdObj {
   struct SFdObj     *next;
 } SFdObj;
 
-typedef struct SThreadObj {
+struct SThreadObj {
   pthread_t       thread;
   SFdObj *        pHead;
-  pthread_mutex_t mutex;
+  std::mutex      mutex;
   uint32_t        ip;
   bool            stop;
   SOCKET          pollFd;
@@ -53,7 +54,7 @@ typedef struct SThreadObj {
   char            label[TSDB_LABEL_LEN];
   void           *shandle;  // handle passed by upper layer during server initialization
   void           *(*processData)(SRecvInfo *pPacket);
-} SThreadObj;
+};
 
 typedef struct {
   SOCKET      fd;
@@ -105,16 +106,7 @@ void *taosInitTcpServer(uint32_t ip, uint16_t port, char *label, int numOfThread
 
   // initialize parameters in case it may encounter error later 
   for (int i = 0; i < numOfThreads; ++i) {
-    pThreadObj = (SThreadObj *)calloc(sizeof(SThreadObj), 1);
-    if (pThreadObj == NULL) {
-      tError("TCP:%s no enough memory", label);
-      terrno = TAOS_SYSTEM_ERROR(errno); 
-      for (int j=0; j<i; ++j) free(pServerObj->pThreadObj[j]);
-      free(pServerObj->pThreadObj);
-      free(pServerObj);
-      return NULL;
-    }
-      
+    pThreadObj = new SThreadObj;     
     pServerObj->pThreadObj[i] = pThreadObj;
     pThreadObj->pollFd = -1;
     taosResetPthread(&pThreadObj->thread);
@@ -126,12 +118,6 @@ void *taosInitTcpServer(uint32_t ip, uint16_t port, char *label, int numOfThread
   // initialize mutex, thread, fd which may fail
   for (int i = 0; i < numOfThreads; ++i) {
     pThreadObj = pServerObj->pThreadObj[i];
-    code = pthread_mutex_init(&(pThreadObj->mutex), NULL);
-    if (code < 0) {
-      tError("%s failed to init TCP process data mutex(%s)", label, strerror(errno));
-      break;
-    }
-
     pThreadObj->pollFd = (int64_t)epoll_create(10);  // size does not matter
     if (pThreadObj->pollFd < 0) {
       tError("%s failed to create TCP epoll", label);
@@ -276,21 +262,12 @@ static void *taosAcceptTcpConnection(void *arg) {
 }
 
 void *taosInitTcpClient(uint32_t ip, uint16_t port, char *label, int num, void *fp, void *shandle) {
-  SThreadObj    *pThreadObj;
   pthread_attr_t thattr;
 
-  pThreadObj = (SThreadObj *)malloc(sizeof(SThreadObj));
-  memset(pThreadObj, 0, sizeof(SThreadObj));
+  auto pThreadObj = new SThreadObj;
   tstrncpy(pThreadObj->label, label, sizeof(pThreadObj->label));
   pThreadObj->ip = ip;
   pThreadObj->shandle = shandle;
-
-  if (pthread_mutex_init(&(pThreadObj->mutex), NULL) < 0) {
-    tError("%s failed to init TCP client mutex(%s)", label, strerror(errno));
-    free(pThreadObj);
-    terrno = TAOS_SYSTEM_ERROR(errno); 
-    return NULL;
-  }
 
   pThreadObj->pollFd = (SOCKET)epoll_create(10);  // size does not matter
   if (pThreadObj->pollFd < 0) {
@@ -520,9 +497,8 @@ static void *taosProcessTcpData(void *param) {
     taosReportBrokenLink(pFdObj);
   }
 
-  pthread_mutex_destroy(&(pThreadObj->mutex));
   tDebug("%s TCP thread exits ...", pThreadObj->label);
-  tfree(pThreadObj);
+  delete pThreadObj;
 
   return NULL;
 }
@@ -549,12 +525,11 @@ static SFdObj *taosMallocFdObj(SThreadObj *pThreadObj, SOCKET fd) {
   }
 
   // notify the data process, add into the FdObj list
-  pthread_mutex_lock(&(pThreadObj->mutex));
+  std::lock_guard<std::mutex> _(pThreadObj->mutex);
   pFdObj->next = pThreadObj->pHead;
   if (pThreadObj->pHead) (pThreadObj->pHead)->prev = pFdObj;
   pThreadObj->pHead = pFdObj;
   pThreadObj->numOfFds++;
-  pthread_mutex_unlock(&(pThreadObj->mutex));
 
   return pFdObj;
 }
@@ -565,10 +540,9 @@ static void taosFreeFdObj(SFdObj *pFdObj) {
   if (pFdObj->signature != pFdObj) return;
 
   SThreadObj *pThreadObj = pFdObj->pThreadObj;
-  pthread_mutex_lock(&pThreadObj->mutex);
+  std::lock_guard<std::mutex> _(pThreadObj->mutex);
 
   if (pFdObj->signature == NULL) {
-    pthread_mutex_unlock(&pThreadObj->mutex);
     return;
   }
 
@@ -590,8 +564,6 @@ static void taosFreeFdObj(SFdObj *pFdObj) {
   if (pFdObj->next) {
     (pFdObj->next)->prev = pFdObj->prev;
   }
-
-  pthread_mutex_unlock(&pThreadObj->mutex);
 
   tDebug("%s %p TCP connection is closed, FD:%p fd:%d numOfFds:%d", 
           pThreadObj->label, pFdObj->thandle, pFdObj, pFdObj->fd, pThreadObj->numOfFds);

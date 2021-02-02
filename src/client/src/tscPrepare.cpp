@@ -834,7 +834,7 @@ static int insertStmtExecute(STscStmt* stmt) {
 
 TAOS_STMT* taos_stmt_init(TAOS* taos) {
   STscObj* pObj = (STscObj*)taos;
-  if (pObj == NULL || pObj->signature != pObj) {
+  if (pObj == NULL) {
     terrno = TSDB_CODE_TSC_DISCONNECTED;
     tscError("connection disconnected");
     return NULL;
@@ -857,7 +857,6 @@ TAOS_STMT* taos_stmt_init(TAOS* taos) {
   }
 
   tsem_init(&pSql->rspSem, 0, 0);
-  pSql->signature = pSql;
   pSql->pTscObj   = pObj;
   pSql->maxRetry  = TSDB_MAX_REPLICA;
   pStmt->pSql     = pSql;
@@ -884,16 +883,11 @@ int taos_stmt_prepare(TAOS_STMT* stmt, const char* sql, unsigned long length) {
   
   pCmd->insertType = TSDB_QUERY_TYPE_STMT_INSERT;
 
-  if (TSDB_CODE_SUCCESS != tscAllocPayload(pCmd, TSDB_DEFAULT_PAYLOAD_SIZE)) {
-    tscError("%p failed to malloc payload buffer", pSql);
-    return TSDB_CODE_TSC_OUT_OF_MEMORY;
-  }
-
+  pCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
   pSql->sqlstr = (char*)realloc(pSql->sqlstr, sqlLen + 1);
 
   if (pSql->sqlstr == NULL) {
     tscError("%p failed to malloc sql string buffer", pSql);
-    free(pCmd->payload);
     return TSDB_CODE_TSC_OUT_OF_MEMORY;
   }
 

@@ -301,7 +301,7 @@ TAOS_ROW tscFetchRow(void *param) {
     return NULL;
   } 
   SSqlObj *pSql = builder->pInterSql;
-  if (pSql == NULL || pSql->signature != pSql) {
+  if (pSql == NULL) {
     terrno = TSDB_CODE_TSC_DISCONNECTED;
     return NULL;
   }
@@ -885,7 +885,7 @@ int tscProcessLocalCmd(SSqlObj *pSql) {
   SSqlRes *pRes = &pSql->res;
 
   if (pCmd->command == TSDB_SQL_CFG_LOCAL) {
-    pRes->code = (uint8_t)taosCfgDynamicOptions(pCmd->payload);
+    pRes->code = (uint8_t)taosCfgDynamicOptions(&pCmd->payload[0]);
   } else if (pCmd->command == TSDB_SQL_DESCRIBE_TABLE) {
     pRes->code = (uint8_t)tscProcessDescribeTable(pSql);
   } else if (pCmd->command == TSDB_SQL_RETRIEVE_EMPTY_RESULT) {
