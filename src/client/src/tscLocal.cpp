@@ -734,8 +734,8 @@ static int32_t tscProcessCurrentUser(SSqlObj *pSql) {
     return TSDB_CODE_TSC_OUT_OF_MEMORY;
   }
 
-  size_t size = sizeof(pSql->pTscObj->user);
-  STR_WITH_MAXSIZE_TO_VARSTR(vx, pSql->pTscObj->user, size);
+  size_t size = pSql->pTscObj->user.size();
+  STR_WITH_MAXSIZE_TO_VARSTR(vx, pSql->pTscObj->user.data(), size);
 
   tscSetLocalQueryResult(pSql, vx, pExpr->aliasName, pExpr->resType, pExpr->resBytes);
   free(vx);

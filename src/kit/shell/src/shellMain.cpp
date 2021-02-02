@@ -46,26 +46,6 @@ void *cancelHandler(void *arg) {
   return NULL;
 }
 
-int checkVersion() {
-  if (sizeof(int8_t) != 1) {
-    printf("taos int8 size is %d(!= 1)", (int)sizeof(int8_t));
-    return 0;
-  }
-  if (sizeof(int16_t) != 2) {
-    printf("taos int16 size is %d(!= 2)", (int)sizeof(int16_t));
-    return 0;
-  }
-  if (sizeof(int32_t) != 4) {
-    printf("taos int32 size is %d(!= 4)", (int)sizeof(int32_t));
-    return 0;
-  }
-  if (sizeof(int64_t) != 8) {
-    printf("taos int64 size is %d(!= 8)", (int)sizeof(int64_t));
-    return 0;
-  }
-  return 1;
-}
-
 // Global configurations
 SShellArguments args;
 /*
@@ -73,10 +53,6 @@ SShellArguments args;
  */
 int main(int argc, char* argv[]) {
   /*setlocale(LC_ALL, "en_US.UTF-8"); */
-
-  if (!checkVersion()) {
-    exit(EXIT_FAILURE);
-  }
 
   shellParseArgument(argc, argv, &args);
 

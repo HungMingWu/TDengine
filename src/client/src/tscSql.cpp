@@ -28,33 +28,18 @@
 #include "tutil.h"
 #include "ttimer.h"
 #include "tscProfile.h"
+#include "string_view.hpp"
 
-static bool validImpl(const char* str, size_t maxsize) {
-  if (str == NULL) {
-    return false;
-  }
-  
-  size_t len = strlen(str);
-  if (len <= 0 || len > maxsize) {
-    return false;
-  }
-  
-  return true;
+static bool validImpl(std::string_view str, size_t maxsize) {
+  const size_t len = str.length();
+  return (len <= 0 || len > maxsize) ? false : true;
 }
 
-static bool validUserName(const char* user) {
-  return validImpl(user, TSDB_USER_LEN - 1);
-}
-
-static bool validPassword(const char* passwd) {
-  return validImpl(passwd, TSDB_KEY_LEN - 1);
-}
-
-static SSqlObj *taosConnectImpl(const char *ip, const char *user, const char *pass, const char *auth, const char *db,
+static SSqlObj *taosConnectImpl(const char *ip, std::string_view user, const char *pass, const char *auth, const char *db,
                          uint16_t port, void (*fp)(void *, TAOS_RES *, int), void *param, TAOS **taos) {
   taos_init();
 
-  if (!validUserName(user)) {
+  if (!validImpl(user, TSDB_USER_LEN - 1)) {
     terrno = TSDB_CODE_TSC_INVALID_USER_LENGTH;
     return NULL;
   }
@@ -63,7 +48,7 @@ static SSqlObj *taosConnectImpl(const char *ip, const char *user, const char *pa
   char secretEncrypt[32] = {0};
   int  secretEncryptLen = 0;
   if (auth == NULL) {
-    if (!validPassword(pass)) {
+    if (!validImpl(pass, TSDB_KEY_LEN - 1)) {
       terrno = TSDB_CODE_TSC_INVALID_PASS_LENGTH;
       return NULL;
     }
@@ -115,7 +100,7 @@ static SSqlObj *taosConnectImpl(const char *ip, const char *user, const char *pa
 
   pObj->pDnodeConn = pDnodeConn;
   
-  tstrncpy(pObj->user, user, sizeof(pObj->user));
+  pObj->user = std::string(user);
   secretEncryptLen = MIN(secretEncryptLen, sizeof(pObj->pass));
   memcpy(pObj->pass, secretEncrypt, secretEncryptLen);
 

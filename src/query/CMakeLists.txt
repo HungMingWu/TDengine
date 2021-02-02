@@ -7,7 +7,7 @@ INCLUDE_DIRECTORIES(inc)
 
 AUX_SOURCE_DIRECTORY(src SRC)
 ADD_LIBRARY(query ${SRC})
-TARGET_LINK_LIBRARIES(query tsdb tutil)
+TARGET_LINK_LIBRARIES(query tsdb tutil nonstd)
 
 IF (TD_LINUX)
   TARGET_LINK_LIBRARIES(query m rt)

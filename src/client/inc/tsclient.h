@@ -18,6 +18,7 @@
 
 #include <mutex>
 #include <string>
+#include "string_view.hpp"
 #include "os.h"
 
 #include "taos.h"
@@ -293,7 +294,7 @@ typedef struct {
 
 struct STscObj {
   void *             pTimer;
-  char               user[TSDB_USER_LEN];
+  std::string        user; // user length is smaller than TSDB_USER_LEN
   char               pass[TSDB_KEY_LEN];
   char               acctId[TSDB_ACCT_ID_LEN];
   char               db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
@@ -381,7 +382,7 @@ typedef struct SSqlStream {
 
 void tscSetStreamDestTable(SSqlStream* pStream, const char* dstTable);
 
-int32_t tscInitRpc(const char *user, const char *secret, void** pDnodeConn);
+int32_t tscInitRpc(std::string_view user, const char *secret, void** pDnodeConn);
 void    tscInitMsgsFp();
 
 int tsParseSql(SSqlObj *pSql, bool initial);

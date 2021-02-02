@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <thread>
 #include "os.h"
 #include "taosmsg.h"
 #include "tref.h"
@@ -45,14 +46,14 @@ int32_t    tscRefId = -1;
 int32_t    tscNumOfObj = 0;         // number of sqlObj in current process.
 
 static void  *tscCheckDiskUsageTmr;
-static pthread_once_t tscinit = PTHREAD_ONCE_INIT;
+static std::once_flag tscinit;
 
 void tscCheckDiskUsage(void *UNUSED_PARAM(para), void* UNUSED_PARAM(param)) {
   taosGetDisk();
   taosTmrReset(tscCheckDiskUsage, 1000, NULL, tscTmr, &tscCheckDiskUsageTmr);
 }
 
-int32_t tscInitRpc(const char *user, const char *secretEncrypt, void **pDnodeConn) {
+int32_t tscInitRpc(std::string_view user, const char *secretEncrypt, void **pDnodeConn) {
   SRpcInit rpcInit;
 
   if (*pDnodeConn == NULL) {
@@ -63,7 +64,7 @@ int32_t tscInitRpc(const char *user, const char *secretEncrypt, void **pDnodeCon
     rpcInit.cfp = tscProcessMsgFromServer;
     rpcInit.sessions = tsMaxConnections;
     rpcInit.connType = TAOS_CONN_CLIENT;
-    rpcInit.user = (char *)user;
+    rpcInit.user = (char *)user.data();
     rpcInit.idleTime = 2000;
     rpcInit.ckey = "key";
     rpcInit.spi = 1;
@@ -74,14 +75,14 @@ int32_t tscInitRpc(const char *user, const char *secretEncrypt, void **pDnodeCon
       tscError("failed to init connection to TDengine");
       return -1;
     } else {
-      tscDebug("dnodeConn:%p is created, user:%s", *pDnodeConn, user);
+      tscDebug("dnodeConn:%p is created, user:%s", *pDnodeConn, user.data());
     }
   }
 
   return 0;
 }
 
-void taos_init_imp(void) {
+void taos_init_imp() {
   char temp[128]  = {0};
   
   errno = TSDB_CODE_SUCCESS;
@@ -150,7 +151,9 @@ void taos_init_imp(void) {
   tscDebug("client is initialized successfully");
 }
 
-void taos_init() { pthread_once(&tscinit, taos_init_imp); }
+void taos_init() { 
+    std::call_once(tscinit, taos_init_imp);
+}
 
 // this function may be called by user or system, or by both simultaneously.
 void taos_cleanup(void) {
