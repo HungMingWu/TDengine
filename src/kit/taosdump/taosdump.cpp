@@ -16,6 +16,7 @@
 #include <iconv.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <atomic>
 
 #include "os.h"
 #include "taos.h"
@@ -149,7 +150,7 @@ typedef struct {
   int32_t   totalDatabasesOfDumpOut;
 } resultStatistics;
 
-static int64_t totalDumpOutRows = 0;
+static std::atomic<int64_t> totalDumpOutRows{0};
 
 SDbInfo **dbInfos = NULL;
 
@@ -812,7 +813,7 @@ int taosDumpOut(struct arguments *arguments) {
       taos_free_result(result);
       tfree(command);
       taosFreeDbInfos();
-      fprintf(stderr, "dump out rows: %" PRId64 "\n", totalDumpOutRows);
+      fprintf(stderr, "dump out rows: %" PRId64 "\n", totalDumpOutRows.load());
   });
   char tmpBuf[TSDB_FILENAME_LEN+9] = {0};
   if (arguments->outpath[0] != 0) {
@@ -1795,7 +1796,7 @@ int taosDumpTableData(FILE *fp, char *tbname, struct arguments *arguments, TAOS*
   }
 
   fprintf(fp, "\n");  
-  atomic_add_fetch_64(&totalDumpOutRows, totalRows);
+  totalDumpOutRows += totalRows;
   
   taos_free_result(tmpResult);
   free(tmpBuffer);

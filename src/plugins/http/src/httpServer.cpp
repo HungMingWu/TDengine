@@ -144,7 +144,7 @@ static void httpProcessHttpData(void *param) {
       } else {
         if (httpReadData(pContext)) {
           (*(pThread->processData))(pContext);
-          atomic_fetch_add_32(&pServer->requestNum, 1);
+          pServer->requestNum++;
         } else {
           httpReleaseContext(pContext, false);
         }

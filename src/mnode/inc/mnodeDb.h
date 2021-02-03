@@ -37,10 +37,6 @@ bool    mnodeCheckIsMonitorDB(char *db, char *monitordb);
 void    mnodeDropAllDbs(SAcctObj *pAcct);
 
 // util func
-void mnodeAddSuperTableIntoDb(SDbObj *pDb);
-void mnodeRemoveSuperTableFromDb(SDbObj *pDb);
-void mnodeAddTableIntoDb(SDbObj *pDb);
-void mnodeRemoveTableFromDb(SDbObj *pDb);
 void mnodeAddVgroupIntoDb(SVgObj *pVgroup);
 void mnodeRemoveVgroupFromDb(SVgObj *pVgroup);
 

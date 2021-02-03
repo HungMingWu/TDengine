@@ -16,7 +16,8 @@
 #ifndef TDENGINE_CFG_H
 #define TDENGINE_CFG_H
 
-#define TSDB_CFG_MAX_NUM    110
+#include <vector>
+
 #define TSDB_CFG_PRINT_LEN  23
 #define TSDB_CFG_OPTION_LEN 24
 #define TSDB_CFG_VALUE_LEN  41
@@ -56,7 +57,7 @@ enum {
   TAOS_CFG_UTYPE_MS
 };
 
-typedef struct {
+struct SGlobalCfg {
   char *   option;
   void *   ptr;
   float    minValue;
@@ -66,10 +67,9 @@ typedef struct {
   int8_t   unitType;
   int8_t   valType;
   int32_t  ptrLength;
-} SGlobalCfg;
+};
 
-extern SGlobalCfg tsGlobalConfig[];
-extern int32_t    tsGlobalConfigNum;
+extern std::vector<SGlobalCfg> tsGlobalConfig;
 extern char *     tsCfgStatusStr[];
 
 void taosReadGlobalLogCfg();
@@ -77,7 +77,6 @@ bool taosReadGlobalCfg();
 void taosPrintGlobalCfg();
 void taosDumpGlobalCfg();
 
-void taosInitConfigOption(SGlobalCfg cfg);
 SGlobalCfg * taosGetConfigOption(const char *option);
 
 #endif  // TDENGINE_TGLOBALCFG_H

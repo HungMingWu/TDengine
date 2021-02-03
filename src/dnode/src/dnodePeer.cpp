@@ -64,7 +64,7 @@ int32_t dnodeInitServer() {
   rpcInit.connType     = TAOS_CONN_SERVER;
   rpcInit.idleTime     = tsShellActivityTimer * 1000;
 
-  tsServerRpc = rpcOpen(&rpcInit);
+  tsServerRpc = rpcOpen(rpcInit);
   if (tsServerRpc == NULL) {
     dError("failed to init inter-dnodes RPC server");
     return -1;
@@ -129,7 +129,7 @@ int32_t dnodeInitClient() {
   rpcInit.ckey         = "key";
   rpcInit.secret       = secret;
 
-  tsClientRpc = rpcOpen(&rpcInit);
+  tsClientRpc = rpcOpen(rpcInit);
   if (tsClientRpc == NULL) {
     dError("failed to init mnode rpc client");
     return -1;

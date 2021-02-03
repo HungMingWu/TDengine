@@ -16,6 +16,7 @@
 #ifndef TDENGINE_MNODE_DEF_H
 #define TDENGINE_MNODE_DEF_H
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include "taosdef.h"
@@ -45,7 +46,7 @@ typedef struct SClusterObj {
 
 struct SDnodeObj {
   int32_t    dnodeId;
-  int32_t    openVnodes;
+  std::atomic<int32_t>    openVnodes;
   int64_t    createdTime;
   int32_t    resever0;         // from dnode status msg, config information
   int32_t    customScore;      // config by user
@@ -195,8 +196,8 @@ struct SDbObj {
   int8_t  updateEnd[4];
   int32_t refCount;
   int32_t numOfVgroups;
-  int32_t numOfTables;
-  int32_t numOfSuperTables;
+  std::atomic<int32_t> numOfTables;
+  std::atomic<int32_t> numOfSuperTables;
   int32_t vgListSize; 
   int32_t vgListIndex;
   SVgObj **vgList;

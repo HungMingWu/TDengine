@@ -13,6 +13,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <mutex>
+#include <thread>
 #include "os.h"
 #include "tlog.h"
 #include "tsched.h"
@@ -86,7 +88,7 @@ int32_t tmrDebugFlag = 131;
 uint32_t tsMaxTmrCtrl = 512;
 
 static pthread_once_t  tmrModuleInit = PTHREAD_ONCE_INIT;
-static pthread_mutex_t tmrCtrlMutex;
+static std::mutex tmrCtrlMutex;
 static tmr_ctrl_t*     tmrCtrls;
 static tmr_ctrl_t*     unusedTmrCtrl = NULL;
 static void*           tmrQhandle;
@@ -499,8 +501,6 @@ static void taosTmrModuleInit(void) {
   (tmrCtrls + tsMaxTmrCtrl - 1)->next = NULL;
   unusedTmrCtrl = tmrCtrls;
 
-  pthread_mutex_init(&tmrCtrlMutex, NULL);
-
   int64_t now = taosGetTimestampMs();
   for (int i = 0; i < tListLen(wheels); i++) {
     time_wheel_t* wheel = wheels + i;
@@ -534,13 +534,13 @@ static void taosTmrModuleInit(void) {
 void* taosTmrInit(int maxNumOfTmrs, int resolution, int longest, const char* label) {
   pthread_once(&tmrModuleInit, taosTmrModuleInit);
 
-  pthread_mutex_lock(&tmrCtrlMutex);
+  tmrCtrlMutex.lock();
   tmr_ctrl_t* ctrl = unusedTmrCtrl;
   if (ctrl != NULL) {
     unusedTmrCtrl = ctrl->next;
     numOfTmrCtrl++;
   }
-  pthread_mutex_unlock(&tmrCtrlMutex);
+  tmrCtrlMutex.unlock();
 
   if (ctrl == NULL) {
     tmrError("%s too many timer controllers, failed to create timer controller.", label);
@@ -561,11 +561,11 @@ void taosTmrCleanUp(void* handle) {
   tmrDebug("%s timer controller is cleaned up.", ctrl->label);
   ctrl->label[0] = 0;
 
-  pthread_mutex_lock(&tmrCtrlMutex);
+  tmrCtrlMutex.lock();
   ctrl->next = unusedTmrCtrl;
   numOfTmrCtrl--;
   unusedTmrCtrl = ctrl;
-  pthread_mutex_unlock(&tmrCtrlMutex);
+  tmrCtrlMutex.unlock();
 
   if (numOfTmrCtrl <=0) {
     taosUninitTimer();
@@ -577,8 +577,6 @@ void taosTmrCleanUp(void* handle) {
       pthread_mutex_destroy(&wheel->mutex);
       free(wheel->slots);
     }
-
-    pthread_mutex_destroy(&tmrCtrlMutex);
 
     for (size_t i = 0; i < timerMap.size; i++) {
       timer_list_t* list = timerMap.slots + i;

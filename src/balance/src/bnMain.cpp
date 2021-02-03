@@ -41,7 +41,7 @@ static bool bnCheckFree(SDnodeObj *pDnode) {
   }
   
   if (pDnode->openVnodes >= TSDB_MAX_VNODES) {
-    mError("dnode:%d, openVnodes:%d maxVnodes:%d not available", pDnode->dnodeId, pDnode->openVnodes, TSDB_MAX_VNODES);
+    mError("dnode:%d, openVnodes:%d maxVnodes:%d not available", pDnode->dnodeId, pDnode->openVnodes.load(), TSDB_MAX_VNODES);
     return false;
   }
 
@@ -134,7 +134,7 @@ static void bnDiscardVnode(SVgObj *pVgroup, SVnodeGid *pVnodeGid) {
 
   SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVnodeGid->dnodeId));
   if (pDnode != NULL) {
-    atomic_sub_fetch_32(&pDnode->openVnodes, 1);
+    pDnode->openVnodes--;
     mnodeDecDnodeRef(pDnode);
   }
 
@@ -177,7 +177,7 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
         break;
       } else {
         mDebug("dnode:%d, is not selected, status:%s vnodes:%d disk:%fGB role:%d", pDnode->dnodeId,
-               dnodeStatus[pDnode->status], pDnode->openVnodes, pDnode->diskAvailable, pDnode->alternativeRole);
+               dnodeStatus[pDnode->status], pDnode->openVnodes.load(), pDnode->diskAvailable, pDnode->alternativeRole);
       }
     }
   }
@@ -194,7 +194,7 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
       pIter = mnodeGetNextDnode(pIter, &pDnode);
       if (pDnode == NULL) break;
       mDebug("dnode:%d, status:%s vnodes:%d disk:%fGB role:%d", pDnode->dnodeId, dnodeStatus[pDnode->status],
-             pDnode->openVnodes, pDnode->diskAvailable, pDnode->alternativeRole);
+             pDnode->openVnodes.load(), pDnode->diskAvailable, pDnode->alternativeRole);
       mnodeDecDnodeRef(pDnode);
     }
 
@@ -323,7 +323,7 @@ static int32_t bnAddVnode(SVgObj *pVgroup, SDnodeObj *pSrcDnode, SDnodeObj *pDes
 
   memcpy(&pVgroup->vnodeGid, &vnodeGids, sizeof(SVnodeGid) * TSDB_MAX_REPLICA);
   pVgroup->numOfVnodes = numOfVnodes;
-  atomic_add_fetch_32(&pDestDnode->openVnodes, 1);
+  pDestDnode->openVnodes++;
 
   mnodeUpdateVgroup(pVgroup);
 
@@ -337,7 +337,7 @@ static bool bnMonitorBalance() {
   for (int32_t src = tsBnDnodes.size - 1; src >= 0; --src) {
     SDnodeObj *pDnode = tsBnDnodes.list[src];
     mDebug("%d-dnode:%d, state:%s, score:%.1f, cores:%d, vnodes:%d", tsBnDnodes.size - src - 1, pDnode->dnodeId,
-           dnodeStatus[pDnode->status], pDnode->score, pDnode->numOfCores, pDnode->openVnodes);
+           dnodeStatus[pDnode->status], pDnode->score, pDnode->numOfCores, pDnode->openVnodes.load());
   }
 
   float scoresDiff = tsBnDnodes.list[tsBnDnodes.size - 1]->score - tsBnDnodes.list[0]->score;
@@ -615,7 +615,7 @@ int32_t bnDropDnode(SDnodeObj *pDnode) {
   }
 
   if (pDnode->openVnodes > totalFreeVnodes) {
-    mError("dnode:%d, openVnodes:%d totalFreeVnodes:%d no enough dnodes", pDnode->dnodeId, pDnode->openVnodes, totalFreeVnodes);
+    mError("dnode:%d, openVnodes:%d totalFreeVnodes:%d no enough dnodes", pDnode->dnodeId, pDnode->openVnodes.load(), totalFreeVnodes);
     return TSDB_CODE_MND_NO_ENOUGH_DNODES;
   }
 

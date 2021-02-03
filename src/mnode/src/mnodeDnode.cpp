@@ -544,7 +544,7 @@ static int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
       return TSDB_CODE_MND_INVALID_CLUSTER_ID;
     } else {
       mTrace("dnode:%d, status received, access times %d openVnodes:%d:%d", pDnode->dnodeId, pDnode->lastAccess,
-             htons(pStatus->openVnodes), pDnode->openVnodes);
+             htons(pStatus->openVnodes), pDnode->openVnodes.load());
     }
   }
 
@@ -1054,9 +1054,9 @@ static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *p
   for (int32_t i = 1; i < cols; ++i) pShow->offset[i] = pShow->offset[i - 1] + pShow->bytes[i - 1];
 
   pShow->numOfRows = 0;
-  for (int32_t i = tsGlobalConfigNum - 1; i >= 0; --i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (!mnodeCheckConfigShow(cfg)) continue;
+  for (auto it = tsGlobalConfig.rbegin(); it != tsGlobalConfig.rend(); it++) {
+    SGlobalCfg &cfg = *it;
+    if (!mnodeCheckConfigShow(&cfg)) continue;
     pShow->numOfRows++;
   }
 
@@ -1070,45 +1070,45 @@ static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *p
 static int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t numOfRows = 0;
 
-  for (int32_t i = tsGlobalConfigNum - 1; i >= 0 && numOfRows < rows; --i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (!mnodeCheckConfigShow(cfg)) continue;
+  for (auto it = tsGlobalConfig.rbegin(); it != tsGlobalConfig.rend() && numOfRows < rows; it++) {
+    SGlobalCfg &cfg = *it;
+    if (!mnodeCheckConfigShow(&cfg)) continue;
 
     char *pWrite;
     int32_t   cols = 0;
 
     pWrite = data + pShow->offset[cols] * rows + pShow->bytes[cols] * numOfRows;
-    STR_WITH_MAXSIZE_TO_VARSTR(pWrite, cfg->option, TSDB_CFG_OPTION_LEN);
+    STR_WITH_MAXSIZE_TO_VARSTR(pWrite, cfg.option, TSDB_CFG_OPTION_LEN);
 
     cols++;
     int32_t t = 0;
 
     pWrite = data + pShow->offset[cols] * rows + pShow->bytes[cols] * numOfRows;
-    switch (cfg->valType) {
+    switch (cfg.valType) {
       case TAOS_CFG_VTYPE_INT8:
-        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int8_t *)cfg->ptr));
+        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int8_t *)cfg.ptr));
         varDataSetLen(pWrite, t);
         numOfRows++;
         break;
       case TAOS_CFG_VTYPE_INT16:
-        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int16_t *)cfg->ptr));
+        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int16_t *)cfg.ptr));
         varDataSetLen(pWrite, t);
         numOfRows++;
         break;
       case TAOS_CFG_VTYPE_INT32:
-        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int32_t *)cfg->ptr));
+        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%d", *((int32_t *)cfg.ptr));
         varDataSetLen(pWrite, t);
         numOfRows++;
         break;
       case TAOS_CFG_VTYPE_FLOAT:
-        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%f", *((float *)cfg->ptr));
+        t = snprintf(static_cast<char *>(varDataVal(pWrite)), TSDB_CFG_VALUE_LEN, "%f", *((float *)cfg.ptr));
         varDataSetLen(pWrite, t);
         numOfRows++;
         break;
       case TAOS_CFG_VTYPE_STRING:
       case TAOS_CFG_VTYPE_IPSTR:
       case TAOS_CFG_VTYPE_DIRECTORY:
-        STR_WITH_MAXSIZE_TO_VARSTR(pWrite, static_cast<char *>(cfg->ptr), TSDB_CFG_VALUE_LEN);
+        STR_WITH_MAXSIZE_TO_VARSTR(pWrite, static_cast<char *>(cfg.ptr), TSDB_CFG_VALUE_LEN);
         numOfRows++;
         break;
       default:

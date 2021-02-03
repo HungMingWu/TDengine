@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taos.h"
 #include "tglobal.h"
@@ -110,5 +109,5 @@ void httpCleanUpSystem() {
 }
 
 int32_t httpGetReqCount() {
-  return atomic_exchange_32(&tsHttpServer.requestNum, 0);
+  return tsHttpServer.requestNum.exchange(0);
 }

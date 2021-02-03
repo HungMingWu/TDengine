@@ -130,7 +130,7 @@ static FORCE_INLINE SHashNode *doUpdateHashNode(SHashObj *pHashObj, SHashEntry* 
   } else {
     pNewNode->next = pNode;    
     pe->num++;
-    atomic_add_fetch_64(&pHashObj->size, 1);
+    pHashObj->size++;
   }
   
   return pNewNode;
@@ -189,7 +189,7 @@ SHashObj *taosHashInit(size_t capacity, _hash_fn_t fn, bool update, SHashLockTyp
   return pHashObj;
 }
 
-int32_t taosHashGetSize(const SHashObj *pHashObj) { return (int32_t)((pHashObj == NULL) ? 0 : pHashObj->size); }
+int32_t taosHashGetSize(const SHashObj *pHashObj) { return (int32_t)((pHashObj == NULL) ? 0 : pHashObj->size.load()); }
 
 int32_t taosHashPut(SHashObj *pHashObj, const void *key, size_t keyLen, void *data, size_t size) {
   uint32_t   hashVal = (*pHashObj->hashFp)((const char*)key, (uint32_t)keyLen);
@@ -248,7 +248,7 @@ int32_t taosHashPut(SHashObj *pHashObj, const void *key, size_t keyLen, void *da
 
     // enable resize
     __rd_unlock(&pHashObj->lock, pHashObj->type);
-    atomic_add_fetch_64(&pHashObj->size, 1);
+    pHashObj->size++;
 
     return 0;
   } else {
@@ -384,7 +384,7 @@ int32_t taosHashRemoveWithData(SHashObj *pHashObj, const void *key, size_t keyLe
       if (data) memcpy(data, GET_HASH_NODE_DATA(pNode), dsize);
 
       pe->num--;
-      atomic_sub_fetch_64(&pHashObj->size, 1);
+      pHashObj->size--;
       FREE_HASH_NODE(pHashObj, pNode);
     }
   } 
@@ -422,7 +422,7 @@ int32_t taosHashCondTraverse(SHashObj *pHashObj, bool (*fp)(void *, void *), voi
     while((pNode = pEntry->next) != NULL) {
       if (fp && (!fp(param, GET_HASH_NODE_DATA(pNode)))) {
         pEntry->num -= 1;
-        atomic_sub_fetch_64(&pHashObj->size, 1);
+        pHashObj->size--;
 
         pEntry->next = pNode->next;
 
@@ -448,7 +448,7 @@ int32_t taosHashCondTraverse(SHashObj *pHashObj, bool (*fp)(void *, void *), voi
         if (fp && (!fp(param, GET_HASH_NODE_DATA(pNext)))) {
           pNode->next = pNext->next;
           pEntry->num -= 1;
-          atomic_sub_fetch_64(&pHashObj->size, 1);
+          pHashObj->size--;
 
           if (pEntry->num == 0) {
             assert(pEntry->next == NULL);
@@ -729,7 +729,7 @@ static void *taosHashReleaseNode(SHashObj *pHashObj, void *p, int *slot) {
       }
    
       pe->num--;
-      atomic_sub_fetch_64(&pHashObj->size, 1);
+      pHashObj->size--;
       FREE_HASH_NODE(pHashObj, pOld);
     } 
   } else {

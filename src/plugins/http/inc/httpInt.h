@@ -16,7 +16,7 @@
 #ifndef TDENGINE_HTTP_INT_H
 #define TDENGINE_HTTP_INT_H
 
-#include <stdbool.h>
+#include <atomic>
 #include "pthread.h"
 #include "semaphore.h"
 #include "tmempool.h"
@@ -173,14 +173,14 @@ typedef struct HttpThread {
   bool (*processData)(HttpContext *pContext);
 } HttpThread;
 
-typedef struct HttpServer {
+struct HttpServer {
   char              label[HTTP_LABEL_SIZE];
   uint32_t          serverIp;
   uint16_t          serverPort;
   int32_t           fd;
   int32_t           numOfThreads;
   int32_t           methodScannerLen;
-  int32_t           requestNum;
+  std::atomic<int32_t>           requestNum;
   int32_t           status;
   pthread_t         thread;
   HttpThread *      pThreads;
@@ -189,7 +189,7 @@ typedef struct HttpServer {
   pthread_mutex_t   serverMutex;
   HttpDecodeMethod *methodScanner[HTTP_METHOD_SCANNER_SIZE];
   bool (*processData)(HttpContext *pContext);
-} HttpServer;
+};
 
 extern const char *httpKeepAliveStr[];
 extern const char *httpVersionStr[];

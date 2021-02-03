@@ -13,9 +13,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
+
 #include "os.h"
 #include "tidpool.h"
 #include "tmd5.h"
@@ -110,6 +112,10 @@ struct SRpcInfo {
   void     *pCache;   // connection cache
   std::mutex  mutex;
   std::vector<SRpcConn> connList;  // connection list
+  static std::atomic<int32_t> tsRpcNum;
+ public:
+  SRpcInfo();
+  ~SRpcInfo();
 };
 
 struct SRpcReqContext {
@@ -140,7 +146,19 @@ int tsRpcHeadSize;
 int tsRpcOverhead;
 
 static int     tsRpcRefId = -1;
-static int32_t tsRpcNum = 0;
+
+SRpcInfo::SRpcInfo()
+{
+    tsRpcNum++;
+}
+
+SRpcInfo::~SRpcInfo()
+{
+    tsRpcNum--;
+}
+
+std::atomic<int32_t> SRpcInfo::tsRpcNum{0};
+
 //static pthread_once_t tsRpcInit = PTHREAD_ONCE_INIT;
 
 // server:0 client:1  tcp:2 udp:0
@@ -242,38 +260,30 @@ void rpcCleanup(void) {
   tsRpcRefId = -1;
 }
  
-void *rpcOpen(const SRpcInit *pInit) {
+void *rpcOpen(const SRpcInit &init) {
   //pthread_once(&tsRpcInit, rpcInit);
 
   auto pRpc = new SRpcInfo;
   if (pRpc == NULL) return NULL;
 
-  if(pInit->label) tstrncpy(pRpc->label, pInit->label, sizeof(pRpc->label));
-  pRpc->connType = pInit->connType;
-  pRpc->idleTime = pInit->idleTime;
-  pRpc->numOfThreads = pInit->numOfThreads>TSDB_MAX_RPC_THREADS ? TSDB_MAX_RPC_THREADS:pInit->numOfThreads;
-  pRpc->localPort = pInit->localPort;
-  pRpc->afp = pInit->afp;
-  pRpc->sessions = pInit->sessions+1;
-  if (pInit->user) tstrncpy(pRpc->user, pInit->user, sizeof(pRpc->user));
-  if (pInit->secret) memcpy(pRpc->secret, pInit->secret, sizeof(pRpc->secret));
-  if (pInit->ckey) tstrncpy(pRpc->ckey, pInit->ckey, sizeof(pRpc->ckey));
-  pRpc->spi = pInit->spi;
-  pRpc->cfp = pInit->cfp;
-  pRpc->afp = pInit->afp;
+  if (init.label) tstrncpy(pRpc->label, init.label, sizeof(pRpc->label));
+  pRpc->connType = init.connType;
+  pRpc->idleTime = init.idleTime;
+  pRpc->numOfThreads = init.numOfThreads>TSDB_MAX_RPC_THREADS ? TSDB_MAX_RPC_THREADS:init.numOfThreads;
+  pRpc->localPort = init.localPort;
+  pRpc->afp = init.afp;
+  pRpc->sessions = init.sessions+1;
+  if (init.user) tstrncpy(pRpc->user, init.user, sizeof(pRpc->user));
+  if (init.secret) memcpy(pRpc->secret, init.secret, sizeof(pRpc->secret));
+  if (init.ckey) tstrncpy(pRpc->ckey, init.ckey, sizeof(pRpc->ckey));
+  pRpc->spi = init.spi;
+  pRpc->cfp = init.cfp;
+  pRpc->afp = init.afp;
   pRpc->refCount = 1;
-
-  atomic_add_fetch_32(&tsRpcNum, 1);
 
   pRpc->connList.resize(pRpc->sessions);
 
   pRpc->idPool.reset(new id_pool_t(pRpc->sessions - 1));
-  if (pRpc->idPool == NULL) {
-    tError("%s failed to init ID pool", pRpc->label);
-    rpcClose(pRpc);
-    return NULL;
-  }
-
   pRpc->tmrCtrl = taosTmrInit(pRpc->sessions*2 + 1, 50, 10000, pRpc->label);
   if (pRpc->tmrCtrl == NULL) {
     tError("%s failed to init timers", pRpc->label);
@@ -308,7 +318,7 @@ void *rpcOpen(const SRpcInit *pInit) {
     return NULL;
   }
 
-  tDebug("%s rpc is opened, threads:%d sessions:%d", pRpc->label, pRpc->numOfThreads, pInit->sessions);
+  tDebug("%s rpc is opened, threads:%d sessions:%d", pRpc->label, pRpc->numOfThreads, init.sessions);
 
   return pRpc;
 }
@@ -1630,8 +1640,6 @@ static void rpcDecRef(SRpcInfo *pRpc)
     taosTmrCleanUp(pRpc->tmrCtrl);
     tDebug("%s rpc resources are released", pRpc->label);
     delete pRpc;
-
-    atomic_sub_fetch_32(&tsRpcNum, 1);
   }
 }
 

@@ -13,7 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
+#include <fstream>
 #include "os.h"
 #include "taosdef.h"
 #include "taoserror.h"
@@ -23,8 +23,7 @@
 #include "tsystem.h"
 #include "tutil.h"
 
-SGlobalCfg tsGlobalConfig[TSDB_CFG_MAX_NUM] = {{0}};
-int32_t    tsGlobalConfigNum = 0;
+std::vector<SGlobalCfg> tsGlobalConfig;
 
 static char *tsGlobalUnit[] = {
   " ", 
@@ -182,20 +181,19 @@ static void taosReadStringConfig(SGlobalCfg *cfg, char *input_value) {
 }
 
 static void taosReadLogOption(char *option, char *value) {
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (!(cfg->cfgType & TSDB_CFG_CTYPE_B_CONFIG) || !(cfg->cfgType & TSDB_CFG_CTYPE_B_LOG)) continue;
-    if (strcasecmp(cfg->option, option) != 0) continue;
+  for (auto &cfg : tsGlobalConfig) {
+    if (!(cfg.cfgType & TSDB_CFG_CTYPE_B_CONFIG) || !(cfg.cfgType & TSDB_CFG_CTYPE_B_LOG)) continue;
+    if (strcasecmp(cfg.option, option) != 0) continue;
 
-    switch (cfg->valType) {
+    switch (cfg.valType) {
       case TAOS_CFG_VTYPE_INT32:
-        taosReadInt32Config(cfg, value);
-        if (strcasecmp(cfg->option, "debugFlag") == 0) {
+        taosReadInt32Config(&cfg, value);
+        if (strcasecmp(cfg.option, "debugFlag") == 0) {
           taosSetAllDebugFlag();
         }
         break;
       case TAOS_CFG_VTYPE_DIRECTORY:
-        taosReadDirectoryConfig(cfg, value);
+        taosReadDirectoryConfig(&cfg, value);
         break;
       default:
         break;
@@ -206,41 +204,39 @@ static void taosReadLogOption(char *option, char *value) {
 
 SGlobalCfg *taosGetConfigOption(const char *option) {
   taosInitGlobalCfg();
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (strcasecmp(cfg->option, option) != 0) continue;
-    return cfg;
+  for (auto &cfg : tsGlobalConfig) {
+    if (strcasecmp(cfg.option, option) != 0) continue;
+    return &cfg;
   }
   return NULL;
 }
 
 static void taosReadConfigOption(const char *option, char *value) {
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (!(cfg->cfgType & TSDB_CFG_CTYPE_B_CONFIG)) continue;
-    if (strcasecmp(cfg->option, option) != 0) continue;
+  for (auto &cfg : tsGlobalConfig) {
+    if (!(cfg.cfgType & TSDB_CFG_CTYPE_B_CONFIG)) continue;
+    if (strcasecmp(cfg.option, option) != 0) continue;
 
-    switch (cfg->valType) {
+    switch (cfg.valType) {
       case TAOS_CFG_VTYPE_INT8:
-        taosReadInt8Config(cfg, value);
+        taosReadInt8Config(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_INT16:
-        taosReadInt16Config(cfg, value);
+        taosReadInt16Config(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_INT32:
-        taosReadInt32Config(cfg, value);
+        taosReadInt32Config(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_FLOAT:
-        taosReadFloatConfig(cfg, value);
+        taosReadFloatConfig(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_STRING:
-        taosReadStringConfig(cfg, value);
+        taosReadStringConfig(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_IPSTR:
-        taosReadIpStrConfig(cfg, value);
+        taosReadIpStrConfig(&cfg, value);
         break;
       case TAOS_CFG_VTYPE_DIRECTORY:
-        taosReadDirectoryConfig(cfg, value);
+        taosReadDirectoryConfig(&cfg, value);
         break;
       default:
         uError("config option:%s, input value:%s, can't be recognized", option, value);
@@ -250,13 +246,8 @@ static void taosReadConfigOption(const char *option, char *value) {
   }
 }
 
-void taosInitConfigOption(SGlobalCfg cfg) {
-  tsGlobalConfig[tsGlobalConfigNum++] = cfg;
-}
-
 void taosReadGlobalLogCfg() {
-  FILE * fp;
-  char * line, *option, *value;
+  char   *option, *value;
   int    olen, vlen;
   char   fileName[PATH_MAX] = {0};
 
@@ -288,37 +279,24 @@ void taosReadGlobalLogCfg() {
   taosReadLogOption("logDir", tsLogDir);
   
   sprintf(fileName, "%s/taos.cfg", configDir);
-  fp = fopen(fileName, "r");
-  if (fp == NULL) {
+  std::ifstream stream(fileName);
+  if (!stream.is_open()) {
     printf("\nconfig file:%s not found, all variables are set to default\n", fileName);
     return;
   }
-  
-  size_t len = 1024;
-  line = (char*)calloc(1, len);
-  
-  while (!feof(fp)) {
-    memset(line, 0, len);
     
+  std::string line;
+  while (std::getline(stream, line)) {
     option = value = NULL;
     olen = vlen = 0;
-
-    tgetline(&line, &len, fp);
-    line[len - 1] = 0;
-
-    paGetToken(line, &option, &olen);
+    paGetToken(&line[0], &option, &olen);
     if (olen == 0) continue;
     option[olen] = 0;
-
     paGetToken(option + olen + 1, &value, &vlen);
     if (vlen == 0) continue;
     value[vlen] = 0;
-
     taosReadLogOption(option, value);
   }
-
-  tfree(line);
-  fclose(fp);
 }
 
 bool taosReadGlobalCfg() {
@@ -382,12 +360,11 @@ void taosPrintGlobalCfg() {
   uInfo("   taos config & system info:");
   uInfo("==================================");
 
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (tscEmbedded == 0 && !(cfg->cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
-    if (cfg->cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
+  for (auto &cfg : tsGlobalConfig) {
+    if (tscEmbedded == 0 && !(cfg.cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
+    if (cfg.cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
     
-    int optionLen = (int)strlen(cfg->option);
+    int optionLen = (int)strlen(cfg.option);
     int blankLen = TSDB_CFG_PRINT_LEN - optionLen;
     blankLen = blankLen < 0 ? 0 : blankLen;
 
@@ -395,23 +372,23 @@ void taosPrintGlobalCfg() {
     memset(blank, ' ', TSDB_CFG_PRINT_LEN);
     blank[blankLen] = 0;
 
-    switch (cfg->valType) {
+    switch (cfg.valType) {
       case TAOS_CFG_VTYPE_INT8:
-        uInfo(" %s:%s%d%s", cfg->option, blank, *((int8_t *)cfg->ptr), tsGlobalUnit[cfg->unitType]);
+        uInfo(" %s:%s%d%s", cfg.option, blank, *((int8_t *)cfg.ptr), tsGlobalUnit[cfg.unitType]);
         break;
       case TAOS_CFG_VTYPE_INT16:
-        uInfo(" %s:%s%d%s", cfg->option, blank, *((int16_t *)cfg->ptr), tsGlobalUnit[cfg->unitType]);
+        uInfo(" %s:%s%d%s", cfg.option, blank, *((int16_t *)cfg.ptr), tsGlobalUnit[cfg.unitType]);
         break;
       case TAOS_CFG_VTYPE_INT32:
-        uInfo(" %s:%s%d%s", cfg->option, blank, *((int32_t *)cfg->ptr), tsGlobalUnit[cfg->unitType]);
+        uInfo(" %s:%s%d%s", cfg.option, blank, *((int32_t *)cfg.ptr), tsGlobalUnit[cfg.unitType]);
         break;
       case TAOS_CFG_VTYPE_FLOAT:
-        uInfo(" %s:%s%f%s", cfg->option, blank, *((float *)cfg->ptr), tsGlobalUnit[cfg->unitType]);
+        uInfo(" %s:%s%f%s", cfg.option, blank, *((float *)cfg.ptr), tsGlobalUnit[cfg.unitType]);
         break;
       case TAOS_CFG_VTYPE_STRING:
       case TAOS_CFG_VTYPE_IPSTR:
       case TAOS_CFG_VTYPE_DIRECTORY:
-        uInfo(" %s:%s%s%s", cfg->option, blank, (char *)cfg->ptr, tsGlobalUnit[cfg->unitType]);
+        uInfo(" %s:%s%s%s", cfg.option, blank, (char *)cfg.ptr, tsGlobalUnit[cfg.unitType]);
         break;
       default:
         break;
@@ -456,24 +433,22 @@ static void taosDumpCfg(SGlobalCfg *cfg) {
 void taosDumpGlobalCfg() {
   printf("taos global config:\n");
   printf("==================================\n");
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (tscEmbedded == 0 && !(cfg->cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
-    if (cfg->cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
-    if (!(cfg->cfgType & TSDB_CFG_CTYPE_B_SHOW)) continue;
+  for (auto &cfg : tsGlobalConfig) {
+    if (tscEmbedded == 0 && !(cfg.cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
+    if (cfg.cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
+    if (!(cfg.cfgType & TSDB_CFG_CTYPE_B_SHOW)) continue;
 
-    taosDumpCfg(cfg);
+    taosDumpCfg(&cfg);
   }
 
   printf("\ntaos local config:\n");
   printf("==================================\n");
 
-  for (int i = 0; i < tsGlobalConfigNum; ++i) {
-    SGlobalCfg *cfg = tsGlobalConfig + i;
-    if (tscEmbedded == 0 && !(cfg->cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
-    if (cfg->cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
-    if (cfg->cfgType & TSDB_CFG_CTYPE_B_SHOW) continue;
+  for (auto &cfg : tsGlobalConfig) {
+    if (tscEmbedded == 0 && !(cfg.cfgType & TSDB_CFG_CTYPE_B_CLIENT)) continue;
+    if (cfg.cfgType & TSDB_CFG_CTYPE_B_NOT_PRINT) continue;
+    if (cfg.cfgType & TSDB_CFG_CTYPE_B_SHOW) continue;
 
-    taosDumpCfg(cfg);
+    taosDumpCfg(&cfg);
   }
 }

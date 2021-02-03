@@ -145,7 +145,7 @@ static int32_t mnodeChildTableActionInsert(SSdbRow *pRow) {
     if (pAcct) pAcct->acctInfo.numOfTimeSeries += (pTable->numOfColumns - 1);
   }
 
-  if (pDb) mnodeAddTableIntoDb(pDb);
+  if (pDb) pDb->numOfTables++;
   if (pVgroup) mnodeAddTableIntoVgroup(pVgroup, pTable);
 
   mnodeDecVgroupRef(pVgroup);
@@ -181,7 +181,7 @@ static int32_t mnodeChildTableActionDelete(SSdbRow *pRow) {
     if (pAcct != NULL) pAcct->acctInfo.numOfTimeSeries -= (pTable->numOfColumns - 1);
   }
 
-  if (pDb != NULL) mnodeRemoveTableFromDb(pDb);
+  if (pDb) pDb->numOfTables--;
   if (pVgroup != NULL) mnodeRemoveTableFromVgroup(pVgroup, pTable);
 
   mnodeDecVgroupRef(pVgroup);
@@ -445,8 +445,8 @@ static int32_t mnodeSuperTableActionDestroy(SSdbRow *pRow) {
 static int32_t mnodeSuperTableActionInsert(SSdbRow *pRow) {
   SSTableObj *pStable = static_cast<SSTableObj *>(pRow->pObj);
   SDbObj *pDb = mnodeGetDbByTableId(pStable->info.tableId);
-  if (pDb != NULL && pDb->status == TSDB_DB_STATUS_READY) {
-    mnodeAddSuperTableIntoDb(pDb);
+  if (pDb && pDb->status == TSDB_DB_STATUS_READY) {
+    pDb->numOfSuperTables++;
   }
   mnodeDecDbRef(pDb);
 
@@ -457,8 +457,8 @@ static int32_t mnodeSuperTableActionInsert(SSdbRow *pRow) {
 static int32_t mnodeSuperTableActionDelete(SSdbRow *pRow) {
   SSTableObj *pStable = static_cast<SSTableObj *>(pRow->pObj);
   SDbObj *pDb = mnodeGetDbByTableId(pStable->info.tableId);
-  if (pDb != NULL) {
-    mnodeRemoveSuperTableFromDb(pDb);
+  if (pDb) {
+    pDb->numOfSuperTables--;
     mnodeDropAllChildTablesInStable((SSTableObj *)pStable);
   }
   mnodeDecDbRef(pDb);

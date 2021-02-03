@@ -13,7 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
+#include <atomic>
 #include "os.h"
 #include "http.h"
 #include "mnode.h"
@@ -28,8 +28,8 @@ static void  (*dnodeProcessShellMsgFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *);
 static void    dnodeProcessMsgFromShell(SRpcMsg *pMsg, SRpcEpSet *);
 static int     dnodeRetrieveUserAuthInfo(char *user, char *spi, char *encrypt, char *secret, char *ckey);
 static void  * tsShellRpc = NULL;
-static int32_t tsQueryReqNum  = 0;
-static int32_t tsSubmitReqNum = 0;
+static std::atomic<int32_t> tsQueryReqNum{0};
+static std::atomic<int32_t> tsSubmitReqNum{0};
 
 int32_t dnodeInitShell() {
   dnodeProcessShellMsgFp[TSDB_MSG_TYPE_SUBMIT]         = dnodeDispatchToVWriteQueue;
@@ -86,7 +86,7 @@ int32_t dnodeInitShell() {
   rpcInit.idleTime     = tsShellActivityTimer * 1000;
   rpcInit.afp          = dnodeRetrieveUserAuthInfo;
 
-  tsShellRpc = rpcOpen(&rpcInit);
+  tsShellRpc = rpcOpen(rpcInit);
   if (tsShellRpc == NULL) {
     dError("failed to init shell rpc server");
     return -1;
@@ -120,9 +120,9 @@ static void dnodeProcessMsgFromShell(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   }
 
   if (pMsg->msgType == TSDB_MSG_TYPE_QUERY) {
-    atomic_fetch_add_32(&tsQueryReqNum, 1);
+    tsQueryReqNum++;
   } else if (pMsg->msgType == TSDB_MSG_TYPE_SUBMIT) {
-    atomic_fetch_add_32(&tsSubmitReqNum, 1);
+    tsSubmitReqNum++;
   } else {}
 
   if ( dnodeProcessShellMsgFp[pMsg->msgType] ) {
@@ -225,8 +225,8 @@ SStatisInfo dnodeGetStatisInfo() {
   SStatisInfo info = {0};
   if (dnodeGetRunStatus() == TSDB_RUN_STATUS_RUNING) {
     info.httpReqNum   = httpGetReqCount();
-    info.queryReqNum  = atomic_exchange_32(&tsQueryReqNum, 0);
-    info.submitReqNum = atomic_exchange_32(&tsSubmitReqNum, 0);
+    info.queryReqNum  = tsQueryReqNum.exchange(0);
+    info.submitReqNum = tsSubmitReqNum.exchange(0);
   }
 
   return info;

@@ -325,7 +325,7 @@ void *taosNetInitRpc(char *secretEncrypt, char spi) {
   rpcInit.spi = spi;
   rpcInit.secret = secretEncrypt;
 
-  pRpcConn = rpcOpen(&rpcInit);
+  pRpcConn = rpcOpen(rpcInit);
   return pRpcConn;
 }
 

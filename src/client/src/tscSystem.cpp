@@ -70,7 +70,7 @@ int32_t tscInitRpc(std::string_view user, const char *secretEncrypt, void **pDno
     rpcInit.spi = 1;
     rpcInit.secret = (char *)secretEncrypt;
 
-    *pDnodeConn = rpcOpen(&rpcInit);
+    *pDnodeConn = rpcOpen(rpcInit);
     if (*pDnodeConn == NULL) {
       tscError("failed to init connection to TDengine");
       return -1;

@@ -803,22 +803,6 @@ static int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void 
   return numOfRows;
 }
 
-void mnodeAddSuperTableIntoDb(SDbObj *pDb) {
-  atomic_add_fetch_32(&pDb->numOfSuperTables, 1);
-}
-
-void mnodeRemoveSuperTableFromDb(SDbObj *pDb) {
-  atomic_add_fetch_32(&pDb->numOfSuperTables, -1);
-}
-
-void mnodeAddTableIntoDb(SDbObj *pDb) {
-  atomic_add_fetch_32(&pDb->numOfTables, 1);
-}
-
-void mnodeRemoveTableFromDb(SDbObj *pDb) {
-  atomic_add_fetch_32(&pDb->numOfTables, -1);
-}
-
 static int32_t mnodeSetDbDropping(SDbObj *pDb) {
   if (pDb->status) return TSDB_CODE_SUCCESS;
 

@@ -16,6 +16,7 @@
 #ifndef TDENGINE_HASH_H
 #define TDENGINE_HASH_H
 
+#include <atomic>
 #include "tarray.h"
 #include "hashfunc.h"
 #include "tlockfree.h"
@@ -51,10 +52,10 @@ typedef struct SHashEntry {
   SHashNode *next;
 } SHashEntry;
 
-typedef struct SHashObj {
+struct SHashObj {
   SHashEntry    **hashList;
   size_t          capacity;     // number of slots
-  size_t          size;         // number of elements in hash table
+  std::atomic<size_t>          size;         // number of elements in hash table
   _hash_fn_t      hashFp;       // hash function
   _hash_free_fn_t freeFp;       // hash node free callback function
 
@@ -62,7 +63,7 @@ typedef struct SHashObj {
   SHashLockTypeE  type;         // lock type
   bool            enableUpdate; // enable update
   SArray         *pMemBlock;    // memory block allocated for SHashEntry
-} SHashObj;
+};
 
 /**
  * init the hash table

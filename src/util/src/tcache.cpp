@@ -98,7 +98,7 @@ static FORCE_INLINE void taosCacheReleaseNode(SCacheObj *pCacheObj, SCacheDataNo
   assert(size > 0);
 
   uDebug("cache:%s, key:%p, %p is destroyed from cache, size:%dbytes, totalNum:%d size:%" PRId64 "bytes",
-         pCacheObj->name, pNode->key, pNode->data, pNode->size, size - 1, pCacheObj->totalSize);
+         pCacheObj->name, pNode->key, pNode->data, pNode->size, size - 1, pCacheObj->totalSize.load());
 
   if (pCacheObj->freeFp) {
     pCacheObj->freeFp(pNode->data);
@@ -211,11 +211,11 @@ void *taosCachePut(SCacheObj *pCacheObj, const void *key, size_t keyLen, const v
 
   int32_t succ = taosHashPut(pCacheObj->pHashTable, key, keyLen, &pNode1, sizeof(void *));
   if (succ == 0) {
-    atomic_add_fetch_64(&pCacheObj->totalSize, pNode1->size);
+    pCacheObj->totalSize += pNode1->size;
     uDebug("cache:%s, key:%p, %p added into cache, added:%" PRIu64 ", expire:%" PRIu64
            ", totalNum:%d totalSize:%" PRId64 "bytes size:%" PRId64 "bytes",
            pCacheObj->name, key, pNode1->data, pNode1->addedTime, pNode1->expireTime,
-           (int32_t)taosHashGetSize(pCacheObj->pHashTable), pCacheObj->totalSize, (int64_t)dataSize);
+           (int32_t)taosHashGetSize(pCacheObj->pHashTable), pCacheObj->totalSize.load(), (int64_t)dataSize);
   } else {  // duplicated key exists
     while (1) {
       SCacheDataNode* p = NULL;
@@ -239,12 +239,12 @@ void *taosCachePut(SCacheObj *pCacheObj, const void *key, size_t keyLen, const v
 
       ret = taosHashPut(pCacheObj->pHashTable, key, keyLen, &pNode1, sizeof(void *));
       if (ret == 0) {
-        atomic_add_fetch_64(&pCacheObj->totalSize, pNode1->size);
+        pCacheObj->totalSize += pNode1->size;
 
         uDebug("cache:%s, key:%p, %p added into cache, added:%" PRIu64 ", expire:%" PRIu64
                ", totalNum:%d totalSize:%" PRId64 "bytes size:%" PRId64 "bytes",
                pCacheObj->name, key, pNode1->data, pNode1->addedTime, pNode1->expireTime,
-               (int32_t)taosHashGetSize(pCacheObj->pHashTable), pCacheObj->totalSize, (int64_t)dataSize);
+               (int32_t)taosHashGetSize(pCacheObj->pHashTable), pCacheObj->totalSize.load(), (int64_t)dataSize);
 
         return pNode1->data;
 
@@ -273,7 +273,7 @@ void *taosCacheAcquireByKey(SCacheObj *pCacheObj, const void *key, size_t keyLen
   }
 
   if (taosHashGetSize(pCacheObj->pHashTable) == 0) {
-    atomic_add_fetch_32(&pCacheObj->statistics.missCount, 1);
+    pCacheObj->statistics.missCount++;
     return NULL;
   }
 
@@ -283,14 +283,14 @@ void *taosCacheAcquireByKey(SCacheObj *pCacheObj, const void *key, size_t keyLen
   void* pData = (ptNode != NULL)? ptNode->data:NULL;
 
   if (pData != NULL) {
-    atomic_add_fetch_32(&pCacheObj->statistics.hitCount, 1);
+    pCacheObj->statistics.hitCount++;
     uDebug("cache:%s, key:%p, %p is retrieved from cache, refcnt:%d", pCacheObj->name, key, pData, T_REF_VAL_GET(ptNode));
   } else {
-    atomic_add_fetch_32(&pCacheObj->statistics.missCount, 1);
+    pCacheObj->statistics.missCount++;
     uDebug("cache:%s, key:%p, not in cache, retrieved failed", pCacheObj->name, key);
   }
 
-  atomic_add_fetch_32(&pCacheObj->statistics.totalAccess, 1);
+  pCacheObj->statistics.totalAccess++;
   return pData;
 }
 
@@ -426,11 +426,11 @@ void taosCacheRelease(SCacheObj *pCacheObj, void **data, bool _remove) {
 
             taosAddToTrashcan(pCacheObj, pNode);
           } else {  // ref == 0
-            atomic_sub_fetch_64(&pCacheObj->totalSize, pNode->size);
+            pCacheObj->totalSize -= pNode->size;
 
             int32_t size = (int32_t)taosHashGetSize(pCacheObj->pHashTable);
             uDebug("cache:%s, key:%p, %p is destroyed from cache, size:%dbytes, totalNum:%d size:%" PRId64 "bytes",
-                   pCacheObj->name, pNode->key, pNode->data, pNode->size, size, pCacheObj->totalSize);
+                   pCacheObj->name, pNode->key, pNode->data, pNode->size, size, pCacheObj->totalSize.load());
 
             if (pCacheObj->freeFp) {
               pCacheObj->freeFp(pNode->data);

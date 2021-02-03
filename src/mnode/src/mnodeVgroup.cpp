@@ -101,7 +101,7 @@ static int32_t mnodeVgroupActionInsert(SSdbRow *pRow) {
     SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
     if (pDnode != NULL) {
       pVgroup->vnodeGid[i].pDnode = pDnode;
-      atomic_add_fetch_32(&pDnode->openVnodes, 1);
+      pDnode->openVnodes++;
       mnodeDecDnodeRef(pDnode);
     }
   }
@@ -125,7 +125,7 @@ static int32_t mnodeVgroupActionDelete(SSdbRow *pRow) {
   for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
     SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
     if (pDnode != NULL) {
-      atomic_sub_fetch_32(&pDnode->openVnodes, 1);
+      pDnode->openVnodes--;
     }
     mnodeDecDnodeRef(pDnode);
   }
@@ -141,7 +141,7 @@ static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
     for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
       SDnodeObj *pDnode = pVgroup->vnodeGid[i].pDnode;
       if (pDnode != NULL) {
-        atomic_sub_fetch_32(&pDnode->openVnodes, 1);
+        pDnode->openVnodes--;
       }
     }
 
@@ -151,7 +151,7 @@ static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
       SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
       pVgroup->vnodeGid[i].pDnode = pDnode;
       if (pDnode != NULL) {
-        atomic_add_fetch_32(&pDnode->openVnodes, 1);
+        pDnode->openVnodes++;
       }
       mnodeDecDnodeRef(pDnode);
     }

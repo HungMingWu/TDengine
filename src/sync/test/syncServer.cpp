@@ -401,7 +401,7 @@ int main(int argc, char *argv[]) {
   taosInitLog("server.log", 1000000, 10);
 
   rpcInit.connType = TAOS_CONN_SERVER;
-  void *pRpc = rpcOpen(&rpcInit);
+  void *pRpc = rpcOpen(rpcInit);
   if (pRpc == NULL) {
     uError("failed to start RPC server");
     return -1;

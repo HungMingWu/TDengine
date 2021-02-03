@@ -16,6 +16,7 @@
 #ifndef TDENGINE_TCACHE_H
 #define TDENGINE_TCACHE_H
 
+#include <atomic>
 #include "os.h"
 #include "tlockfree.h"
 #include "hash.h"
@@ -31,9 +32,9 @@
 typedef void (*__cache_free_fn_t)(void*);
 
 typedef struct SCacheStatis {
-  int64_t missCount;
-  int64_t hitCount;
-  int64_t totalAccess;
+  std::atomic<int64_t> missCount;
+  std::atomic<int64_t> hitCount;
+  std::atomic<int64_t> totalAccess;
   int64_t refreshCount;
 } SCacheStatis;
 
@@ -67,8 +68,8 @@ typedef struct STrashElem {
  *
  * when the node in pTrash does not be referenced, it will be release at the expired expiredTime
  */
-typedef struct {
-  int64_t         totalSize;          // total allocated buffer in this hash table, SCacheObj is not included.
+struct SCacheObj {
+  std::atomic<int64_t>         totalSize;          // total allocated buffer in this hash table, SCacheObj is not included.
   int64_t         refreshTime;
   STrashElem *    pTrash;
   char*           name;
@@ -84,7 +85,7 @@ typedef struct {
 #else
   pthread_mutex_t  lock;
 #endif
-} SCacheObj;
+};
 
 /**
  * initialize the cache object
