@@ -418,7 +418,7 @@ static int32_t tsCheckTimestamp(STableDataBlocks *pDataBlocks, const char *start
 }
 
 int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[], SParsedDataColInfo *spd, SSqlCmd* pCmd,
-                      int16_t timePrec, int32_t *code, char *tmpTokenBuf) {
+                      int16_t timePrec, int32_t *code) {
   int32_t index = 0;
   SStrToken sToken = {0};
   char *    payload = pDataBlocks->pData + pDataBlocks->size;
@@ -443,9 +443,13 @@ int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[
       }
 
       uint32_t offset = (uint32_t)(start - pDataBlocks->pData);
-      if (tscAddParamToDataBlock(pDataBlocks, pSchema->type, (uint8_t)timePrec, pSchema->bytes, offset) != NULL) {
-        continue;
-      }
+      pDataBlocks->params.emplace_back();
+      auto &param = pDataBlocks->params.back();
+      param.idx = -1;
+      param.type = pSchema->type;
+      param.timePrec = (uint8_t)timePrec;
+      param.bytes = pSchema->bytes;
+      param.offset = offset;
 
       pCmd->payload = std::string("client out of memory");
       *code = TSDB_CODE_TSC_OUT_OF_MEMORY;
@@ -459,28 +463,25 @@ int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[
       return -1;
     }
 
+    std::string tmpTokenBuf;  // used for deleting Escape character: \\, \', \"
     // Remove quotation marks
     if (TK_STRING == sToken.type) {
       // delete escape character: \\, \', \"
       char    delim = sToken.z[0];
       int32_t cnt = 0;
-      int32_t j = 0;
       for (uint32_t k = 1; k < sToken.n - 1; ++k) {
         if (sToken.z[k] == delim || sToken.z[k] == '\\') {
           if (sToken.z[k + 1] == delim) {
             cnt++;
-            tmpTokenBuf[j] = sToken.z[k + 1];
-            j++;
+            tmpTokenBuf.push_back(sToken.z[k + 1]);
             k++;
             continue;
           }
         }
 
-        tmpTokenBuf[j] = sToken.z[k];
-        j++;
+        tmpTokenBuf.push_back(sToken.z[k]);
       }
-      tmpTokenBuf[j] = 0;
-      sToken.z = tmpTokenBuf;
+      sToken.z = &tmpTokenBuf[0];
       sToken.n -= 2 + cnt;
     }
 
@@ -537,7 +538,7 @@ static int32_t rowDataCompar(const void *lhs, const void *rhs) {
 }
 
 int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMeta, int maxRows,
-                  SParsedDataColInfo *spd, SSqlCmd* pCmd, int32_t *code, char *tmpTokenBuf) {
+                  SParsedDataColInfo *spd, SSqlCmd* pCmd, int32_t *code) {
   int32_t   index = 0;
   SStrToken sToken;
 
@@ -571,7 +572,7 @@ int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMe
       maxRows = tSize;
     }
 
-    int32_t len = tsParseOneRowData(str, pDataBlock, pSchema, spd, pCmd, precision, code, tmpTokenBuf);
+    int32_t len = tsParseOneRowData(str, pDataBlock, pSchema, spd, pCmd, precision, code);
     if (len <= 0) {  // error message has been set in tsParseOneRowData
       return -1;
     }
@@ -703,35 +704,26 @@ static int32_t doParseInsertStatement(SSqlCmd* pCmd, char **str, SParsedDataColI
   STableComInfo tinfo = tscGetTableInfo(pTableMeta);
   
   STableDataBlocks *dataBuf = NULL;
-  int32_t ret = tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_DEFAULT_PAYLOAD_SIZE,
+  tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_DEFAULT_PAYLOAD_SIZE,
                                         sizeof(SSubmitBlk), tinfo.rowSize, pTableMetaInfo->name, pTableMeta, &dataBuf, NULL);
-  if (ret != TSDB_CODE_SUCCESS) {
-    return ret;
-  }
   
   int32_t maxNumOfRows;
-  ret = tscAllocateMemIfNeed(dataBuf, tinfo.rowSize, &maxNumOfRows);
+  int ret = tscAllocateMemIfNeed(dataBuf, tinfo.rowSize, &maxNumOfRows);
   if (TSDB_CODE_SUCCESS != ret) {
     return TSDB_CODE_TSC_OUT_OF_MEMORY;
   }
 
   int32_t code = TSDB_CODE_TSC_INVALID_SQL;
-  char *  tmpTokenBuf = (char*)calloc(1, 16*1024);  // used for deleting Escape character: \\, \', \"
-  if (NULL == tmpTokenBuf) {
-    return TSDB_CODE_TSC_OUT_OF_MEMORY;
-  }
+  int32_t numOfRows = tsParseValues(str, dataBuf, pTableMeta, maxNumOfRows, spd, pCmd, &code);
 
-  int32_t numOfRows = tsParseValues(str, dataBuf, pTableMeta, maxNumOfRows, spd, pCmd, &code, tmpTokenBuf);
-  free(tmpTokenBuf);
   if (numOfRows <= 0) {
     return code;
   }
 
-  for (uint32_t i = 0; i < dataBuf->numOfParams; ++i) {
-    SParamInfo *param = dataBuf->params + i;
-    if (param->idx == -1) {
-      param->idx = pCmd->numOfParams++;
-      param->offset -= sizeof(SSubmitBlk);
+  for (auto &param : dataBuf->params) {
+    if (param.idx == -1) {
+      param.idx = pCmd->numOfParams++;
+      param.offset -= sizeof(SSubmitBlk);
     }
   }
 
@@ -1463,14 +1455,10 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
   }
 
   STableDataBlocks *pTableDataBlock = NULL;
-  int32_t ret = tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE,
+  tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE,
                                         sizeof(SSubmitBlk), tinfo.rowSize, pTableMetaInfo->name, pTableMeta, &pTableDataBlock, NULL);
-  if (ret != TSDB_CODE_SUCCESS) {
-//    return ret;
-  }
 
   tscAllocateMemIfNeed(pTableDataBlock, tinfo.rowSize, &maxRows);
-  std::vector<char> tokenBuf(4096);
 
   while ((readLen = tgetline(&line, &n, fp)) != -1) {
     if (('\r' == line[readLen - 1]) || ('\n' == line[readLen - 1])) {
@@ -1484,8 +1472,8 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
     char *lineptr = line;
     strtolower(line, line);
 
-    int32_t len = tsParseOneRowData(&lineptr, pTableDataBlock, pSchema, &spd, pCmd, tinfo.precision, &code, tokenBuf.data());
-    if (len <= 0 || pTableDataBlock->numOfParams > 0) {
+    int32_t len = tsParseOneRowData(&lineptr, pTableDataBlock, pSchema, &spd, pCmd, tinfo.precision, &code);
+    if (len <= 0 || !pTableDataBlock->params.empty()) {
       pSql->res.code = code;
       break;
     }

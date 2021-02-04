@@ -699,12 +699,8 @@ static int insertStmtBindParam(STscStmt* stmt, TAOS_BIND* bind) {
 
   STableDataBlocks* pBlock = NULL;
 
-  int32_t ret =
-      tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
-                              pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
-  if (ret != 0) {
-    // todo handle error
-  }
+  tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
+                          pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
 
   uint32_t totalDataSize = sizeof(SSubmitBlk) + pCmd->batchSize * pBlock->rowSize;
   if (totalDataSize > pBlock->nAllocSize) {
@@ -720,12 +716,10 @@ static int insertStmtBindParam(STscStmt* stmt, TAOS_BIND* bind) {
   }
 
   char* data = pBlock->pData + sizeof(SSubmitBlk) + pBlock->rowSize * pCmd->batchSize;
-  for (uint32_t j = 0; j < pBlock->numOfParams; ++j) {
-    SParamInfo* param = &pBlock->params[j];
-
-    int code = doBindParam(data, param, &bind[param->idx]);
+  for (auto &param : pBlock->params) {
+    int code = doBindParam(data, &param, &bind[param.idx]);
     if (code != TSDB_CODE_SUCCESS) {
-      tscDebug("param %d: type mismatch or invalid", param->idx);
+      tscDebug("param %d: type mismatch or invalid", param.idx);
       return code;
     }
   }
@@ -782,10 +776,9 @@ static int insertStmtExecute(STscStmt* stmt) {
 
   STableDataBlocks* pBlock = NULL;
 
-  int32_t ret =
-      tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
-                              pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
-  assert(ret == 0);
+  tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
+                          pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
+
   pBlock->size = sizeof(SSubmitBlk) + pCmd->batchSize * pBlock->rowSize;
   SSubmitBlk* pBlk = (SSubmitBlk*) pBlock->pData;
   pBlk->numOfRows = pCmd->batchSize;
@@ -1048,12 +1041,12 @@ int taos_stmt_get_param(TAOS_STMT *stmt, int idx, int *type, int *bytes) {
     SSqlCmd *pCmd    = &pSql->cmd;
     STableDataBlocks* pBlock = (STableDataBlocks*)taosArrayGetP(pCmd->pDataBlocks, 0);
 
-    assert(pCmd->numOfParams == pBlock->numOfParams);
-    if (idx < 0 || idx >= pBlock->numOfParams) return -1;
+    assert(pCmd->numOfParams == pBlock->params.size());
+    if (idx < 0 || idx >= pBlock->params.size()) return -1;
 
-    SParamInfo* param = pBlock->params + idx;
-    if (type) *type = param->type;
-    if (bytes) *bytes = param->bytes;
+    const SParamInfo& param = pBlock->params[idx];
+    if (type) *type = param.type;
+    if (bytes) *bytes = param.bytes;
 
     return TSDB_CODE_SUCCESS;
   } else {

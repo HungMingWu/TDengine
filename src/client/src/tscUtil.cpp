@@ -519,44 +519,13 @@ void tscFreeSqlObj(SSqlObj* pSql) {
   delete pSql;
 }
 
-void tscDestroyDataBlock(STableDataBlocks* pDataBlock) {
-  if (pDataBlock == NULL) {
-    return;
-  }
-
-  tfree(pDataBlock->pData);
-  tfree(pDataBlock->params);
+STableDataBlocks::~STableDataBlocks() {
+  tfree(pData);
 
   // free the refcount for metermeta
-  if (pDataBlock->pTableMeta != NULL) {
-    tfree(pDataBlock->pTableMeta);
+  if (pTableMeta != NULL) {
+    tfree(pTableMeta);
   }
-
-  tfree(pDataBlock);
-}
-
-SParamInfo* tscAddParamToDataBlock(STableDataBlocks* pDataBlock, char type, uint8_t timePrec, int16_t bytes,
-                                   uint32_t offset) {
-  uint32_t needed = pDataBlock->numOfParams + 1;
-  if (needed > pDataBlock->numOfAllocedParams) {
-    needed *= 2;
-    void* tmp = realloc(pDataBlock->params, needed * sizeof(SParamInfo));
-    if (tmp == NULL) {
-      return NULL;
-    }
-    pDataBlock->params = (SParamInfo*)tmp;
-    pDataBlock->numOfAllocedParams = needed;
-  }
-
-  SParamInfo* param = pDataBlock->params + pDataBlock->numOfParams;
-  param->idx = -1;
-  param->type = type;
-  param->timePrec = timePrec;
-  param->bytes = bytes;
-  param->offset = offset;
-
-  ++pDataBlock->numOfParams;
-  return param;
 }
 
 void*  tscDestroyBlockArrayList(SArray* pDataBlockList) {
@@ -567,7 +536,7 @@ void*  tscDestroyBlockArrayList(SArray* pDataBlockList) {
   size_t size = taosArrayGetSize(pDataBlockList);
   for (int32_t i = 0; i < size; i++) {
     void* d = taosArrayGetP(pDataBlockList, i);
-    tscDestroyDataBlock((STableDataBlocks*)d);
+    delete (STableDataBlocks*)d;
   }
 
   taosArrayDestroy(pDataBlockList);
@@ -581,7 +550,7 @@ void* tscDestroyBlockHashTable(SHashObj* pBlockHashTable) {
 
   STableDataBlocks** p = (STableDataBlocks**)taosHashIterate(pBlockHashTable, NULL);
   while(p) {
-    tscDestroyDataBlock(*p);
+    delete *p;
     p = (STableDataBlocks**)taosHashIterate(pBlockHashTable, p);
   }
 
@@ -627,45 +596,29 @@ int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, STableDataBlocks* pDataBlock) {
  * @param dataBlocks
  * @return
  */
-int32_t tscCreateDataBlock(size_t initialSize, int32_t rowSize, int32_t startOffset, const char* name,
-                           STableMeta* pTableMeta, STableDataBlocks** dataBlocks) {
-  STableDataBlocks* dataBuf = (STableDataBlocks*)calloc(1, sizeof(STableDataBlocks));
-  if (dataBuf == NULL) {
-    tscError("failed to allocated memory, reason:%s", strerror(errno));
-    return TSDB_CODE_TSC_OUT_OF_MEMORY;
-  }
-
+STableDataBlocks* tscCreateDataBlock(size_t initialSize, int32_t rowSize, int32_t startOffset, const char* name,
+                           STableMeta* pTableMeta) {
+  auto dataBuf = new STableDataBlocks;
   dataBuf->nAllocSize = (uint32_t)initialSize;
   dataBuf->headerSize = startOffset; // the header size will always be the startOffset value, reserved for the subumit block header
   if (dataBuf->nAllocSize <= dataBuf->headerSize) {
     dataBuf->nAllocSize = dataBuf->headerSize*2;
-  }
-  
+  } 
   dataBuf->pData = (char*)calloc(1, dataBuf->nAllocSize);
-  if (dataBuf->pData == NULL) {
-    tscError("failed to allocated memory, reason:%s", strerror(errno));
-    tfree(dataBuf);
-    return TSDB_CODE_TSC_OUT_OF_MEMORY;
-  }
-
   dataBuf->ordered = true;
   dataBuf->prevTS = INT64_MIN;
-
   dataBuf->rowSize = rowSize;
   dataBuf->size = startOffset;
   dataBuf->tsSource = -1;
-
   tstrncpy(dataBuf->tableName, name, sizeof(dataBuf->tableName));
 
   //Here we keep the tableMeta to avoid it to be remove by other threads.
   dataBuf->pTableMeta = tscTableMetaClone(pTableMeta);
   assert(initialSize > 0 && pTableMeta != NULL && dataBuf->pTableMeta != NULL);
-
-  *dataBlocks = dataBuf;
-  return TSDB_CODE_SUCCESS;
+  return dataBuf;
 }
 
-int32_t tscGetDataBlockFromList(SHashObj* pHashList, int64_t id, int32_t size, int32_t startOffset, int32_t rowSize, const char* tableId, STableMeta* pTableMeta,
+void tscGetDataBlockFromList(SHashObj* pHashList, int64_t id, int32_t size, int32_t startOffset, int32_t rowSize, const char* tableId, STableMeta* pTableMeta,
                                 STableDataBlocks** dataBlocks, SArray* pBlockList) {
   *dataBlocks = NULL;
   STableDataBlocks** t1 = (STableDataBlocks**)taosHashGet(pHashList, (const char*)&id, sizeof(id));
@@ -674,18 +627,12 @@ int32_t tscGetDataBlockFromList(SHashObj* pHashList, int64_t id, int32_t size, i
   }
 
   if (*dataBlocks == NULL) {
-    int32_t ret = tscCreateDataBlock((size_t)size, rowSize, startOffset, tableId, pTableMeta, dataBlocks);
-    if (ret != TSDB_CODE_SUCCESS) {
-      return ret;
-    }
-
+    *dataBlocks = tscCreateDataBlock((size_t)size, rowSize, startOffset, tableId, pTableMeta);
     taosHashPut(pHashList, (const char*)&id, sizeof(int64_t), (char*)dataBlocks, POINTER_BYTES);
     if (pBlockList) {
       taosArrayPush(pBlockList, dataBlocks);
     }
   }
-
-  return TSDB_CODE_SUCCESS;
 }
 
 static int trimDataBlock(void* pDataBlock, STableDataBlocks* pTableDataBlock, bool includeSchema) {
@@ -788,8 +735,8 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
   const int INSERT_HEAD_SIZE = sizeof(SMsgDesc) + sizeof(SSubmitMsg); 
   SSqlCmd* pCmd = &pSql->cmd;
 
-  void* pVnodeDataBlockHashList =
-      taosHashInit(128, taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT), true, HASH_NO_LOCK);
+  auto pVnodeDataBlockHashList =
+      (SHashObj*)taosHashInit(128, taosGetDefaultHashFunction(TSDB_DATA_TYPE_BIGINT), true, HASH_NO_LOCK);
   SArray* pVnodeDataBlockList = (SArray*)taosArrayInit(8, POINTER_BYTES);
 
   STableDataBlocks** p = (STableDataBlocks**)taosHashIterate(pCmd->pTableBlockHashList, NULL);
@@ -800,14 +747,8 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
     int32_t expandSize = getRowExpandSize(pOneTableBlock->pTableMeta);
     STableDataBlocks* dataBuf = NULL;
     
-    int32_t ret = tscGetDataBlockFromList((SHashObj*)pVnodeDataBlockHashList, pOneTableBlock->vgId, TSDB_PAYLOAD_SIZE,
+    tscGetDataBlockFromList(pVnodeDataBlockHashList, pOneTableBlock->vgId, TSDB_PAYLOAD_SIZE,
                                 INSERT_HEAD_SIZE, 0, pOneTableBlock->tableName, pOneTableBlock->pTableMeta, &dataBuf, pVnodeDataBlockList);
-    if (ret != TSDB_CODE_SUCCESS) {
-      tscError("%p failed to prepare the data block buffer for merging table data, code:%d", pSql, ret);
-      taosHashCleanup((SHashObj*)pVnodeDataBlockHashList);
-      tscDestroyBlockArrayList(pVnodeDataBlockList);
-      return ret;
-    }
 
     SSubmitBlk* pBlocks = (SSubmitBlk*) pOneTableBlock->pData;
     int64_t destSize = dataBuf->size + pOneTableBlock->size + pBlocks->numOfRows * expandSize + sizeof(STColumn) * tscGetNumOfColumns(pOneTableBlock->pTableMeta);
@@ -824,7 +765,7 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
       } else {  // failed to allocate memory, free already allocated memory and return error code
         tscError("%p failed to allocate memory for merging submit block, size:%d", pSql, dataBuf->nAllocSize);
 
-        taosHashCleanup((SHashObj*)pVnodeDataBlockHashList);
+        taosHashCleanup(pVnodeDataBlockHashList);
         tscDestroyBlockArrayList(pVnodeDataBlockList);
         tfree(dataBuf->pData);
 
@@ -869,7 +810,7 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
 
   // free the table data blocks;
   pCmd->pDataBlocks = pVnodeDataBlockList;
-  taosHashCleanup((SHashObj*)pVnodeDataBlockHashList);
+  taosHashCleanup(pVnodeDataBlockHashList);
 
   return TSDB_CODE_SUCCESS;
 }

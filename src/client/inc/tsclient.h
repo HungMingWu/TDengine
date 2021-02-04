@@ -174,7 +174,7 @@ typedef struct SParamInfo {
   uint32_t offset;
 } SParamInfo;
 
-typedef struct STableDataBlocks {
+struct STableDataBlocks {
   char        tableName[TSDB_TABLE_FNAME_LEN];
   int8_t      tsSource;     // where does the UNIX timestamp come from, server or client
   bool        ordered;      // if current rows are ordered or not
@@ -188,11 +188,11 @@ typedef struct STableDataBlocks {
   STableMeta *pTableMeta;   // the tableMeta of current table, the table meta will be used during submit, keep a ref to avoid to be removed from cache
   char       *pData;
 
-  // for parameter ('?') binding
-  uint32_t    numOfAllocedParams;
-  uint32_t    numOfParams;
-  SParamInfo *params;
-} STableDataBlocks;
+  std::vector<SParamInfo> params;
+
+ public:
+  ~STableDataBlocks();
+};
 
 struct SQueryInfo {
   int16_t          command;       // the command may be different for each subclause, so keep it seperately.
