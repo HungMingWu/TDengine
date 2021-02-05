@@ -326,7 +326,7 @@ void tscTableMetaCallBack(void *param, TAOS_RES *res, int code) {
         return;
       }
 
-      assert((tscGetNumOfTags(pTableMetaInfo->pTableMeta) != 0));
+      assert(pTableMetaInfo->pTableMeta->numOfTags() != 0);
 
       // tscProcessSql can add error into async res
       tscProcessSql(pSql);

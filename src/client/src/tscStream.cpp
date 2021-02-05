@@ -530,7 +530,7 @@ static void tscCreateStream(void *param, TAOS_RES *res, int code) {
 
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(pCmd, 0);
   STableMetaInfo* pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const auto& tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   pStream->isProject = isProjectStream(pQueryInfo);
   pStream->precision = tinfo.precision;

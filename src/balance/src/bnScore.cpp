@@ -102,28 +102,13 @@ void bnInitDnodes() {
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_SCORES, bnRetrieveScores);
   mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_SCORES, mnodeCancelGetNextDnode);
 
-  memset(&tsBnDnodes, 0, sizeof(SBnDnodes));
-  tsBnDnodes.maxSize = 16;
-  tsBnDnodes.list = static_cast<SDnodeObj **>(calloc(tsBnDnodes.maxSize, sizeof(SDnodeObj *)));
-}
-
-void bnCleanupDnodes() {
-  if (tsBnDnodes.list != NULL) {
-    free(tsBnDnodes.list);
-    tsBnDnodes.list = NULL;
-  }
-}
-
-static void bnCheckDnodesSize(int32_t dnodesNum) {
-  if (tsBnDnodes.maxSize <= dnodesNum) {
-    tsBnDnodes.maxSize = dnodesNum * 2;
-    tsBnDnodes.list = static_cast<SDnodeObj **>(realloc(tsBnDnodes.list, tsBnDnodes.maxSize * sizeof(SDnodeObj *)));
-  }
+  tsBnDnodes.reserve(16);
 }
 
 void bnAccquireDnodes() {
   int32_t dnodesNum = mnodeGetDnodesNum();
-  bnCheckDnodesSize(dnodesNum);
+  if (tsBnDnodes.size() <= dnodesNum)
+      tsBnDnodes.reserve(dnodesNum);
 
   void *     pIter = NULL;
   SDnodeObj *pDnode = NULL;
@@ -146,21 +131,21 @@ void bnAccquireDnodes() {
     
     int32_t orderIndex = dnodeIndex;
     for (; orderIndex > 0; --orderIndex) {
-      if (pDnode->score > tsBnDnodes.list[orderIndex - 1]->score) {
+      if (pDnode->score > tsBnDnodes[orderIndex - 1]->score) {
         break;
       }
-      tsBnDnodes.list[orderIndex] = tsBnDnodes.list[orderIndex - 1];
+      tsBnDnodes[orderIndex] = tsBnDnodes[orderIndex - 1];
     }
-    tsBnDnodes.list[orderIndex] = pDnode;
+    tsBnDnodes[orderIndex] = pDnode;
     dnodeIndex++;
   }
 
-  tsBnDnodes.size = dnodeIndex;
+  tsBnDnodes.resize(dnodeIndex);
 }
 
 void bnReleaseDnodes() {
-  for (int32_t i = 0; i < tsBnDnodes.size; ++i) {
-    SDnodeObj *pDnode = tsBnDnodes.list[i];
+  for (int32_t i = 0; i < tsBnDnodes.size(); ++i) {
+    SDnodeObj *pDnode = tsBnDnodes[i];
     if (pDnode != NULL) {
       mnodeDecDnodeRef(pDnode);
     }

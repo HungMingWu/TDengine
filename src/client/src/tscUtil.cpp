@@ -638,8 +638,8 @@ void tscGetDataBlockFromList(SHashObj* pHashList, int64_t id, int32_t size, int3
 static int trimDataBlock(void* pDataBlock, STableDataBlocks* pTableDataBlock, bool includeSchema) {
   // TODO: optimize this function, handle the case while binary is not presented
   STableMeta*   pTableMeta = pTableDataBlock->pTableMeta;
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
-  SSchema*      pSchema = tscGetTableSchema(pTableMeta);
+  const auto& tinfo = pTableMeta->getInfo();
+  const SSchema*      pSchema = pTableMeta->getSchema();
 
   SSubmitBlk* pBlock = (SSubmitBlk*)pDataBlock;
   memcpy(pDataBlock, pTableDataBlock->pData, sizeof(SSubmitBlk));
@@ -649,7 +649,7 @@ static int trimDataBlock(void* pDataBlock, STableDataBlocks* pTableDataBlock, bo
 
   // schema needs to be included into the submit data block
   if (includeSchema) {
-    int32_t numOfCols = tscGetNumOfColumns(pTableDataBlock->pTableMeta);
+    int32_t numOfCols = pTableDataBlock->pTableMeta->numOfColumns();
     for(int32_t j = 0; j < numOfCols; ++j) {
       STColumn* pCol = (STColumn*) pDataBlock;
       pCol->colId = htons(pSchema[j].colId);
@@ -700,8 +700,8 @@ static int trimDataBlock(void* pDataBlock, STableDataBlocks* pTableDataBlock, bo
 
 static int32_t getRowExpandSize(STableMeta* pTableMeta) {
   int32_t result = TD_DATA_ROW_HEAD_SIZE;
-  int32_t columns = tscGetNumOfColumns(pTableMeta);
-  SSchema* pSchema = tscGetTableSchema(pTableMeta);
+  int32_t columns = pTableMeta->numOfColumns();
+  const SSchema* pSchema = pTableMeta->getSchema();
   for(int32_t i = 0; i < columns; i++) {
     if (IS_VAR_DATA_TYPE((pSchema + i)->type)) {
       result += TYPE_BYTES[TSDB_DATA_TYPE_BINARY];
@@ -751,7 +751,7 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
                                 INSERT_HEAD_SIZE, 0, pOneTableBlock->tableName, pOneTableBlock->pTableMeta, &dataBuf, pVnodeDataBlockList);
 
     SSubmitBlk* pBlocks = (SSubmitBlk*) pOneTableBlock->pData;
-    int64_t destSize = dataBuf->size + pOneTableBlock->size + pBlocks->numOfRows * expandSize + sizeof(STColumn) * tscGetNumOfColumns(pOneTableBlock->pTableMeta);
+    int64_t destSize = dataBuf->size + pOneTableBlock->size + pBlocks->numOfRows * expandSize + sizeof(STColumn) * pOneTableBlock->pTableMeta->numOfColumns();
 
     if (dataBuf->nAllocSize < destSize) {
       while (dataBuf->nAllocSize < destSize) {
@@ -779,7 +779,7 @@ int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap) {
     tscDebug("%p name:%s, sid:%d rows:%d sversion:%d skey:%" PRId64 ", ekey:%" PRId64, pSql, pOneTableBlock->tableName,
         pBlocks->tid, pBlocks->numOfRows, pBlocks->sversion, GET_INT64_VAL(pBlocks->data), GET_INT64_VAL(ekey));
 
-    int32_t len = pBlocks->numOfRows * (pOneTableBlock->rowSize + expandSize) + sizeof(STColumn) * tscGetNumOfColumns(pOneTableBlock->pTableMeta);
+    int32_t len = pBlocks->numOfRows * (pOneTableBlock->rowSize + expandSize) + sizeof(STColumn) * pOneTableBlock->pTableMeta->numOfColumns();
 
     pBlocks->tid = htonl(pBlocks->tid);
     pBlocks->uid = htobe64(pBlocks->uid);
@@ -985,12 +985,12 @@ static SSqlExpr* doBuildSqlExpr(SQueryInfo* pQueryInfo, int16_t functionId, SCol
     pExpr->colInfo.colId = pColIndex->columnIndex;
   } else {
     if (TSDB_COL_IS_TAG(colType)) {
-      SSchema* pSchema = tscGetTableTagSchema(pTableMetaInfo->pTableMeta);
+      const SSchema* pSchema = pTableMetaInfo->pTableMeta->getTagSchema();
       pExpr->colInfo.colId = pSchema[pColIndex->columnIndex].colId;
       tstrncpy(pExpr->colInfo.name, pSchema[pColIndex->columnIndex].name, sizeof(pExpr->colInfo.name));
     } else if (pTableMetaInfo->pTableMeta != NULL) {
       // in handling select database/version/server_status(), the pTableMeta is NULL
-      SSchema* pSchema = tscGetTableColumnSchema(pTableMetaInfo->pTableMeta, pColIndex->columnIndex);
+      const SSchema* pSchema = pTableMetaInfo->pTableMeta->getColumnSchema(pColIndex->columnIndex);
       pExpr->colInfo.colId = pSchema->colId;
       tstrncpy(pExpr->colInfo.name, pSchema->name, sizeof(pExpr->colInfo.name));
     }
@@ -1041,7 +1041,7 @@ SSqlExpr* tscSqlExprUpdate(SQueryInfo* pQueryInfo, int32_t index, int16_t functi
   pExpr->functionId = functionId;
 
   pExpr->colInfo.colIndex = srcColumnIndex;
-  pExpr->colInfo.colId = tscGetTableColumnSchema(pTableMetaInfo->pTableMeta, srcColumnIndex)->colId;
+  pExpr->colInfo.colId = pTableMetaInfo->pTableMeta->getColumnSchema(srcColumnIndex)->colId;
 
   pExpr->resType = type;
   pExpr->resBytes = size;
@@ -1401,8 +1401,8 @@ bool tscValidateColumnId(STableMetaInfo* pTableMetaInfo, int32_t colId, int32_t 
     return true;
   }
 
-  SSchema* pSchema = tscGetTableSchema(pTableMetaInfo->pTableMeta);
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const SSchema*    pSchema = pTableMetaInfo->pTableMeta->getSchema();
+  const auto& tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   int32_t  numOfTotal = tinfo.numOfTags + tinfo.numOfColumns;
 
@@ -1479,7 +1479,7 @@ void tscTagCondRelease(STagCond* pTagCond) {
 
 void tscGetSrcColumnInfo(SSrcColumnInfo* pColInfo, SQueryInfo* pQueryInfo) {
   STableMetaInfo* pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
-  SSchema*        pSchema = tscGetTableSchema(pTableMetaInfo->pTableMeta);
+  const SSchema*        pSchema = pTableMetaInfo->pTableMeta->getSchema();
   
   size_t numOfExprs = tscSqlExprNumOfExprs(pQueryInfo);
   for (int32_t i = 0; i < numOfExprs; ++i) {
@@ -1487,7 +1487,7 @@ void tscGetSrcColumnInfo(SSrcColumnInfo* pColInfo, SQueryInfo* pQueryInfo) {
     pColInfo[i].functionId = pExpr->functionId;
 
     if (TSDB_COL_IS_TAG(pExpr->colInfo.flag)) {
-      SSchema* pTagSchema = tscGetTableTagSchema(pTableMetaInfo->pTableMeta);
+      const SSchema* pTagSchema = pTableMetaInfo->pTableMeta->getTagSchema();
       
       int16_t index = pExpr->colInfo.colIndex;
       pColInfo[i].type = (index != -1) ? pTagSchema[index].type : TSDB_DATA_TYPE_BINARY;
@@ -2126,9 +2126,9 @@ int16_t tscGetJoinTagColIdByUid(STagCond* pTagCond, uint64_t uid) {
 }
 
 int16_t tscGetTagColIndexById(STableMeta* pTableMeta, int16_t colId) {
-  int32_t numOfTags = tscGetNumOfTags(pTableMeta);
+  int32_t numOfTags = pTableMeta->numOfTags();
 
-  SSchema* pSchema = tscGetTableTagSchema(pTableMeta);
+  const SSchema* pSchema = pTableMeta->getTagSchema();
   for(int32_t i = 0; i < numOfTags; ++i) {
     if (pSchema[i].colId == colId) {
       return i;

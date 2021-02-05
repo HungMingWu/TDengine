@@ -366,7 +366,7 @@ static int32_t getDurationInUs(int64_t val, char unit, int64_t* result) {
  * n - Months (30 days)
  * y - Years (365 days)
  */
-int32_t parseAbsoluteDuration(char* token, int32_t tokenlen, int64_t* duration) {
+int32_t parseAbsoluteDuration(const char* token, int32_t tokenlen, int64_t* duration) {
   errno = 0;
   char* endPtr = NULL;
 

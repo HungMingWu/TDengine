@@ -377,7 +377,7 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
   pRes->numOfGroups = 0;
 
   STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const auto &tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   TSKEY stime = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.skey : pQueryInfo->window.ekey;
   int64_t revisedSTime = taosTimeTruncate(stime, &pQueryInfo->interval, tinfo.precision);
@@ -727,7 +727,7 @@ int32_t tscLocalReducerEnvCreate(SSqlObj *pSql, tExtMemBuffer ***pMemBuffer, tOr
       p1.type  = (uint8_t) pExpr->resType;
       tstrncpy(p1.name, pExpr->aliasName, tListLen(p1.name));
     } else {
-      p1 = *tscGetTableColumnSchema(pTableMetaInfo->pTableMeta, pExpr->colInfo.colIndex);
+      p1 = *pTableMetaInfo->pTableMeta->getColumnSchema(pExpr->colInfo.colIndex);
     }
 
     int32_t inter = 0;
@@ -865,7 +865,7 @@ void savePrevRecordAndSetupFillInfo(SLocalReducer *pLocalReducer, SQueryInfo *pQ
   // discard following dataset in the same group and reset the interpolation information
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
 
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const auto &tinfo = pTableMetaInfo->pTableMeta->getInfo();
 
   if (pFillInfo != NULL) {
     int64_t stime = (pQueryInfo->window.skey < pQueryInfo->window.ekey) ? pQueryInfo->window.skey : pQueryInfo->window.ekey;
@@ -1315,7 +1315,7 @@ static void resetEnvForNewResultset(SSqlRes *pRes, SSqlCmd *pCmd, SLocalReducer 
   pQueryInfo->limit.offset = pLocalReducer->offset;
 
   STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const auto &tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   // for group result interpolation, do not return if not data is generated
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {

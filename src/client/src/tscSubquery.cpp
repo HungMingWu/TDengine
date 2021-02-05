@@ -442,7 +442,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     pQueryInfo->limit = pSupporter->limit;
 
     SColumnIndex index = {.tableIndex = 0, .columnIndex = PRIMARYKEY_TIMESTAMP_COL_INDEX};
-    SSchema* s = tscGetTableColumnSchema(pTableMetaInfo->pTableMeta, 0);
+    const SSchema* s = pTableMetaInfo->pTableMeta->getColumnSchema(0);
 
     SSqlExpr* pExpr = tscSqlExprGet(pQueryInfo, 0);
     int16_t funcId = pExpr->functionId;
@@ -708,7 +708,7 @@ static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pPar
   STableMetaInfo* pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
   int16_t tagColId = tscGetJoinTagColIdByUid(&pQueryInfo->tagCond, pTableMetaInfo->pTableMeta->id.uid);
 
-  SSchema* pColSchema = tscGetColumnSchemaById(pTableMetaInfo->pTableMeta, tagColId);
+  SSchema* pColSchema = pTableMetaInfo->pTableMeta->getColumnSchemaById(tagColId);
 
   // int16_t for padding
   int32_t size = p1->tagSize - sizeof(int16_t);
@@ -1511,7 +1511,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
       assert(pTagCond->joinInfo.hasJoin);
 
       int32_t tagColId = tscGetJoinTagColIdByUid(pTagCond, pTableMetaInfo->pTableMeta->id.uid);
-      SSchema* s = tscGetColumnSchemaById(pTableMetaInfo->pTableMeta, tagColId);
+      SSchema* s = pTableMetaInfo->pTableMeta->getColumnSchemaById(tagColId);
 
       colIndex.columnIndex = tscGetTagColIndexById(pTableMetaInfo->pTableMeta, tagColId);
 

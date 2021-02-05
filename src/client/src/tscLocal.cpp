@@ -64,15 +64,15 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
    * for metric, the value of tagValueCnt must be 0, but the numOfTags is not 0
    */
 
-  int32_t numOfRows = tscGetNumOfColumns(pMeta);
-  int32_t totalNumOfRows = numOfRows + tscGetNumOfTags(pMeta);
+  int32_t numOfRows = pMeta->numOfColumns();
+  int32_t totalNumOfRows = numOfRows + pMeta->numOfTags();
 
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
-    numOfRows = numOfRows + tscGetNumOfTags(pMeta);
+    numOfRows = numOfRows + pMeta->numOfTags();
   }
 
   tscInitResObjForLocalQuery(pSql, totalNumOfRows, rowLen);
-  SSchema *pSchema = tscGetTableSchema(pMeta);
+  const SSchema *pSchema = pMeta->getSchema();
 
   for (int32_t i = 0; i < numOfRows; ++i) {
     TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 0);
@@ -99,7 +99,7 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
     *(int32_t *)(pRes->data + tscFieldInfoGetOffset(pQueryInfo, 2) * totalNumOfRows + pField->bytes * i) = bytes;
 
     pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 3);
-    if (i >= tscGetNumOfColumns(pMeta) && tscGetNumOfTags(pMeta) != 0) {
+    if (i >= pMeta->numOfColumns() && pMeta->numOfTags() != 0) {
       char* output = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 3) * totalNumOfRows + pField->bytes * i;
       const char *src = "TAG";
       STR_WITH_MAXSIZE_TO_VARSTR(output, src, pField->bytes);
@@ -538,8 +538,8 @@ static int32_t tscGetTableTagColumnName(SSqlObj *pSql, char **result) {
     return TSDB_CODE_TSC_INVALID_VALUE;
   } 
 
-  SSchema *pTagsSchema = tscGetTableTagSchema(pMeta);  
-  int32_t numOfTags = tscGetNumOfTags(pMeta);
+  const SSchema *pTagsSchema = pMeta->getTagSchema();
+  int32_t  numOfTags = pMeta->numOfTags();
   for (int32_t i = 0; i < numOfTags; i++) {
     if (i != numOfTags - 1) {
       snprintf(buf + strlen(buf), TSDB_MAX_BINARY_LEN - strlen(buf), "%s,", pTagsSchema[i].name);  
@@ -607,8 +607,8 @@ static int32_t tscRebuildDDLForNormalTable(SSqlObj *pSql, const char *tableName,
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
   STableMeta *    pMeta = pTableMetaInfo->pTableMeta;
 
-  int32_t numOfRows = tscGetNumOfColumns(pMeta);
-  SSchema *pSchema = tscGetTableSchema(pMeta);
+  int32_t numOfRows = pMeta->numOfColumns();
+  const SSchema *pSchema = pMeta->getSchema();
 
   char *result = ddl;
   sprintf(result, "create table %s (", tableName);
@@ -634,9 +634,9 @@ static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, 
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
   STableMeta *    pMeta = pTableMetaInfo->pTableMeta;
 
-  int32_t numOfRows = tscGetNumOfColumns(pMeta);
-  int32_t totalRows = numOfRows + tscGetNumOfTags(pMeta);
-  SSchema *pSchema = tscGetTableSchema(pMeta);
+  int32_t numOfRows = pMeta->numOfColumns();
+  int32_t  totalRows = numOfRows + pMeta->numOfTags();
+  const SSchema *pSchema = pMeta->getSchema();
 
   sprintf(result, "create table %s (", tableName);
   for (int32_t i = 0; i < numOfRows; ++i) {

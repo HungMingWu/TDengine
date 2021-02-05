@@ -19,7 +19,6 @@
 #include "bnInt.h"
 
 void  bnInitDnodes();
-void  bnCleanupDnodes();
 void  bnAccquireDnodes();
 void  bnReleaseDnodes();
 float bnTryCalcDnodeScore(SDnodeObj *pDnode, int32_t extraVnode);

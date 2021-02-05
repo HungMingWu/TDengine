@@ -21,57 +21,6 @@
 #include "tsclient.h"
 
 /**
- * get the number of tags of this table
- * @param pTableMeta
- * @return
- */
-int32_t tscGetNumOfTags(const STableMeta* pTableMeta);
-
-/**
- * get the number of columns of this table
- * @param pTableMeta
- * @return
- */
-int32_t tscGetNumOfColumns(const STableMeta* pTableMeta);
-
-/**
- * get the basic info of this table
- * @param pTableMeta
- * @return
- */
-STableComInfo tscGetTableInfo(const STableMeta* pTableMeta);
-
-/**
- * get the schema
- * @param pTableMeta
- * @return
- */
-SSchema* tscGetTableSchema(const STableMeta* pTableMeta);
-
-/**
- * get the tag schema
- * @param pMeta
- * @return
- */
-SSchema *tscGetTableTagSchema(const STableMeta *pMeta);
-
-/**
- * get the column schema according to the column index
- * @param pMeta
- * @param colIndex
- * @return
- */
-SSchema *tscGetTableColumnSchema(const STableMeta *pMeta, int32_t colIndex);
-
-/**
- * get the column schema according to the column id
- * @param pTableMeta
- * @param colId
- * @return
- */
-SSchema* tscGetColumnSchemaById(STableMeta* pTableMeta, int16_t colId);
-
-/**
  * create the table meta from the msg
  * @param pTableMetaMsg
  * @param size size of the table meta

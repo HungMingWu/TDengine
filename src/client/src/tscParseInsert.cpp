@@ -133,7 +133,7 @@ static bool isNullStr(SStrToken* pToken) {
   return (pToken->type == TK_NULL) || ((pToken->type == TK_STRING) && (pToken->n != 0) &&
                                        (strncasecmp(TSDB_DATA_NULL_STR_L, pToken->z, pToken->n) == 0));
 }
-int32_t tsParseOneColumnData(SSchema *pSchema, SStrToken *pToken, char *payload, std::string &msg, char **str, bool primaryKey,
+int32_t tsParseOneColumnData(const SSchema *pSchema, SStrToken *pToken, char *payload, std::string &msg, char **str, bool primaryKey,
                              int16_t timePrec) {
   int64_t iv;
   int32_t ret;
@@ -417,7 +417,7 @@ static int32_t tsCheckTimestamp(STableDataBlocks *pDataBlocks, const char *start
   return TSDB_CODE_SUCCESS;
 }
 
-int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[], SParsedDataColInfo *spd, SSqlCmd* pCmd,
+int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, const SSchema schema[], SParsedDataColInfo *spd, SSqlCmd* pCmd,
                       int16_t timePrec, int32_t *code) {
   int32_t index = 0;
   SStrToken sToken = {0};
@@ -429,7 +429,7 @@ int tsParseOneRowData(char **str, STableDataBlocks *pDataBlocks, SSchema schema[
     // the start position in data block buffer of current value in sql
     char *   start = payload + spd->elems[i].offset;
     int16_t  colIndex = spd->elems[i].colIndex;
-    SSchema *pSchema = schema + colIndex;
+    const SSchema *pSchema = schema + colIndex;
     rowSize += pSchema->bytes;
 
     index = 0;
@@ -544,8 +544,8 @@ int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMe
 
   int32_t numOfRows = 0;
 
-  SSchema *pSchema = tscGetTableSchema(pTableMeta);
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
+  const SSchema *   pSchema = pTableMeta->getSchema();
+  const auto &tinfo = pTableMeta->getInfo();
   
   int32_t  precision = tinfo.precision;
 
@@ -600,7 +600,7 @@ int tsParseValues(char **str, STableDataBlocks *pDataBlock, STableMeta *pTableMe
   }
 }
 
-static void tscSetAssignedColumnInfo(SParsedDataColInfo *spd, SSchema *pSchema, int32_t numOfCols) {
+static void tscSetAssignedColumnInfo(SParsedDataColInfo *spd, const SSchema *pSchema, int32_t numOfCols) {
   spd->numOfCols = numOfCols;
   spd->numOfAssignedCols = numOfCols;
 
@@ -701,7 +701,7 @@ void tscSortRemoveDataBlockDupRows(STableDataBlocks *dataBuf) {
 static int32_t doParseInsertStatement(SSqlCmd* pCmd, char **str, SParsedDataColInfo *spd, int32_t *totalNum) {
   STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
   STableMeta     *pTableMeta = pTableMetaInfo->pTableMeta;
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
+  const auto &tinfo = pTableMeta->getInfo();
   
   STableDataBlocks *dataBuf = NULL;
   tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_DEFAULT_PAYLOAD_SIZE,
@@ -824,8 +824,8 @@ static int32_t tscCheckIfCreateTable(char **sqlstr, SSqlObj *pSql) {
       return tscInvalidSQLErrMsg(pCmd->payload, "create table only from super table is allowed", sToken.z);
     }
 
-    SSchema *pTagSchema = tscGetTableTagSchema(pSTableMeterMetaInfo->pTableMeta);
-    STableComInfo tinfo = tscGetTableInfo(pSTableMeterMetaInfo->pTableMeta);
+    const SSchema *pTagSchema = pSTableMeterMetaInfo->pTableMeta->getTagSchema();
+    const auto& tinfo = pSTableMeterMetaInfo->pTableMeta->getInfo();
     
     index = 0;
     sToken = tStrGetToken(sql, &index, false, 0, NULL);
@@ -833,7 +833,7 @@ static int32_t tscCheckIfCreateTable(char **sqlstr, SSqlObj *pSql) {
 
     SParsedDataColInfo spd = {0};
     
-    uint8_t numOfTags = tscGetNumOfTags(pSTableMeterMetaInfo->pTableMeta);
+    uint8_t numOfTags = pSTableMeterMetaInfo->pTableMeta->numOfTags();
     spd.numOfCols = numOfTags;
 
     // if specify some tags column
@@ -906,7 +906,7 @@ static int32_t tscCheckIfCreateTable(char **sqlstr, SSqlObj *pSql) {
     uint32_t ignoreTokenTypes = TK_LP;
     uint32_t numOfIgnoreToken = 1;
     for (int i = 0; i < spd.numOfAssignedCols; ++i) {
-      SSchema* pSchema = pTagSchema + spd.elems[i].colIndex;
+      const SSchema* pSchema = pTagSchema + spd.elems[i].colIndex;
 
       index = 0;
       sToken = tStrGetToken(sql, &index, true, numOfIgnoreToken, &ignoreTokenTypes);
@@ -1137,12 +1137,12 @@ int tsParseInsertSql(SSqlObj *pSql) {
       goto _clean;
     }
     
-    STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+    const auto& tinfo = pTableMetaInfo->pTableMeta->getInfo();
     
     if (sToken.type == TK_VALUES) {
       SParsedDataColInfo spd = {.numOfCols = tinfo.numOfColumns};
       
-      SSchema *pSchema = tscGetTableSchema(pTableMetaInfo->pTableMeta);
+      const SSchema *pSchema = pTableMetaInfo->pTableMeta->getSchema();
       tscSetAssignedColumnInfo(&spd, pSchema, tinfo.numOfColumns);
 
       if (validateDataSource(pCmd, DATA_FROM_SQL_STRING, sToken.z) != TSDB_CODE_SUCCESS) {
@@ -1190,7 +1190,7 @@ int tsParseInsertSql(SSqlObj *pSql) {
     } else if (sToken.type == TK_LP) {
       /* insert into tablename(col1, col2,..., coln) values(v1, v2,... vn); */
       STableMeta *pTableMeta = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0)->pTableMeta;
-      SSchema *   pSchema = tscGetTableSchema(pTableMeta);
+      const SSchema *   pSchema = pTableMeta->getSchema();
 
       if (validateDataSource(pCmd, DATA_FROM_SQL_STRING, sToken.z) != TSDB_CODE_SUCCESS) {
         goto _clean;
@@ -1435,8 +1435,8 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
 
   STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
   STableMeta *    pTableMeta = pTableMetaInfo->pTableMeta;
-  SSchema *       pSchema = tscGetTableSchema(pTableMeta);
-  STableComInfo   tinfo = tscGetTableInfo(pTableMeta);
+  const SSchema *       pSchema = pTableMeta->getSchema();
+  const auto&   tinfo = pTableMeta->getInfo();
 
   SParsedDataColInfo spd = {.numOfCols = tinfo.numOfColumns};
   tscSetAssignedColumnInfo(&spd, pSchema, tinfo.numOfColumns);

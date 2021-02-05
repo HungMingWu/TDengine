@@ -21,69 +21,52 @@
 #include "tutil.h"
 #include "tsclient.h"
 
-int32_t tscGetNumOfTags(const STableMeta* pTableMeta) {
-  assert(pTableMeta != NULL);
-  
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
-  
-  if (pTableMeta->tableType == TSDB_NORMAL_TABLE) {
-    assert(tinfo.numOfTags == 0);
+int32_t STableMeta::numOfTags() const {  
+  if (tableType == TSDB_NORMAL_TABLE) {
+    assert(tableInfo.numOfTags == 0);
     return 0;
   }
   
-  if (pTableMeta->tableType == TSDB_SUPER_TABLE || pTableMeta->tableType == TSDB_CHILD_TABLE) {
-    return tinfo.numOfTags;
+  if (tableType == TSDB_SUPER_TABLE || tableType == TSDB_CHILD_TABLE) {
+    return tableInfo.numOfTags;
   }
   
-  assert(tinfo.numOfTags == 0);
+  assert(tableInfo.numOfTags == 0);
   return 0;
 }
 
-int32_t tscGetNumOfColumns(const STableMeta* pTableMeta) {
-  assert(pTableMeta != NULL);
-  
+int32_t STableMeta::numOfColumns() const { 
   // table created according to super table, use data from super table
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
-  return tinfo.numOfColumns;
+  return tableInfo.numOfColumns;
 }
 
-SSchema *tscGetTableSchema(const STableMeta *pTableMeta) {
-  assert(pTableMeta != NULL);
-  return (SSchema*) pTableMeta->schema;
+const SSchema* STableMeta::getSchema() const {
+  return schema;
 }
 
-SSchema* tscGetTableTagSchema(const STableMeta* pTableMeta) {
-  assert(pTableMeta != NULL && (pTableMeta->tableType == TSDB_SUPER_TABLE || pTableMeta->tableType == TSDB_CHILD_TABLE));
-  
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
-  assert(tinfo.numOfTags > 0);
-  
-  return tscGetTableColumnSchema(pTableMeta, tinfo.numOfColumns);
+const SSchema* STableMeta::getTagSchema() const {
+  assert(tableType == TSDB_SUPER_TABLE || tableType == TSDB_CHILD_TABLE);
+  assert(tableInfo.numOfTags > 0);  
+  return getColumnSchema(tableInfo.numOfColumns);
 }
 
-STableComInfo tscGetTableInfo(const STableMeta* pTableMeta) {
-  assert(pTableMeta != NULL);
-  return pTableMeta->tableInfo;
+const STableComInfo& STableMeta::getInfo() const {
+  return tableInfo;
 }
 
-SSchema* tscGetTableColumnSchema(const STableMeta* pTableMeta, int32_t colIndex) {
-  assert(pTableMeta != NULL);
-  
-  SSchema* pSchema = (SSchema*) pTableMeta->schema;
-  return &pSchema[colIndex];
+const SSchema* STableMeta::getColumnSchema(int32_t colIndex) const {
+  return &schema[colIndex];
 }
 
 // TODO for large number of columns, employ the binary search method
-SSchema* tscGetColumnSchemaById(STableMeta* pTableMeta, int16_t colId) {
-  STableComInfo tinfo = tscGetTableInfo(pTableMeta);
-
-  for(int32_t i = 0; i < tinfo.numOfColumns + tinfo.numOfTags; ++i) {
-    if (pTableMeta->schema[i].colId == colId) {
-      return &pTableMeta->schema[i];
+SSchema* STableMeta::getColumnSchemaById(int16_t colId) {
+  for (int32_t i = 0; i < tableInfo.numOfColumns + tableInfo.numOfTags; ++i) {
+    if (schema[i].colId == colId) {
+      return &schema[i];
     }
   }
 
-  return NULL;
+  return nullptr;
 }
 
 STableMeta* tscCreateTableMetaFromMsg(STableMetaMsg* pTableMetaMsg) {

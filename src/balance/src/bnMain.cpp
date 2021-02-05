@@ -163,10 +163,10 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
   bnAccquireDnodes();
 
   mDebug("db:%s, try alloc %d vnodes to vgroup, dnodes total:%d, avail:%d", pVgroup->dbName, pVgroup->numOfVnodes,
-         mnodeGetDnodesNum(), tsBnDnodes.size);
+         mnodeGetDnodesNum(), tsBnDnodes.size());
   for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
-    for (; dnode < tsBnDnodes.size; ++dnode) {
-      SDnodeObj *pDnode = tsBnDnodes.list[dnode];
+    for (; dnode < tsBnDnodes.size(); ++dnode) {
+      SDnodeObj *pDnode = tsBnDnodes[dnode];
       if (bnCheckFree(pDnode)) {
         SVnodeGid *pVnodeGid = pVgroup->vnodeGid + i;
         pVnodeGid->dnodeId = pDnode->dnodeId;
@@ -282,8 +282,8 @@ static bool bnCheckDnodeInVgroup(SDnodeObj *pDnode, SVgObj *pVgroup) {
 }
 
 static SDnodeObj *bnGetAvailDnode(SVgObj *pVgroup) {
-  for (int32_t i = 0; i < tsBnDnodes.size; ++i) {
-    SDnodeObj *pDnode = tsBnDnodes.list[i];
+  for (int32_t i = 0; i < tsBnDnodes.size(); ++i) {
+    SDnodeObj *pDnode = tsBnDnodes[i];
     if (bnCheckDnodeInVgroup(pDnode, pVgroup)) continue;
     if (!bnCheckFree(pDnode)) continue;
 
@@ -331,23 +331,23 @@ static int32_t bnAddVnode(SVgObj *pVgroup, SDnodeObj *pSrcDnode, SDnodeObj *pDes
 }
 
 static bool bnMonitorBalance() {
-  if (tsBnDnodes.size < 2) return false;
+  if (tsBnDnodes.size() < 2) return false;
 
-  mDebug("monitor dnodes for balance, avail:%d", tsBnDnodes.size);
-  for (int32_t src = tsBnDnodes.size - 1; src >= 0; --src) {
-    SDnodeObj *pDnode = tsBnDnodes.list[src];
-    mDebug("%d-dnode:%d, state:%s, score:%.1f, cores:%d, vnodes:%d", tsBnDnodes.size - src - 1, pDnode->dnodeId,
+  mDebug("monitor dnodes for balance, avail:%d", tsBnDnodes.size());
+  for (int32_t src = tsBnDnodes.size() - 1; src >= 0; --src) {
+    SDnodeObj *pDnode = tsBnDnodes[src];
+    mDebug("%d-dnode:%d, state:%s, score:%.1f, cores:%d, vnodes:%d", tsBnDnodes.size() - src - 1, pDnode->dnodeId,
            dnodeStatus[pDnode->status], pDnode->score, pDnode->numOfCores, pDnode->openVnodes.load());
   }
 
-  float scoresDiff = tsBnDnodes.list[tsBnDnodes.size - 1]->score - tsBnDnodes.list[0]->score;
+  float scoresDiff = tsBnDnodes.back()->score - tsBnDnodes.front()->score;
   if (scoresDiff < 0.01) {
-    mDebug("all dnodes:%d is already balanced, scoreDiff:%.1f", tsBnDnodes.size, scoresDiff);
+    mDebug("all dnodes:%d is already balanced, scoreDiff:%.1f", tsBnDnodes.size(), scoresDiff);
     return false;
   }
 
-  for (int32_t src = tsBnDnodes.size - 1; src > 0; --src) {
-    SDnodeObj *pSrcDnode = tsBnDnodes.list[src];
+  for (int32_t src = tsBnDnodes.size() - 1; src > 0; --src) {
+    SDnodeObj *pSrcDnode = tsBnDnodes[src];
     float srcScore = bnTryCalcDnodeScore(pSrcDnode, -1);
     if (tsEnableBalance == 0 && pSrcDnode->status != TAOS_DN_STATUS_DROPPING) {
       continue;
@@ -361,7 +361,7 @@ static bool bnMonitorBalance() {
 
       if (bnCheckDnodeInVgroup(pSrcDnode, pVgroup)) {
         for (int32_t dest = 0; dest < src; dest++) {
-          SDnodeObj *pDestDnode = tsBnDnodes.list[dest];
+          SDnodeObj *pDestDnode = tsBnDnodes[dest];
           if (bnCheckDnodeInVgroup(pDestDnode, pVgroup)) continue;
 
           float destScore = bnTryCalcDnodeScore(pDestDnode, 1);
@@ -595,7 +595,7 @@ int32_t bnInit() {
 
 void bnCleanUp() {
   bnCleanupThread();
-  bnCleanupDnodes();
+  tsBnDnodes.clear();
 }
 
 int32_t bnDropDnode(SDnodeObj *pDnode) {
@@ -630,8 +630,8 @@ static void bnMonitorDnodeModule() {
   int32_t numOfMnodes = mnodeGetMnodesNum();
   if (numOfMnodes >= tsNumOfMnodes) return;
 
-  for (int32_t i = 0; i < tsBnDnodes.size; ++i) {
-    SDnodeObj *pDnode = tsBnDnodes.list[i];
+  for (int32_t i = 0; i < tsBnDnodes.size(); ++i) {
+    SDnodeObj *pDnode = tsBnDnodes[i];
     if (pDnode == NULL) break;
 
     if (pDnode->isMgmt || pDnode->status == TAOS_DN_STATUS_DROPPING || pDnode->status == TAOS_DN_STATUS_OFFLINE) {

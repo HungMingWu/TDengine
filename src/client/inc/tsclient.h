@@ -78,6 +78,49 @@ typedef struct STableMeta {
   int16_t        tversion;
   STableComInfo  tableInfo;
   SSchema        schema[];  // if the table is TSDB_CHILD_TABLE, schema is acquired by super table meta info
+ public:
+  /**
+   * get the column schema according to the column index
+   * @param colIndex
+   * @return
+   */
+  const SSchema *getColumnSchema(int32_t colIndex) const;
+  /**
+   * get the tag schema
+   * @return
+   */
+  const SSchema *getTagSchema() const;
+
+  /**
+   * get the schema
+   * @return
+   */
+  const SSchema *getSchema() const;
+
+  /**
+   * get the number of columns of this table
+   * @return
+   */
+  int32_t numOfColumns() const;
+
+  /**
+   * get the number of tags of this table
+   * @return
+   */
+  int32_t numOfTags() const;
+
+  /**
+   * get the basic info of this table
+   * @return
+   */
+  const STableComInfo& getInfo() const;
+
+  /**
+   * get the column schema according to the column id
+   * @param colId
+   * @return
+   */
+  SSchema *getColumnSchemaById(int16_t colId);
 } STableMeta;
 
 typedef struct STableMetaInfo {

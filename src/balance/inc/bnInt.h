@@ -21,12 +21,9 @@
 #include "mnodeDnode.h"
 #include <mutex>
 #include <thread>
+#include <vector>
 
-typedef struct {
-  int32_t     size;
-  int32_t     maxSize;
-  SDnodeObj **list;
-} SBnDnodes;
+using SBnDnodes = std::vector<SDnodeObj *>;
 
 typedef struct {
   void *          timer;

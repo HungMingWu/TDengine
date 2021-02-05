@@ -673,7 +673,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   size_t numOfSrcCols = taosArrayGetSize(pQueryInfo->colList);
   if (numOfSrcCols <= 0 && !tscQueryTags(pQueryInfo)) {
     tscError("%p illegal value of numOfCols in query msg: %" PRIu64 ", table cols:%d", pSql, (uint64_t)numOfSrcCols,
-        tscGetNumOfColumns(pTableMeta));
+        pTableMeta->numOfColumns());
 
     return TSDB_CODE_TSC_INVALID_SQL;
   }
@@ -728,15 +728,15 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   // set column list ids
   size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
   char *pMsg = (char *)(pQueryMsg->colList) + numOfCols * sizeof(SColumnInfo);
-  SSchema *pSchema = tscGetTableSchema(pTableMeta);
+  const SSchema *pSchema = pTableMeta->getSchema();
   
   for (int32_t i = 0; i < numOfCols; ++i) {
     SColumn *pCol = (SColumn *)taosArrayGetP(pQueryInfo->colList, i);
-    SSchema *pColSchema = &pSchema[pCol->colIndex.columnIndex];
+    const SSchema *pColSchema = &pSchema[pCol->colIndex.columnIndex];
 
-    if (pCol->colIndex.columnIndex >= tscGetNumOfColumns(pTableMeta) || !isValidDataType(pColSchema->type)) {
+    if (pCol->colIndex.columnIndex >= pTableMeta->numOfColumns() || !isValidDataType(pColSchema->type)) {
       tscError("%p tid:%d uid:%" PRIu64" id:%s, column index out of range, numOfColumns:%d, index:%d, column name:%s",
-          pSql, pTableMeta->id.tid, pTableMeta->id.uid, pTableMetaInfo->name, tscGetNumOfColumns(pTableMeta), pCol->colIndex.columnIndex,
+          pSql, pTableMeta->id.tid, pTableMeta->id.uid, pTableMetaInfo->name, pTableMeta->numOfColumns(), pCol->colIndex.columnIndex,
                pColSchema->name);
       return TSDB_CODE_TSC_INVALID_SQL;
     }
@@ -910,15 +910,15 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   }
   
   if (numOfTags != 0) {
-    int32_t numOfColumns = tscGetNumOfColumns(pTableMeta);
-    int32_t numOfTagColumns = tscGetNumOfTags(pTableMeta);
+    int32_t numOfColumns = pTableMeta->numOfColumns();
+    int32_t numOfTagColumns = pTableMeta->numOfTags();
     int32_t total = numOfTagColumns + numOfColumns;
     
-    pSchema = tscGetTableTagSchema(pTableMeta);
+    pSchema = pTableMeta->getTagSchema();
     
     for (int32_t i = 0; i < numOfTags; ++i) {
       SColumn *pCol = (SColumn *)taosArrayGetP(pTableMetaInfo->tagColList, i);
-      SSchema *pColSchema = &pSchema[pCol->colIndex.columnIndex];
+      const SSchema *pColSchema = &pSchema[pCol->colIndex.columnIndex];
 
       if ((pCol->colIndex.columnIndex >= numOfTagColumns || pCol->colIndex.columnIndex < -1) ||
           (!isValidDataType(pColSchema->type))) {
@@ -1455,7 +1455,7 @@ int tscProcessDescribeTableRsp(SSqlObj *pSql) {
   SSqlCmd *       pCmd = &pSql->cmd;
   STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
 
-  STableComInfo tinfo = tscGetTableInfo(pTableMetaInfo->pTableMeta);
+  const auto& tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   int32_t numOfRes = tinfo.numOfColumns + tinfo.numOfTags;
   return tscLocalResultCommonBuilder(pSql, numOfRes);
@@ -1964,7 +1964,7 @@ int tscProcessShowRsp(SSqlObj *pSql) {
   tfree(pTableMetaInfo->pTableMeta);
   pTableMetaInfo->pTableMeta = tscCreateTableMetaFromMsg(pMetaMsg);
 
-  SSchema *pTableSchema = tscGetTableSchema(pTableMetaInfo->pTableMeta);
+  const SSchema *pTableSchema = pTableMetaInfo->pTableMeta->getSchema();
   if (pQueryInfo->colList == NULL) {
     pQueryInfo->colList = (SArray*)taosArrayInit(4, POINTER_BYTES);
   }
@@ -2280,7 +2280,7 @@ int tscRenewTableMeta(SSqlObj *pSql, int32_t tableIndex) {
   STableMeta* pTableMeta = pTableMetaInfo->pTableMeta;
   if (pTableMeta) {
     tscDebug("%p update table meta:%s, old meta numOfTags:%d, numOfCols:%d, uid:%" PRId64, pSql, name,
-        tscGetNumOfTags(pTableMeta), tscGetNumOfColumns(pTableMeta), pTableMeta->id.uid);
+             pTableMeta->numOfTags(), pTableMeta->numOfColumns(), pTableMeta->id.uid);
   }
 
   // remove stored tableMeta info in hash table
