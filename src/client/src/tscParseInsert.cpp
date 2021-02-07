@@ -699,7 +699,7 @@ void tscSortRemoveDataBlockDupRows(STableDataBlocks *dataBuf) {
 }
 
 static int32_t doParseInsertStatement(SSqlCmd* pCmd, char **str, SParsedDataColInfo *spd, int32_t *totalNum) {
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   STableMeta     *pTableMeta = pTableMetaInfo->pTableMeta;
   const auto &tinfo = pTableMeta->getInfo();
   
@@ -1189,7 +1189,7 @@ int tsParseInsertSql(SSqlObj *pSql) {
 
     } else if (sToken.type == TK_LP) {
       /* insert into tablename(col1, col2,..., coln) values(v1, v2,... vn); */
-      STableMeta *pTableMeta = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0)->pTableMeta;
+      const STableMeta *pTableMeta = pCmd->getMetaInfo(pCmd->clauseIndex, 0)->pTableMeta;
       const SSchema *   pSchema = pTableMeta->getSchema();
 
       if (validateDataSource(pCmd, DATA_FROM_SQL_STRING, sToken.z) != TSDB_CODE_SUCCESS) {
@@ -1370,7 +1370,7 @@ static int doPackSendDataBlock(SSqlObj *pSql, int32_t numOfRows, STableDataBlock
   pSql->res.numOfRows = 0;
 
   assert(pCmd->numOfClause == 1);
-  STableMeta *pTableMeta = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0)->pTableMeta;
+  const STableMeta *pTableMeta = pCmd->getMetaInfo(pCmd->clauseIndex, 0)->pTableMeta;
 
   SSubmitBlk *pBlocks = (SSubmitBlk *)(pTableDataBlocks->pData);
   code = tsSetBlockInfo(pBlocks, pTableMeta, numOfRows);
@@ -1433,7 +1433,7 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
   // accumulate the total submit records
   pParentSql->res.numOfRows += pSql->res.numOfRows;
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   STableMeta *    pTableMeta = pTableMetaInfo->pTableMeta;
   const SSchema *       pSchema = pTableMeta->getSchema();
   const auto&   tinfo = pTableMeta->getInfo();

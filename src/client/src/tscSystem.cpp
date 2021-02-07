@@ -43,7 +43,6 @@ int32_t    tscObjRef = -1;
 void      *tscTmr;
 void      *tscQhandle;
 int32_t    tscRefId = -1;
-int32_t    tscNumOfObj = 0;         // number of sqlObj in current process.
 
 static void  *tscCheckDiskUsageTmr;
 static std::once_flag tscinit;

@@ -336,7 +336,7 @@ void tscTableMetaCallBack(void *param, TAOS_RES *res, int code) {
       if (pCmd->parseFinished) {
         tscDebug("%p update local table meta, continue to process sql and send corresponding query", pSql);
 
-        STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+        STableMetaInfo* pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
         code = tscGetTableMeta(pSql, pTableMetaInfo);
 
         assert(code == TSDB_CODE_TSC_ACTION_IN_PROGRESS || code == TSDB_CODE_SUCCESS);
@@ -379,7 +379,7 @@ void tscTableMetaCallBack(void *param, TAOS_RES *res, int code) {
         }
 
         if (pCmd->insertType == TSDB_QUERY_TYPE_STMT_INSERT) {
-          STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+          STableMetaInfo* pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
           code = tscGetTableMeta(pSql, pTableMetaInfo);
           if (code == TSDB_CODE_TSC_ACTION_IN_PROGRESS) {
             taosReleaseRef(tscObjRef, pSql->self);
@@ -398,7 +398,7 @@ void tscTableMetaCallBack(void *param, TAOS_RES *res, int code) {
     }
 
   } else {  // stream computing
-    STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+    STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
 
     code = tscGetTableMeta(pSql, pTableMetaInfo);
     if (code == TSDB_CODE_TSC_ACTION_IN_PROGRESS) {

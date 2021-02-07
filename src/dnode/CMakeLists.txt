@@ -10,7 +10,7 @@ PRIVATE
     ../mnode/inc
 )
 
-TARGET_LINK_LIBRARIES(taosd mnode monitor http tsdb twal vnode cJson lz4 balance sync)
+TARGET_LINK_LIBRARIES(taosd mnode monitor http tsdb twal vnode cJson lz4 balance sync ghc_filesystem)
 
 IF (TD_SOMODE_STATIC)
   TARGET_LINK_LIBRARIES(taosd taos_static)

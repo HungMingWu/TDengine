@@ -101,7 +101,7 @@ void tscSortRemoveDataBlockDupRows(STableDataBlocks* dataBuf);
 void*   tscDestroyBlockArrayList(SArray* pDataBlockList);
 void*   tscDestroyBlockHashTable(SHashObj* pBlockHashTable);
 
-int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, STableDataBlocks* pDataBlock);
+int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, const STableDataBlocks* pDataBlock);
 int32_t tscMergeTableDataBlocks(SSqlObj* pSql, bool freeBlockMap);
 void tscGetDataBlockFromList(SHashObj* pHashList, int64_t id, int32_t size, int32_t startOffset, int32_t rowSize, const char* tableId, STableMeta* pTableMeta,
                                 STableDataBlocks** dataBlocks, SArray* pBlockList);
@@ -170,7 +170,6 @@ SSqlExpr* tscSqlExprUpdate(SQueryInfo* pQueryInfo, int32_t index, int16_t functi
                            int16_t size);
 size_t   tscSqlExprNumOfExprs(SQueryInfo* pQueryInfo);
 
-SSqlExpr* tscSqlExprGet(SQueryInfo* pQueryInfo, int32_t index);
 int32_t   tscSqlExprCopy(SArray* dst, const SArray* src, uint64_t uid, bool deepcopy);
 void      tscSqlExprInfoDestroy(SArray* pExprInfo);
 
@@ -190,15 +189,11 @@ bool tscValidateColumnId(STableMetaInfo* pTableMetaInfo, int32_t colId, int32_t 
 SCond* tsGetSTableQueryCond(STagCond* pCond, uint64_t uid);
 void   tsSetSTableQueryCond(STagCond* pTagCond, uint64_t uid, SBufferWriter* bw);
 
-int32_t tscTagCondCopy(STagCond* dest, const STagCond* src);
-void tscTagCondRelease(STagCond* pCond);
-
 void tscGetSrcColumnInfo(SSrcColumnInfo* pColInfo, SQueryInfo* pQueryInfo);
 
 bool tscShouldBeFreed(SSqlObj* pSql);
 
-STableMetaInfo* tscGetTableMetaInfoFromCmd(SSqlCmd *pCmd, int32_t subClauseIndex, int32_t tableIndex);
-STableMetaInfo* tscGetMetaInfo(SQueryInfo *pQueryInfo, int32_t tableIndex);
+STableMetaInfo* tscGetMetaInfo(const SQueryInfo *pQueryInfo, int32_t tableIndex);
 
 SQueryInfo *tscGetQueryInfoDetail(SSqlCmd* pCmd, int32_t subClauseIndex);
 SQueryInfo *tscGetQueryInfoDetailSafely(SSqlCmd *pCmd, int32_t subClauseIndex);

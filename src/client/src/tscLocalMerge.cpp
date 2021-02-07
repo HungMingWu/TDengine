@@ -67,7 +67,7 @@ static void tscInitSqlContext(SSqlCmd *pCmd, SLocalReducer *pReducer, tOrderDesc
   
   for (int32_t i = 0; i < size; ++i) {
     SQLFunctionCtx *pCtx = &pReducer->pCtx[i];
-    SSqlExpr *      pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *      pExpr = pQueryInfo->getExpr(i);
 
     pCtx->aOutputBuf = pReducer->pResultBuf->data + pExpr->offset * pReducer->resColModel->capacity;
     pCtx->order = pQueryInfo->order.order;
@@ -115,7 +115,7 @@ static void tscInitSqlContext(SSqlCmd *pCmd, SLocalReducer *pReducer, tOrderDesc
 
   SQLFunctionCtx *pCtx = NULL;
   for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
     if (pExpr->functionId == TSDB_FUNC_TAG_DUMMY || pExpr->functionId == TSDB_FUNC_TS_DUMMY) {
       tagLen += pExpr->resBytes;
       pTagCtx[n++] = &pReducer->pCtx[i];
@@ -376,7 +376,7 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
   pRes->pLocalReducer = pReducer;
   pRes->numOfGroups = 0;
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   const auto &tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   TSKEY stime = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.skey : pQueryInfo->window.ekey;
@@ -584,7 +584,7 @@ static int32_t createOrderDescriptor(tOrderDescriptor **pOrderDesc, SSqlCmd *pCm
       } else {
         size_t size = tscSqlExprNumOfExprs(pQueryInfo);
         for (int32_t i = 0; i < size; ++i) {
-          SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+          const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
           if (pExpr->functionId == TSDB_FUNC_PRJ && pExpr->colInfo.colId == PRIMARYKEY_TIMESTAMP_COL_INDEX) {
             orderColIndexList[0] = i;
           }
@@ -678,7 +678,7 @@ int32_t tscLocalReducerEnvCreate(SSqlObj *pSql, tExtMemBuffer ***pMemBuffer, tOr
 
   int32_t rlen = 0;
   for (int32_t i = 0; i < size; ++i) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
 
     pSchema[i].bytes = pExpr->resBytes;
     pSchema[i].type = (int8_t)pExpr->resType;
@@ -717,7 +717,7 @@ int32_t tscLocalReducerEnvCreate(SSqlObj *pSql, tExtMemBuffer ***pMemBuffer, tOr
   memset(pSchema, 0, sizeof(SSchema) * size);
 
   for (int32_t i = 0; i < size; ++i) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
 
     SSchema p1 = {0};
     if (pExpr->colInfo.colIndex == TSDB_TBNAME_COLUMN_INDEX) {
@@ -1063,7 +1063,7 @@ static void doExecuteSecondaryMerge(SSqlCmd *pCmd, SLocalReducer *pLocalReducer,
         tVariantCreateFromBinary(&pCtx->tag, input, pCtx->inputBytes, pCtx->inputType);
       }
     } else if (functionId == TSDB_FUNC_TOP || functionId == TSDB_FUNC_BOTTOM) {
-      SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, j);
+      const SSqlExpr *pExpr = pQueryInfo->getExpr(j);
       pCtx->param[0].i64 = pExpr->param[0].i64;
     }
 
@@ -1126,7 +1126,7 @@ static void fillMultiRowsOfTagsVal(SQueryInfo *pQueryInfo, int32_t numOfRes, SLo
   size_t size = tscSqlExprNumOfExprs(pQueryInfo);
   
   for (int32_t k = 0; k < size; ++k) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, k);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(k);
     if (maxBufSize < pExpr->resBytes && pExpr->functionId == TSDB_FUNC_TAG) {
       maxBufSize = pExpr->resBytes;
     }
@@ -1294,7 +1294,7 @@ bool genFinalResults(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool noMoreCur
 void resetOutputBuf(SQueryInfo *pQueryInfo, SLocalReducer *pLocalReducer) {// reset output buffer to the beginning
   size_t t = tscSqlExprNumOfExprs(pQueryInfo);
   for (int32_t i = 0; i < t; ++i) {
-    SSqlExpr* pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr* pExpr = pQueryInfo->getExpr(i);
     pLocalReducer->pCtx[i].aOutputBuf = pLocalReducer->pResultBuf->data + pExpr->offset * pLocalReducer->resColModel->capacity;
 
     if (pExpr->functionId == TSDB_FUNC_TOP || pExpr->functionId == TSDB_FUNC_BOTTOM || pExpr->functionId == TSDB_FUNC_DIFF) {
@@ -1314,7 +1314,7 @@ static void resetEnvForNewResultset(SSqlRes *pRes, SSqlCmd *pCmd, SLocalReducer 
 
   pQueryInfo->limit.offset = pLocalReducer->offset;
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   const auto &tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
   // for group result interpolation, do not return if not data is generated
@@ -1635,7 +1635,7 @@ int32_t doArithmeticCalculate(SQueryInfo* pQueryInfo, tFilePage* pOutput, int32_
   arithSup.data       = (char**)calloc(arithSup.numOfCols, POINTER_BYTES);
 
   for(int32_t k = 0; k < arithSup.numOfCols; ++k) {
-    SSqlExpr* pExpr = tscSqlExprGet(pQueryInfo, k);
+    const SSqlExpr* pExpr = pQueryInfo->getExpr(k);
     arithSup.data[k] = (pOutput->data + pOutput->num* pExpr->offset);
   }
 

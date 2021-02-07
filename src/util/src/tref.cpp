@@ -465,8 +465,6 @@ static void taosDecRsetCount(SRefSet *pSet) {
 
   if (count > 0) return;
 
-  std::lock_guard<std::mutex> _(tsRefMutex);
-
   if (pSet->state != TSDB_REF_STATE_EMPTY) {
     pSet->state = TSDB_REF_STATE_EMPTY;
     pSet->max = 0;

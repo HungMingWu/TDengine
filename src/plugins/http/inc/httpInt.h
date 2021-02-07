@@ -79,7 +79,7 @@ struct HttpThread;
 
 typedef struct {
   char    id[HTTP_SESSION_ID_LEN];
-  int32_t refCount;
+  std::atomic<int32_t> refCount;
   void *  taos;
 } HttpSession;
 

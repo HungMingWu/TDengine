@@ -113,7 +113,7 @@ static void tscDumpEpSetFromVgroupInfo(SRpcEpSet *pEpSet, SNewVgroupInfo *pVgrou
 
 static void tscUpdateVgroupInfo(SSqlObj *pObj, SRpcEpSet *pEpSet) {
   SSqlCmd *pCmd = &pObj->cmd;
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   if (pTableMetaInfo == NULL || pTableMetaInfo->pTableMeta == NULL) {
     return;
   }
@@ -587,7 +587,7 @@ static int32_t tscEstimateQueryMsgSize(SSqlObj *pSql, int32_t clauseIndex) {
 }
 
 static char *doSerializeTableInfo(SQueryTableMsg* pQueryMsg, SSqlObj *pSql, char *pMsg) {
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, pSql->cmd.clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(pSql->cmd.clauseIndex, 0);
   TSKEY dfltKey = htobe64(pQueryMsg->window.skey);
 
   STableMeta * pTableMeta = pTableMetaInfo->pTableMeta;
@@ -776,7 +776,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
 
   SSqlFuncMsg *pSqlFuncExpr = (SSqlFuncMsg *)pMsg;
   for (int32_t i = 0; i < tscSqlExprNumOfExprs(pQueryInfo); ++i) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
 
     if (!tscValidateColumnId(pTableMetaInfo, pExpr->colInfo.colId, pExpr->numOfParams)) {
       tscError("%p table schema is not matched with parsed sql", pSql);
@@ -941,13 +941,13 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   }
 
   // serialize tag column query condition
-  if (pQueryInfo->tagCond.pCond != NULL && taosArrayGetSize(pQueryInfo->tagCond.pCond) > 0) {
+  if (!pQueryInfo->tagCond.pCond.empty()) {
     STagCond* pTagCond = &pQueryInfo->tagCond;
     
     SCond *pCond = tsGetSTableQueryCond(pTagCond, pTableMeta->id.uid);
-    if (pCond != NULL && pCond->cond != NULL) {
+    if (pCond != NULL && !pCond->cond.empty()) {
       pQueryMsg->tagCondLen = htons(pCond->len);
-      memcpy(pMsg, pCond->cond, pCond->len);
+      memcpy(pMsg, pCond->cond.data(), pCond->cond.size());
       
       pMsg += pCond->len;
     }
@@ -955,7 +955,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
 
   SCond* pCond = &pQueryInfo->tagCond.tbnameCond;
   if (pCond->len > 0) {
-    strncpy(pMsg, pCond->cond, pCond->len);
+    strncpy(pMsg, pCond->cond.data(), pCond->cond.size());
     pMsg += pCond->len;
   }
 
@@ -998,7 +998,7 @@ int32_t tscBuildCreateDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SCreateDbMsg *pCreateDbMsg = (SCreateDbMsg *)(&pCmd->payload[0]);
 
   assert(pCmd->numOfClause == 1);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pCreateDbMsg->db, pTableMetaInfo->name, sizeof(pCreateDbMsg->db));
 
   return TSDB_CODE_SUCCESS;
@@ -1093,7 +1093,7 @@ int32_t tscBuildDropDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SDropDbMsg));
   SDropDbMsg *pDropDbMsg = (SDropDbMsg*)(&pCmd->payload[0]);
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pDropDbMsg->db, pTableMetaInfo->name, sizeof(pDropDbMsg->db));
   pDropDbMsg->ignoreNotExists = pInfo->pDCLInfo->existsCheck ? 1 : 0;
 
@@ -1105,7 +1105,7 @@ int32_t tscBuildDropTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SSqlCmd *pCmd = &pSql->cmd;
   pCmd->payload.resize(sizeof(SCMDropTableMsg));
   SCMDropTableMsg *pDropTableMsg = (SCMDropTableMsg*)(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   strcpy(pDropTableMsg->tableFname, pTableMetaInfo->name);
   pDropTableMsg->igNotExists = pInfo->pDCLInfo->existsCheck ? 1 : 0;
 
@@ -1117,7 +1117,7 @@ int32_t tscBuildDropDnodeMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SSqlCmd *pCmd = &pSql->cmd;
   pCmd->payload.resize(sizeof(SDropDnodeMsg));
   SDropDnodeMsg * pDrop = (SDropDnodeMsg *)(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pDrop->ep, pTableMetaInfo->name, sizeof(pDrop->ep));
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_DNODE;
 
@@ -1129,7 +1129,7 @@ int32_t tscBuildDropUserMsg(SSqlObj *pSql, SSqlInfo * UNUSED_PARAM(pInfo)) {
   pCmd->payload.resize(sizeof(SDropUserMsg));
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_USER;
   SDropUserMsg *  pDropMsg = (SDropUserMsg *)(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pDropMsg->user, pTableMetaInfo->name, sizeof(pDropMsg->user));
 
   return TSDB_CODE_SUCCESS;
@@ -1140,7 +1140,7 @@ int32_t tscBuildDropAcctMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SDropUserMsg));
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_ACCT;
   SDropUserMsg *  pDropMsg = (SDropUserMsg *)(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pDropMsg->user, pTableMetaInfo->name, sizeof(pDropMsg->user));
 
   return TSDB_CODE_SUCCESS;
@@ -1150,7 +1150,7 @@ int32_t tscBuildUseDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SSqlCmd *pCmd = &pSql->cmd;
   pCmd->payload.resize(sizeof(SUseDbMsg));
   SUseDbMsg *pUseDbMsg = (SUseDbMsg *)(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   strcpy(pUseDbMsg->db, pTableMetaInfo->name);
   pCmd->msgType = TSDB_MSG_TYPE_CM_USE_DB;
 
@@ -1164,7 +1164,7 @@ int32_t tscBuildShowMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SShowMsg) + 100);
   SShowMsg *pShowMsg = (SShowMsg *)(&pCmd->payload[0]);
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   size_t nameLen = strlen(pTableMetaInfo->name);
   if (nameLen > 0) {
     tstrncpy(pShowMsg->db, pTableMetaInfo->name, sizeof(pShowMsg->db));  // prefix is set here
@@ -1395,7 +1395,7 @@ int tscAlterDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->msgType = TSDB_MSG_TYPE_CM_ALTER_DB;
 
   SAlterDbMsg *pAlterDbMsg = (SAlterDbMsg* )(&pCmd->payload[0]);
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   tstrncpy(pAlterDbMsg->db, pTableMetaInfo->name, sizeof(pAlterDbMsg->db));
 
   return TSDB_CODE_SUCCESS;
@@ -1453,7 +1453,7 @@ static int tscLocalResultCommonBuilder(SSqlObj *pSql, int32_t numOfRes) {
 
 int tscProcessDescribeTableRsp(SSqlObj *pSql) {
   SSqlCmd *       pCmd = &pSql->cmd;
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
 
   const auto& tinfo = pTableMetaInfo->pTableMeta->getInfo();
   
@@ -1622,7 +1622,7 @@ int tscBuildSTableVgroupMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pMsg += sizeof(SSTableVgroupMsg);
 
   for (int32_t i = 0; i < pQueryInfo->numOfTables; ++i) {
-    STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, i);
+    const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, i);
     size_t size = sizeof(pTableMetaInfo->name);
     tstrncpy(pMsg, pTableMetaInfo->name, size);
     pMsg += size;
@@ -1721,7 +1721,7 @@ int tscProcessTableMetaRsp(SSqlObj *pSql) {
     pSchema++;
   }
   
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
   assert(pTableMetaInfo->pTableMeta == NULL);
 
   STableMeta* pTableMeta = tscCreateTableMetaFromMsg(pMetaMsg);
@@ -1897,7 +1897,7 @@ int tscProcessSTableVgroupRsp(SSqlObj *pSql) {
   
   SSqlCmd* pCmd = &parent->cmd;
   for(int32_t i = 0; i < pStableVgroup->numOfTables; ++i) {
-    STableMetaInfo *pInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, i);
+    STableMetaInfo *pInfo = pCmd->getMetaInfo(pCmd->clauseIndex, i);
 
     SVgroupsMsg *  pVgroupMsg = (SVgroupsMsg *) pMsg;
     pVgroupMsg->numOfVgroups = htonl(pVgroupMsg->numOfVgroups);
@@ -2059,7 +2059,7 @@ int tscProcessConnectRsp(SSqlObj *pSql) {
 
 int tscProcessUseDbRsp(SSqlObj *pSql) {
   STscObj *       pObj = pSql->pTscObj;
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
   tstrncpy(pObj->db, pTableMetaInfo->name, sizeof(pObj->db));
   return 0;
@@ -2072,7 +2072,7 @@ int tscProcessDropDbRsp(SSqlObj *pSql) {
 }
 
 int tscProcessDropTableRsp(SSqlObj *pSql) {
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
   //The cached tableMeta is expired in this case, so clean it in hash table
   taosHashRemove(tscTableMetaInfo, pTableMetaInfo->name, strnlen(pTableMetaInfo->name, TSDB_TABLE_FNAME_LEN));
@@ -2084,7 +2084,7 @@ int tscProcessDropTableRsp(SSqlObj *pSql) {
 }
 
 int tscProcessAlterTableMsgRsp(SSqlObj *pSql) {
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
   char* name = pTableMetaInfo->name;
   tscDebug("%p remove tableMeta in hashMap after alter-table: %s", pSql, name);

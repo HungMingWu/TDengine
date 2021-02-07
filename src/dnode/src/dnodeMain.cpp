@@ -14,6 +14,18 @@
  */
 
 #define _DEFAULT_SOURCE
+#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include)
+#if __has_include(<filesystem>)
+#define GHC_USE_STD_FS
+#include <filesystem>
+namespace fs = std::filesystem;
+#endif
+#endif
+#ifndef GHC_USE_STD_FS
+#include <ghc/filesystem.hpp>
+namespace fs = ghc::filesystem;
+#endif
+
 #include "os.h"
 #include "taos.h"
 #include "tnote.h"
@@ -47,7 +59,6 @@ static int32_t dnodeInitStorage();
 static void    dnodeCleanupStorage();
 static void    dnodeSetRunStatus(SRunStatus status);
 static void    dnodeCheckDataDirOpenned(char *dir);
-static int     dnodeCreateDir(const char *dir);
 
 static SStep tsDnodeSteps[] = {
   {"dnode-tfile",     tfInit,              tfCleanup},
@@ -75,12 +86,12 @@ static SStep tsDnodeSteps[] = {
   {"dnode-telemetry", dnodeInitTelemetry,  dnodeCleanupTelemetry},
 };
 
-static int dnodeCreateDir(const char *dir) {
-  if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
-    return -1;
-  }
-  
-  return 0;
+static bool dnodeCreateDir(const fs::path &dir, std::error_code &ec) {
+  if (!fs::create_directory(dir, ec)) return false;
+  fs::permissions(dir, fs::perms::owner_all 
+      | fs::perms::group_read | fs::perms::group_exec 
+      | fs::perms::others_read | fs::perms::others_exec, ec);
+  return !ec;
 }
 
 static void dnodeCleanupComponents() {
@@ -122,8 +133,9 @@ int32_t dnodeInitSystem() {
   taosInitNotes();
   dnodeInitTmr();
 
-  if (dnodeCreateDir(tsLogDir) < 0) {
-   printf("failed to create dir: %s, reason: %s\n", tsLogDir, strerror(errno));
+  std::error_code ec;
+  if (dnodeCreateDir(tsLogDir, ec) < 0) {
+   printf("failed to create dir: %s, reason: %s\n", tsLogDir, ec.message().c_str());
    return -1;
   }
 
@@ -189,8 +201,9 @@ static void dnodeCheckDataDirOpenned(char *dir) {
 }
 
 static int32_t dnodeInitStorage() {
-  if (dnodeCreateDir(tsDataDir) < 0) {
-   dError("failed to create dir: %s, reason: %s", tsDataDir, strerror(errno));
+  std::error_code ec;
+  if (dnodeCreateDir(tsDataDir, ec) < 0) {
+   dError("failed to create dir: %s, reason: %s", tsDataDir, ec.message().c_str());
    return -1;
   }
   sprintf(tsMnodeDir, "%s/mnode", tsDataDir);
@@ -199,21 +212,21 @@ static int32_t dnodeInitStorage() {
   sprintf(tsVnodeBakDir, "%s/vnode_bak", tsDataDir);
 
   //TODO(dengyihao): no need to init here 
-  if (dnodeCreateDir(tsMnodeDir) < 0) {
-   dError("failed to create dir: %s, reason: %s", tsMnodeDir, strerror(errno));
+  if (dnodeCreateDir(tsMnodeDir, ec) < 0) {
+   dError("failed to create dir: %s, reason: %s", tsMnodeDir, ec.message().c_str());
    return -1;
   } 
   //TODO(dengyihao): no need to init here
-  if (dnodeCreateDir(tsVnodeDir) < 0) {
-   dError("failed to create dir: %s, reason: %s", tsVnodeDir, strerror(errno));
+  if (dnodeCreateDir(tsVnodeDir, ec) < 0) {
+   dError("failed to create dir: %s, reason: %s", tsVnodeDir, ec.message().c_str());
    return -1;
   }
-  if (dnodeCreateDir(tsDnodeDir) < 0) {
-   dError("failed to create dir: %s, reason: %s", tsDnodeDir, strerror(errno));
+  if (dnodeCreateDir(tsDnodeDir, ec) < 0) {
+   dError("failed to create dir: %s, reason: %s", tsDnodeDir, ec.message().c_str());
    return -1;
   } 
-  if (dnodeCreateDir(tsVnodeBakDir) < 0) {
-   dError("failed to create dir: %s, reason: %s", tsVnodeBakDir, strerror(errno));
+  if (dnodeCreateDir(tsVnodeBakDir, ec) < 0) {
+   dError("failed to create dir: %s, reason: %s", tsVnodeBakDir, ec.message().c_str());
    return -1;
   }
 

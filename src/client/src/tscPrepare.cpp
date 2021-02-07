@@ -690,7 +690,7 @@ static int doBindParam(char* data, SParamInfo* param, TAOS_BIND* bind) {
 static int insertStmtBindParam(STscStmt* stmt, TAOS_BIND* bind) {
   SSqlCmd* pCmd = &stmt->pSql->cmd;
 
-  STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, 0, 0);
+  const STableMetaInfo* pTableMetaInfo = pCmd->getMetaInfo(0, 0);
 
   STableMeta* pTableMeta = pTableMetaInfo->pTableMeta;
   if (pCmd->pTableBlockHashList == NULL) {
@@ -751,7 +751,7 @@ static int insertStmtReset(STscStmt* pStmt) {
   }
   pCmd->batchSize = 0;
 
-  STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  STableMetaInfo* pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   pTableMetaInfo->vgroupIndex = 0;
   return TSDB_CODE_SUCCESS;
 }
@@ -767,7 +767,7 @@ static int insertStmtExecute(STscStmt* stmt) {
     return TSDB_CODE_SUCCESS;
   }
 
-  STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, 0, 0);
+  const STableMetaInfo* pTableMetaInfo = pCmd->getMetaInfo(0, 0);
 
   STableMeta* pTableMeta = pTableMetaInfo->pTableMeta;
   if (pCmd->pTableBlockHashList == NULL) {

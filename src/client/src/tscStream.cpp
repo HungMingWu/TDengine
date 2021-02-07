@@ -37,7 +37,7 @@ static int64_t getDelayValueAfterTimewindowClosed(SSqlStream* pStream, int64_t l
 
 static bool isProjectStream(SQueryInfo* pQueryInfo) {
   for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
     if (pExpr->functionId != TSDB_FUNC_PRJ) {
       return false;
     }
@@ -189,7 +189,7 @@ static void tscProcessStreamQueryCallback(void *param, TAOS_RES *tres, int numOf
     tscError("%p stream:%p, query data failed, code:0x%08x, retry in %" PRId64 "ms", pStream->pSql, pStream, numOfRows,
              retryDelay);
 
-    STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pStream->pSql->cmd, 0, 0);
+    STableMetaInfo* pTableMetaInfo = pStream->pSql->cmd.getMetaInfo(0, 0);
 
     char* name = pTableMetaInfo->name;
     taosHashRemove(tscTableMetaInfo, name, strnlen(name, TSDB_TABLE_FNAME_LEN));
@@ -255,7 +255,7 @@ static void tscProcessStreamRetrieveResult(void *param, TAOS_RES *res, int numOf
     return;
   }
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
   if (numOfRows > 0) { // when reaching here the first execution of stream computing is successful.
     for(int32_t i = 0; i < numOfRows; ++i) {
@@ -297,7 +297,7 @@ static void tscProcessStreamRetrieveResult(void *param, TAOS_RES *res, int numOf
     tfree(pTableMetaInfo->pTableMeta);
 
     tscFreeSqlResult(pSql);
-    tfree(pSql->pSubs);
+    pSql->pSubs.clear();
     pSql->subState.numOfSub = 0;
     pTableMetaInfo->vgroupList = (SVgroupsInfo*)tscVgroupInfoClear(pTableMetaInfo->vgroupList);
     tscSetNextLaunchTimer(pStream, pSql);

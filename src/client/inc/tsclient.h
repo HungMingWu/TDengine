@@ -18,6 +18,7 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
 #include "string_view.hpp"
 #include "os.h"
 
@@ -139,7 +140,7 @@ typedef struct STableMetaInfo {
 } STableMetaInfo;
 
 /* the structure for sql function in select clause */
-typedef struct SSqlExpr {
+struct SSqlExpr {
   char      aliasName[TSDB_COL_NAME_LEN];  // as aliasName
   SColIndex colInfo;
   uint64_t  uid;            // refactor use the pointer
@@ -151,7 +152,9 @@ typedef struct SSqlExpr {
   tVariant  param[3];       // parameters are not more than 3
   int32_t   offset;         // sub result column value of arithmetic expression.
   int16_t   resColId;       // result column id
-} SSqlExpr;
+ public:
+  ~SSqlExpr();
+};
 
 typedef struct SColumnIndex {
   int16_t tableIndex;
@@ -171,16 +174,19 @@ typedef struct SFieldInfo {
   SArray      *internalField; // SArray<SInternalField>
 } SFieldInfo;
 
-typedef struct SColumn {
+struct SColumn {
   SColumnIndex       colIndex;
   int32_t            numOfFilters;
   SColumnFilterInfo *filterInfo;
-} SColumn;
+
+ public:
+  ~SColumn();
+};
 
 typedef struct SCond {
   uint64_t uid;
   int32_t  len;  // length of tag query condition data
-  char *   cond;
+  std::string cond;
 } SCond;
 
 typedef struct SJoinNode {
@@ -206,7 +212,7 @@ typedef struct STagCond {
   SJoinInfo joinInfo;
 
   // for different table, the query condition must be seperated
-  SArray *pCond;
+  std::vector<SCond> pCond;
 } STagCond;
 
 typedef struct SParamInfo {
@@ -265,9 +271,11 @@ struct SQueryInfo {
 
   int32_t          udColumnId;    // current user-defined constant output field column id, monotonically decreases from TSDB_UD_COLUMN_INDEX
   int16_t          resColumnId;   // result column id
+ public:
+  SSqlExpr *getExpr(int32_t index);
 };
 
-typedef struct {
+struct SSqlCmd {
   int     command;
   uint8_t msgType;
   bool    autoCreated;        // create table if it is not existed during retrieve table meta in mnode
@@ -299,7 +307,15 @@ typedef struct {
 
   SHashObj    *pTableBlockHashList;     // data block for each table
   SArray      *pDataBlocks;    // SArray<STableDataBlocks*>. Merged submit block for each vgroup
-} SSqlCmd;
+ public:
+  /**
+   *
+   * @param clauseIndex denote the index of the union sub clause, usually are 0, if no union query exists.
+   * @param tableIndex  denote the table index for join query, where more than one table exists
+   * @return
+   */
+  STableMetaInfo *getMetaInfo(int32_t subClauseIndex, int32_t tableIndex);
+};
 
 typedef struct SResRec {
   int numOfRows;
@@ -352,7 +368,7 @@ struct STscObj {
   SRpcCorEpSet       *tscCorMgmtEpSet;
   void*              pDnodeConn;
   std::mutex         mutex;
-  int32_t            numOfObj; // number of sqlObj from this tscObj
+  std::atomic<int32_t>            numOfObj; // number of sqlObj from this tscObj
 };
 
 typedef struct SSubqueryState {
@@ -383,7 +399,7 @@ struct SSqlObj {
   SSqlRes          res;
 
   SSubqueryState   subState;
-  struct SSqlObj **pSubs;
+  std::vector<SSqlObj *> pSubs;
 
   int64_t          metaRid;
   int64_t          svgroupRid;
@@ -533,7 +549,6 @@ extern void *tscTmr;
 extern void *tscQhandle;
 extern int   tscKeepConn[];
 extern int   tscRefId;
-extern int   tscNumOfObj;     // number of existed sqlObj in current process.
 
 extern int (*tscBuildMsg[TSDB_SQL_MAX])(SSqlObj *pSql, SSqlInfo *pInfo);
 

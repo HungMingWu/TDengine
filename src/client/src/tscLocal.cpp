@@ -531,7 +531,7 @@ static int32_t tscGetTableTagColumnName(SSqlObj *pSql, char **result) {
   }
   buf[0] = 0;
 
-  STableMeta *pMeta = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0)->pTableMeta; 
+  const STableMeta *pMeta = pSql->cmd.getMetaInfo(0, 0)->pTableMeta; 
   if (pMeta->tableType == TSDB_SUPER_TABLE || pMeta->tableType == TSDB_NORMAL_TABLE ||
       pMeta->tableType == TSDB_STREAM_TABLE) {
     free(buf);
@@ -725,7 +725,7 @@ static int32_t tscProcessShowCreateDatabase(SSqlObj *pSql) {
 static int32_t tscProcessCurrentUser(SSqlObj *pSql) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
 
-  SSqlExpr* pExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  SSqlExpr* pExpr = pQueryInfo->getExpr(0);
   pExpr->resBytes = TSDB_USER_LEN + TSDB_DATA_TYPE_BINARY;
   pExpr->resType = TSDB_DATA_TYPE_BINARY;
 
@@ -749,7 +749,7 @@ static int32_t tscProcessCurrentDB(SSqlObj *pSql) {
 
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, pSql->cmd.clauseIndex);
 
-  SSqlExpr* pExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  SSqlExpr* pExpr = pQueryInfo->getExpr(0);
   pExpr->resType = TSDB_DATA_TYPE_BINARY;
 
   size_t t = strlen(db);
@@ -776,7 +776,7 @@ static int32_t tscProcessServerVer(SSqlObj *pSql) {
   const char* v = pSql->pTscObj->sversion;
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, pSql->cmd.clauseIndex);
 
-  SSqlExpr* pExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  SSqlExpr* pExpr = pQueryInfo->getExpr(0);
   pExpr->resType = TSDB_DATA_TYPE_BINARY;
 
   size_t t = strlen(v);
@@ -799,7 +799,7 @@ static int32_t tscProcessServerVer(SSqlObj *pSql) {
 static int32_t tscProcessClientVer(SSqlObj *pSql) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
 
-  SSqlExpr* pExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  SSqlExpr* pExpr = pQueryInfo->getExpr(0);
   pExpr->resType = TSDB_DATA_TYPE_BINARY;
 
   size_t t = strlen(version);
@@ -850,7 +850,7 @@ static int32_t tscProcessServStatus(SSqlObj *pSql) {
   }
 
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
-  SSqlExpr* pExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  const SSqlExpr* pExpr = pQueryInfo->getExpr(0);
 
   int32_t val = 1;
   tscSetLocalQueryResult(pSql, (char*) &val, pExpr->aliasName, TSDB_DATA_TYPE_INT, sizeof(int32_t));
@@ -875,7 +875,7 @@ void tscSetLocalQueryResult(SSqlObj *pSql, const char *val, const char *columnNa
   tscInitResObjForLocalQuery(pSql, 1, (int32_t)valueLength);
 
   SInternalField* pInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, 0);
-  pInfo->pSqlExpr = (SSqlExpr*)taosArrayGetP(pQueryInfo->exprList, 0);
+  pInfo->pSqlExpr = pQueryInfo->getExpr(0);
 
   memcpy(pRes->data, val, pInfo->field.bytes);
 }

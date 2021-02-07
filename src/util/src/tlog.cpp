@@ -121,7 +121,8 @@ static void taosStopLog() {
 void taosCloseLog() {
   taosStopLog();
   tsem_post(&(tsLogObj.logHandle.buffNotEmpty));
-  tsLogObj.logHandle.asyncThread.join();
+  if (tsLogObj.logHandle.asyncThread.joinable())
+      tsLogObj.logHandle.asyncThread.join();
   // In case that other threads still use log resources causing invalid write in valgrind
   // we comment two lines below.
   // taosCloseLog();

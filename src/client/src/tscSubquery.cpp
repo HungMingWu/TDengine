@@ -216,7 +216,7 @@ SJoinSupporter* tscCreateJoinSupporter(SSqlObj* pSql, int32_t index) {
   memcpy(&pSupporter->interval, &pQueryInfo->interval, sizeof(pSupporter->interval));
   pSupporter->limit = pQueryInfo->limit;
 
-  STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, pSql->cmd.clauseIndex, index);
+  const STableMetaInfo* pTableMetaInfo = pSql->cmd.getMetaInfo(pSql->cmd.clauseIndex, index);
   pSupporter->uid = pTableMetaInfo->pTableMeta->id.uid;
   assert (pSupporter->uid != 0);
 
@@ -262,7 +262,6 @@ static void tscDestroyJoinSupporter(SJoinSupporter* pSupporter) {
   }
 
   tfree(pSupporter->pIdTagList);
-  tscTagCondRelease(&pSupporter->tagCond);
   free(pSupporter);
 }
 
@@ -414,7 +413,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     TSDB_QUERY_SET_TYPE(pQueryInfo->type, TSDB_QUERY_TYPE_JOIN_SEC_STAGE);
     memcpy(&pQueryInfo->interval, &pSupporter->interval, sizeof(pQueryInfo->interval));
 
-    tscTagCondCopy(&pQueryInfo->tagCond, &pSupporter->tagCond);
+    pQueryInfo->tagCond = pSupporter->tagCond;
 
     pQueryInfo->colList = pSupporter->colList;
     pQueryInfo->exprList = pSupporter->exprList;
@@ -444,7 +443,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     SColumnIndex index = {.tableIndex = 0, .columnIndex = PRIMARYKEY_TIMESTAMP_COL_INDEX};
     const SSchema* s = pTableMetaInfo->pTableMeta->getColumnSchema(0);
 
-    SSqlExpr* pExpr = tscSqlExprGet(pQueryInfo, 0);
+    SSqlExpr* pExpr = pQueryInfo->getExpr(0);
     int16_t funcId = pExpr->functionId;
 
     if ((pExpr->colInfo.colId != PRIMARYKEY_TIMESTAMP_COL_INDEX) ||
@@ -456,7 +455,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
       tscPrintSelectClause(pNew, 0);
       tscFieldInfoUpdateOffset(pQueryInfo);
 
-      pExpr = tscSqlExprGet(pQueryInfo, 0);
+      pExpr = pQueryInfo->getExpr(0);
     }
 
     // set the join condition tag column info, todo extract method
@@ -482,7 +481,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
 
     size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
     tscDebug("%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%d, exprInfo:%" PRIzu ", colList:%" PRIzu ", fieldsInfo:%d, name:%s",
-             pSql, pNew, 0, pTableMetaInfo->vgroupIndex, pQueryInfo->type, taosArrayGetSize(pQueryInfo->exprList),
+             pSql, pNew, 0, pTableMetaInfo->vgroupIndex, pQueryInfo->type, tscSqlExprNumOfExprs(pQueryInfo),
              numOfCols, pQueryInfo->fieldsInfo.numOfOutput, pTableMetaInfo->name);
   }
   
@@ -648,7 +647,7 @@ static void issueTSCompQuery(SSqlObj* pSql, SJoinSupporter* pSupporter, SSqlObj*
   
   // set the tags value for ts_comp function
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
-    SSqlExpr *pExpr = tscSqlExprGet(pQueryInfo, 0);
+    SSqlExpr *pExpr = pQueryInfo->getExpr(0);
     int16_t tagColId = tscGetJoinTagColIdByUid(&pSupporter->tagCond, pTableMetaInfo->pTableMeta->id.uid);
     pExpr->param->i64 = tagColId;
     pExpr->numOfParams = 1;
@@ -1326,7 +1325,7 @@ void tscSetupOutputColumnIndex(SSqlObj* pSql) {
   }
 
   for (int32_t i = 0; i < numOfExprs; ++i) {
-    SSqlExpr* pExpr = tscSqlExprGet(pQueryInfo, i);
+    const SSqlExpr* pExpr = pQueryInfo->getExpr(i);
 
     int32_t tableIndexOfSub = -1;
     for (int32_t j = 0; j < pQueryInfo->numOfTables; ++j) {
@@ -1344,7 +1343,7 @@ void tscSetupOutputColumnIndex(SSqlObj* pSql) {
     
     size_t numOfSubExpr = taosArrayGetSize(pSubQueryInfo->exprList);
     for (int32_t k = 0; k < numOfSubExpr; ++k) {
-      SSqlExpr* pSubExpr = tscSqlExprGet(pSubQueryInfo, k);
+      const SSqlExpr* pSubExpr = pSubQueryInfo->getExpr(k);
       if (pExpr->functionId == pSubExpr->functionId && pExpr->colInfo.colId == pSubExpr->colInfo.colId) {
         pRes->pColumnIndex[i] = (SColumnIndex){.tableIndex = tableIndexOfSub, .columnIndex = k};
         break;
@@ -1445,12 +1444,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
   pSql->res.qhandle = 0x1;
   assert(pSql->res.numOfRows == 0);
 
-  if (pSql->pSubs == NULL) {
-    pSql->pSubs = (SSqlObj**)calloc(pSql->subState.numOfSub, POINTER_BYTES);
-    if (pSql->pSubs == NULL) {
-      return TSDB_CODE_TSC_OUT_OF_MEMORY;
-    }
-  }
+  pSql->pSubs.resize(pSql->subState.numOfSub);
   
   SSqlObj *pNew = createSubqueryObj(pSql, tableIndex, tscJoinQueryCallback, pSupporter, TSDB_SQL_SELECT, NULL);
   if (pNew == NULL) {
@@ -1484,9 +1478,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
   
     // this data needs to be transfer to support struct
     memset(&pNewQueryInfo->fieldsInfo, 0, sizeof(SFieldInfo));
-    if (tscTagCondCopy(&pSupporter->tagCond, &pNewQueryInfo->tagCond) != 0) {
-      return TSDB_CODE_TSC_OUT_OF_MEMORY;
-    }
+    pSupporter->tagCond = pNewQueryInfo->tagCond;
 
     pSupporter->groupInfo = pNewQueryInfo->groupbyExpr;
     memset(&pNewQueryInfo->groupbyExpr, 0, sizeof(SSqlGroupbyExpr));
@@ -1541,7 +1533,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
       tscAddSpecialColumnForSelect(pNewQueryInfo, 0, TSDB_FUNC_TS_COMP, &colIndex, &colSchema, TSDB_COL_NORMAL);
 
       // set the tags value for ts_comp function
-      SSqlExpr *pExpr = tscSqlExprGet(pNewQueryInfo, 0);
+      SSqlExpr *pExpr = pNewQueryInfo->getExpr(0);
 
       if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
         int16_t tagColId = tscGetJoinTagColIdByUid(&pSupporter->tagCond, pTableMetaInfo->pTableMeta->id.uid);
@@ -1610,7 +1602,7 @@ void tscHandleMasterJoinQuery(SSqlObj* pSql) {
     }
 
     SSqlObj* pSub = pSql->pSubs[i];
-    STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSub->cmd, 0, 0);
+    const STableMetaInfo* pTableMetaInfo = pSub->cmd.getMetaInfo(0, 0);
     if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo) && (pTableMetaInfo->vgroupList->numOfVgroups == 0)) {
       hasEmptySub = true;
       break;
@@ -1715,18 +1707,9 @@ int32_t tscHandleMasterSTableQuery(SSqlObj *pSql) {
     return ret;
   }
   
-  pSql->pSubs = (SSqlObj**)calloc(pState->numOfSub, POINTER_BYTES);
+  pSql->pSubs.resize(pState->numOfSub);
 
   tscDebug("%p retrieved query data from %d vnode(s)", pSql, pState->numOfSub);
-
-  if (pSql->pSubs == NULL) {
-    tfree(pSql->pSubs);
-    pRes->code = TSDB_CODE_TSC_OUT_OF_MEMORY;
-    tscLocalReducerEnvDestroy(pMemoryBuf, pDesc, pModel, pFinalModel,pState->numOfSub);
-
-    tscAsyncResultOnError(pSql);
-    return ret;
-  }
 
   pState->numOfRemain = pState->numOfSub;
   pRes->code = TSDB_CODE_SUCCESS;
@@ -1833,7 +1816,7 @@ static int32_t tscReissueSubquery(SRetrieveSupport *trsupport, SSqlObj *pSql, in
   SSqlObj *pParentSql = trsupport->pParentSql;
   int32_t  subqueryIndex = trsupport->subqueryIndex;
 
-  STableMetaInfo* pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo* pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
   SVgroupInfo* pVgroup = &pTableMetaInfo->vgroupList->vgroups[0];
 
   tExtMemBufferClear(trsupport->pExtMemBuffer[subqueryIndex]);
@@ -2035,7 +2018,7 @@ static void tscRetrieveFromDnodeCallBack(void *param, TAOS_RES *tres, int numOfR
   SSubqueryState* pState = &pParentSql->subState;
   assert(pState->numOfRemain <= pState->numOfSub && pState->numOfRemain >= 0);
   
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
   SVgroupInfo  *pVgroup = &pTableMetaInfo->vgroupList->vgroups[0];
 
   if (pParentSql->res.code != TSDB_CODE_SUCCESS) {
@@ -2154,7 +2137,7 @@ void tscRetrieveDataRes(void *param, TAOS_RES *tres, int code) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
   assert(pSql->cmd.numOfClause == 1 && pQueryInfo->numOfTables == 1);
   
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(&pSql->cmd, 0, 0);
+  const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
   SVgroupInfo* pVgroup = &pTableMetaInfo->vgroupList->vgroups[trsupport->subqueryIndex];
 
   // stable query killed or other subquery failed, all query stopped
@@ -2285,7 +2268,7 @@ static void multiVnodeInsertFinalize(void* param, TAOS_RES* tres, int numOfRows)
         // clean up tableMeta in cache
         tscFreeQueryInfo(&pSql->cmd);
         SQueryInfo* pQueryInfo = tscGetQueryInfoDetailSafely(&pSql->cmd, 0);
-        STableMetaInfo* pMasterTableMetaInfo = tscGetTableMetaInfoFromCmd(&pParentObj->cmd, pSql->cmd.clauseIndex, 0);
+        const STableMetaInfo* pMasterTableMetaInfo = pParentObj->cmd.getMetaInfo(pSql->cmd.clauseIndex, 0);
         tscAddTableMetaInfo(pQueryInfo, pMasterTableMetaInfo->name, NULL, NULL, NULL, NULL);
 
         tscDebug("%p, failed sub:%d, %p", pParentObj, i, pSql);
@@ -2353,7 +2336,7 @@ int32_t tscHandleMultivnodeInsert(SSqlObj *pSql) {
   SSqlRes *pRes = &pSql->res;
 
   // it is the failure retry insert
-  if (pSql->pSubs != NULL) {
+  if (!pSql->pSubs.empty()) {
     for(int32_t i = 0; i < pSql->subState.numOfSub; ++i) {
       SSqlObj* pSub = pSql->pSubs[i];
       auto pSup = new SInsertSupporter{};
@@ -2379,10 +2362,7 @@ int32_t tscHandleMultivnodeInsert(SSqlObj *pSql) {
   int32_t numOfSub = 0;
 
   pSql->subState.numOfRemain = pSql->subState.numOfSub;
-  pSql->pSubs = (SSqlObj**)calloc(pSql->subState.numOfSub, POINTER_BYTES);
-  if (pSql->pSubs == NULL) {
-    goto _error;
-  }
+  pSql->pSubs.resize(pSql->subState.numOfSub);
 
   tscDebug("%p submit data to %d vnode(s)", pSql, pSql->subState.numOfSub);
 

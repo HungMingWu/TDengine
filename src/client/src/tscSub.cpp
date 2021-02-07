@@ -260,7 +260,7 @@ static int tscUpdateSubscription(STscObj* pObj, SSub* pSub) {
 
   pSub->lastSyncTime = taosGetTimestampMs();
 
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   if (UTIL_TABLE_IS_NORMAL_TABLE(pTableMetaInfo)) {
     STableMeta * pTableMeta = pTableMetaInfo->pTableMeta;
     SSubscriptionProgress target = {.uid = pTableMeta->id.uid, .key = 0};
@@ -489,7 +489,7 @@ TAOS_RES *taos_consume(TAOS_SUB *tsub) {
   SSqlObj *pSql = pSub->pSql;
   SSqlRes *pRes = &pSql->res;
   SSqlCmd *pCmd = &pSql->cmd;
-  STableMetaInfo *pTableMetaInfo = tscGetTableMetaInfoFromCmd(pCmd, pCmd->clauseIndex, 0);
+  STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
   SQueryInfo *pQueryInfo = tscGetQueryInfoDetail(pCmd, 0);
   if (taosArrayGetSize(pSub->progress) > 0) { // fix crash in single tabel subscription
     pQueryInfo->window.skey = ((SSubscriptionProgress*)taosArrayGet(pSub->progress, 0))->key;

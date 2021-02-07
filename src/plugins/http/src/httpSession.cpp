@@ -48,7 +48,7 @@ void httpCreateSession(HttpContext *pContext, void *taos) {
   }
 
   httpDebug("context:%p, fd:%d, user:%s, create a new session:%p:%p sessionRef:%d", pContext, pContext->fd,
-            pContext->user, pContext->session, pContext->session->taos, pContext->session->refCount);
+            pContext->user, pContext->session, pContext->session->taos, pContext->session->refCount.load());
   pthread_mutex_unlock(&server->serverMutex);
 }
 
@@ -61,9 +61,9 @@ static void httpFetchSessionImp(HttpContext *pContext) {
 
   pContext->session = (HttpSession*)taosCacheAcquireByKey((SCacheObj *)server->sessionCache, sessionId, len);
   if (pContext->session != NULL) {
-    atomic_add_fetch_32(&pContext->session->refCount, 1);
+    pContext->session->refCount++;
     httpDebug("context:%p, fd:%d, user:%s, find an exist session:%p:%p, sessionRef:%d", pContext, pContext->fd,
-              pContext->user, pContext->session, pContext->session->taos, pContext->session->refCount);
+              pContext->user, pContext->session, pContext->session->taos, pContext->session->refCount.load());
   } else {
     httpDebug("context:%p, fd:%d, user:%s, session not found", pContext, pContext->fd, pContext->user);
   }
@@ -85,10 +85,10 @@ void httpGetSession(HttpContext *pContext) {
 void httpReleaseSession(HttpContext *pContext) {
   if (pContext == NULL || pContext->session == NULL) return;
 
-  int32_t refCount = atomic_sub_fetch_32(&pContext->session->refCount, 1);
+  int32_t refCount = --pContext->session->refCount;
   assert(refCount >= 0);
   httpDebug("context:%p, release session:%p:%p, sessionRef:%d", pContext, pContext->session, pContext->session->taos,
-            pContext->session->refCount);
+            pContext->session->refCount.load());
 
   taosCacheRelease((SCacheObj*)tsHttpServer.sessionCache, (void **)&pContext->session, false);
   pContext->session = NULL;
@@ -96,7 +96,7 @@ void httpReleaseSession(HttpContext *pContext) {
 
 static void httpDestroySession(void *data) {
   HttpSession *session = (HttpSession *)data;
-  httpDebug("session:%p:%p, is destroyed, sessionRef:%d", session, session->taos, session->refCount);
+  httpDebug("session:%p:%p, is destroyed, sessionRef:%d", session, session->taos, session->refCount.load());
 
   if (session->taos != NULL) {
     taos_close(session->taos);
