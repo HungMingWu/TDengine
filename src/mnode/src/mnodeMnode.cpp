@@ -34,8 +34,7 @@
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
 
-int64_t          tsMnodeRid = -1;
-static void *    tsMnodeSdb = NULL;
+static std::shared_ptr<SSdbTable> tsMnodeSdb;
 static int32_t   tsMnodeUpdateSize = 0;
 static SRpcEpSet tsMEpForShell;
 static SRpcEpSet tsMEpForPeer;
@@ -153,8 +152,7 @@ int32_t mnodeInitMnodes() {
   desc.fpDestroy = mnodeMnodeActionDestroy;
   desc.fpRestored = mnodeMnodeActionRestored;
 
-  tsMnodeRid = sdbOpenTable(&desc);
-  tsMnodeSdb = sdbGetTableByRid(tsMnodeRid);
+  tsMnodeSdb = sdbOpenTable(desc);
   if (tsMnodeSdb == NULL) {
     mError("failed to init mnodes data");
     return -1;
@@ -169,33 +167,32 @@ int32_t mnodeInitMnodes() {
 }
 
 void mnodeCleanupMnodes() {
-  sdbCloseTable(tsMnodeRid);
-  tsMnodeSdb = NULL;
+  tsMnodeSdb.reset();
   mnodeMnodeDestroyLock();
 }
 
 int32_t mnodeGetMnodesNum() { 
-  return sdbGetNumOfRows(tsMnodeSdb); 
+  return tsMnodeSdb->getNumOfRows();
 }
 
 void *mnodeGetMnode(int32_t mnodeId) {
-  return sdbGetRow(tsMnodeSdb, &mnodeId);
+  return tsMnodeSdb->getRow(&mnodeId);
 }
 
 void mnodeIncMnodeRef(SMnodeObj *pMnode) {
-  sdbIncRef(tsMnodeSdb, pMnode);
+  tsMnodeSdb->incRef(pMnode);
 }
 
 void mnodeDecMnodeRef(SMnodeObj *pMnode) {
-  sdbDecRef(tsMnodeSdb, pMnode);
+  tsMnodeSdb->decRef(pMnode);
 }
 
 void *mnodeGetNextMnode(void *pIter, SMnodeObj **pMnode) { 
-  return sdbFetchRow(tsMnodeSdb, pIter, (void **)pMnode); 
+  return tsMnodeSdb->fetchRow(pIter, (void **)pMnode); 
 }
 
 void mnodeCancelGetNextMnode(void *pIter) {
-  sdbFreeIter(tsMnodeSdb, pIter);
+  tsMnodeSdb->freeIter(pIter);
 }
 
 void mnodeUpdateMnodeEpSet(SMInfos *pMinfos) {
@@ -402,7 +399,7 @@ void mnodeCreateMnode(int32_t dnodeId, char *dnodeEp, bool needConfirm) {
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsMnodeSdb;
+  row.pTable = tsMnodeSdb.get();
   row.pObj = pMnode;
   row.fpRsp = mnodeCreateMnodeCb;
 
@@ -421,7 +418,7 @@ void mnodeCreateMnode(int32_t dnodeId, char *dnodeEp, bool needConfirm) {
     return;
   }
 
-  code = sdbInsertRow(&row);
+  code = row.Insert();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("dnode:%d, failed to create mnode, ep:%s reason:%s", dnodeId, dnodeEp, tstrerror(code));
     tfree(pMnode);
@@ -433,9 +430,9 @@ void mnodeDropMnodeLocal(int32_t dnodeId) {
   if (pMnode != NULL) {
     SSdbRow row;
     row.type = SDB_OPER_LOCAL;
-    row.pTable = tsMnodeSdb;
+    row.pTable = tsMnodeSdb.get();
     row.pObj = pMnode;
-    sdbDeleteRow(&row);
+    row.Delete();
     mnodeDecMnodeRef(pMnode);
   }
 
@@ -451,12 +448,12 @@ int32_t mnodeDropMnode(int32_t dnodeId) {
   
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsMnodeSdb;
+  row.pTable = tsMnodeSdb.get();
   row.pObj = pMnode;
 
-  int32_t code = sdbDeleteRow(&row);
+  int32_t code = row.Delete();
 
-  sdbDecRef(tsMnodeSdb, pMnode);
+  tsMnodeSdb->decRef(pMnode);
 
   mnodeUpdateMnodeEpSet(NULL);
   sdbUpdateAsync();

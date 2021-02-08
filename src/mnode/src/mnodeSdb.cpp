@@ -36,7 +36,6 @@
 #include "mnodeCluster.h"
 #include "mnodeSdb.h"
 
-#define SDB_TABLE_LEN 12
 #define MAX_QUEUED_MSG_NUM 10000
 
 typedef enum {
@@ -57,26 +56,6 @@ const char *actStr[] = {
   "update",
   "invalid"
 };
-
-typedef struct SSdbTable {
-  char      name[SDB_TABLE_LEN];
-  ESdbTable id;
-  ESdbKey   keyType;
-  int32_t   hashSessions;
-  int32_t   maxRowSize;
-  int32_t   refCountPos;
-  int32_t   autoIndex;
-  int64_t   numOfRows;
-  void *    iHandle;
-  int32_t (*fpInsert)(SSdbRow *pRow);
-  int32_t (*fpDelete)(SSdbRow *pRow);
-  int32_t (*fpUpdate)(SSdbRow *pRow);
-  int32_t (*fpDecode)(SSdbRow *pRow);
-  int32_t (*fpEncode)(SSdbRow *pRow);
-  int32_t (*fpDestroy)(SSdbRow *pRow);
-  int32_t (*fpRestored)();
-  std::mutex mutex;
-} SSdbTable;
 
 struct SSdbMgmt {
   ESyncRole  role;
@@ -101,7 +80,6 @@ typedef struct {
   SSdbWorker *worker;
 } SSdbWorkerPool;
 
-int32_t tsSdbRid;
 extern void *     tsMnodeTmr;
 static void *     tsSdbTmr;
 static SSdbMgmt   tsSdbMgmt = {static_cast<ESyncRole>(0)};
@@ -119,18 +97,8 @@ static int32_t sdbInitWorker();
 static void    sdbCleanupWorker();
 static int32_t sdbAllocQueue();
 static void    sdbFreeQueue();
-static int32_t sdbInsertHash(SSdbTable *pTable, SSdbRow *pRow);
-static int32_t sdbUpdateHash(SSdbTable *pTable, SSdbRow *pRow);
-static int32_t sdbDeleteHash(SSdbTable *pTable, SSdbRow *pRow);
-static void    sdbCloseTableObj(void *handle);
 
-int32_t sdbGetId(void *pTable) {
-  return ((SSdbTable *)pTable)->autoIndex;
-}
-
-int64_t sdbGetNumOfRows(void *pTable) {
-  return ((SSdbTable *)pTable)->numOfRows;
-}
+int64_t SSdbTable::getNumOfRows() const { return numOfRows; }
 
 uint64_t sdbGetVersion() {
   return tsSdbMgmt.version;
@@ -144,8 +112,8 @@ bool sdbIsServing() {
   return tsSdbMgmt.status == SDB_STATUS_SERVING; 
 }
 
-static void *sdbGetObjKey(SSdbTable *pTable, void *key) {
-  if (pTable->keyType == SDB_KEY_VAR_STRING) {
+void *SSdbTable::getObjKey(void *key) {
+  if (keyType == SDB_KEY_VAR_STRING) {
     return *(char **)key;
   }
 
@@ -167,11 +135,9 @@ static char *sdbGetKeyStr(SSdbTable *pTable, void *key) {
   }
 }
 
-static char *sdbGetRowStr(SSdbTable *pTable, void *key) {
-  return sdbGetKeyStr(pTable, sdbGetObjKey(pTable, key));
-}
+char *SSdbTable::getRowStr(void *key) { return sdbGetKeyStr(this, getObjKey(key)); }
 
-static void *sdbGetTableFromId(int32_t tableId) {
+static SSdbTable *sdbGetTableFromId(int32_t tableId) {
   return tsSdbMgmt.tableList[tableId];
 }
 
@@ -208,7 +174,7 @@ static void sdbRestoreTables() {
   sdbInfo("vgId:1, sdb start to check for integrity");
 
   for (int32_t tableId = 0; tableId < SDB_TABLE_MAX; ++tableId) {
-    SSdbTable *pTable = static_cast<SSdbTable *>(sdbGetTableFromId(tableId));
+    SSdbTable *pTable = sdbGetTableFromId(tableId);
     if (pTable == NULL) continue;
     if (pTable->fpRestored) {
       (*pTable->fpRestored)();
@@ -294,7 +260,7 @@ static void sdbHandleFailedConfirm(SSdbRow *pRow) {
     row.type = SDB_OPER_GLOBAL;
     row.pTable = pRow->pTable;
     row.pObj = pRow->pObj;
-    sdbDeleteRow(&row);
+    row.Delete();
   }
 }
 
@@ -429,17 +395,6 @@ int32_t sdbUpdateSync(void *pMnodes) {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t sdbInitRef() {
-  tsSdbRid = taosOpenRef(10, sdbCloseTableObj);
-  if (tsSdbRid <= 0) {
-    sdbError("failed to init sdb ref");
-    return -1;
-  }
-  return 0;
-}
-
-void sdbCleanUpRef() { taosCloseRef(tsSdbRid); }
-
 int32_t sdbInit() {
   if (sdbInitWorker() != 0) {
     return -1;
@@ -478,144 +433,134 @@ void sdbCleanUp() {
   }
 }
 
-void sdbIncRef(void *tparam, void *pRow) {
-  if (pRow == NULL || tparam == NULL) return;
+void SSdbTable::incRef(void *pRow) {
+  if (pRow == NULL) return;
 
-  SSdbTable *pTable = static_cast<SSdbTable *>(tparam);
-  int32_t *  pRefCount = (int32_t *)(pRow + pTable->refCountPos);
+  int32_t *  pRefCount = (int32_t *)(pRow + refCountPos);
   int32_t    refCount = atomic_add_fetch_32(pRefCount, 1);
-  sdbTrace("vgId:1, sdb:%s, inc ref to row:%p:%s:%d", pTable->name, pRow, sdbGetRowStr(pTable, pRow), refCount);
+  sdbTrace("vgId:1, sdb:%s, inc ref to row:%p:%s:%d", name, pRow, getRowStr(pRow), refCount);
 }
 
-void sdbDecRef(void *tparam, void *pRow) {
-  if (pRow == NULL || tparam == NULL) return;
+void SSdbTable::decRef(void *pRow) {
+  if (pRow == NULL) return;
 
-  SSdbTable *pTable = static_cast<SSdbTable *>(tparam);
-  int32_t *  pRefCount = (int32_t *)(pRow + pTable->refCountPos);
+  int32_t *  pRefCount = (int32_t *)(pRow + refCountPos);
   int32_t    refCount = atomic_sub_fetch_32(pRefCount, 1);
-  sdbTrace("vgId:1, sdb:%s, dec ref to row:%p:%s:%d", pTable->name, pRow, sdbGetRowStr(pTable, pRow), refCount);
+  sdbTrace("vgId:1, sdb:%s, dec ref to row:%p:%s:%d", name, pRow, getRowStr(pRow), refCount);
 
-  int32_t *updateEnd = static_cast<int32_t *>(pRow) + pTable->refCountPos - 4;
+  int32_t *updateEnd = static_cast<int32_t *>(pRow) + refCountPos - 4;
   if (refCount <= 0 && *updateEnd) {
-    sdbTrace("vgId:1, sdb:%s, row:%p:%s:%d destroyed", pTable->name, pRow, sdbGetRowStr(pTable, pRow), refCount);
+    sdbTrace("vgId:1, sdb:%s, row:%p:%s:%d destroyed", name, pRow, getRowStr(pRow), refCount);
     SSdbRow row = {.pObj = pRow};
-    (*pTable->fpDestroy)(&row);
+    (*fpDestroy)(&row);
   }
 }
 
-static void *sdbGetRowMeta(SSdbTable *pTable, void *key) {
-  if (pTable == NULL) return NULL;
-
+void *SSdbTable::getRowMeta(void *key) {
   int32_t keySize = sizeof(int32_t);
-  if (pTable->keyType == SDB_KEY_STRING || pTable->keyType == SDB_KEY_VAR_STRING) {
+  if (keyType == SDB_KEY_STRING || keyType == SDB_KEY_VAR_STRING) {
     keySize = strlen((char *)key);
   }
 
-  void **ppRow = (void **)taosHashGet(static_cast<SHashObj *>(pTable->iHandle), key, keySize);
+  void **ppRow = (void **)taosHashGet(static_cast<SHashObj *>(iHandle), key, keySize);
   if (ppRow != NULL) return *ppRow;
 
   return NULL;
 }
 
-static void *sdbGetRowMetaFromObj(SSdbTable *pTable, void *key) {
-  return sdbGetRowMeta(pTable, sdbGetObjKey(pTable, key));
-}
+void *SSdbTable::getRowMetaFromObj(void *key) { return getRowMeta(getObjKey(key)); }
 
-void *sdbGetRow(void *tparam, void *key) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(tparam);
-
-  std::lock_guard<std::mutex> lock(pTable->mutex);
-  void *pRow = sdbGetRowMeta(pTable, key);
-  if (pRow) sdbIncRef(pTable, pRow);
+void *SSdbTable::getRow(void *key) {
+  std::lock_guard<std::mutex> lock(mutex);
+  void *pRow = getRowMeta(key);
+  if (pRow) incRef(pRow);
 
   return pRow;
 }
 
-static void *sdbGetRowFromObj(SSdbTable *pTable, void *key) {
-  return sdbGetRow(pTable, sdbGetObjKey(pTable, key));
-}
+void *SSdbTable::getRowFromObj(void *key) { return getRow(getObjKey(key)); }
 
-static int32_t sdbInsertHash(SSdbTable *pTable, SSdbRow *pRow) {
-  void *  key = sdbGetObjKey(pTable, pRow->pObj);
+int32_t SSdbTable::insertHash(SSdbRow *pRow) {
+  void *  key = getObjKey(pRow->pObj);
   int32_t keySize = sizeof(int32_t);
 
-  if (pTable->keyType == SDB_KEY_STRING || pTable->keyType == SDB_KEY_VAR_STRING) {
+  if (keyType == SDB_KEY_STRING || keyType == SDB_KEY_VAR_STRING) {
     keySize = strlen((char *)key);
   }
 
-  pTable->mutex.lock();
-  taosHashPut(static_cast<SHashObj *>(pTable->iHandle), key, keySize, &pRow->pObj, sizeof(int64_t));
-  pTable->mutex.unlock();
+  mutex.lock();
+  taosHashPut(static_cast<SHashObj *>(iHandle), key, keySize, &pRow->pObj, sizeof(int64_t));
+  mutex.unlock();
 
-  sdbIncRef(pTable, pRow->pObj);
-  atomic_add_fetch_32(&pTable->numOfRows, 1);
+  incRef(pRow->pObj);
+  atomic_add_fetch_32(&numOfRows, 1);
 
-  if (pTable->keyType == SDB_KEY_AUTO) {
-    pTable->autoIndex = MAX(pTable->autoIndex, *((uint32_t *)pRow->pObj));
+  if (keyType == SDB_KEY_AUTO) {
+    autoIndex = MAX(autoIndex, *((uint32_t *)pRow->pObj));
   } else {
-    atomic_add_fetch_32(&pTable->autoIndex, 1);
+    atomic_add_fetch_32(&autoIndex, 1);
   }
 
-  sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rowSize:%d rows:%" PRId64 ", msg:%p", pTable->name,
-           sdbGetRowStr(pTable, pRow->pObj), pRow->rowSize, pTable->numOfRows, pRow->pMsg);
+  sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rowSize:%d rows:%" PRId64 ", msg:%p", name,
+           getRowStr(pRow->pObj), pRow->rowSize, numOfRows, pRow->pMsg);
 
-  int32_t code = (*pTable->fpInsert)(pRow);
+  int32_t code = (*fpInsert)(pRow);
   if (code != TSDB_CODE_SUCCESS) {
-    sdbError("vgId:1, sdb:%s, failed to insert key:%s to hash, remove it", pTable->name,
-             sdbGetRowStr(pTable, pRow->pObj));
-    sdbDeleteHash(pTable, pRow);
+    sdbError("vgId:1, sdb:%s, failed to insert key:%s to hash, remove it", name,
+             getRowStr(pRow->pObj));
+    deleteHash(pRow);
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t sdbDeleteHash(SSdbTable *pTable, SSdbRow *pRow) {
-  int32_t *updateEnd = static_cast<int32_t *>(pRow->pObj) + pTable->refCountPos - 4;
+int32_t SSdbTable::deleteHash(SSdbRow *pRow) {
+  int32_t *updateEnd = static_cast<int32_t *>(pRow->pObj) + refCountPos - 4;
   bool set = atomic_val_compare_exchange_32(updateEnd, 0, 1) == 0;
   if (!set) {
-    sdbError("vgId:1, sdb:%s, failed to delete key:%s from hash, for it already removed", pTable->name,
-             sdbGetRowStr(pTable, pRow->pObj));
+    sdbError("vgId:1, sdb:%s, failed to delete key:%s from hash, for it already removed", name,
+             getRowStr(pRow->pObj));
     return TSDB_CODE_MND_SDB_OBJ_NOT_THERE;
   }
 
-  (*pTable->fpDelete)(pRow);
+  (*fpDelete)(pRow);
   
-  void *  key = sdbGetObjKey(pTable, pRow->pObj);
+  void *  key = getObjKey(pRow->pObj);
   int32_t keySize = sizeof(int32_t);
-  if (pTable->keyType == SDB_KEY_STRING || pTable->keyType == SDB_KEY_VAR_STRING) {
+  if (keyType == SDB_KEY_STRING || keyType == SDB_KEY_VAR_STRING) {
     keySize = strlen((char *)key);
   }
 
-  pTable->mutex.lock();
-  taosHashRemove(static_cast<SHashObj *>(pTable->iHandle), key, keySize);
-  pTable->mutex.unlock();
+  mutex.lock();
+  taosHashRemove(static_cast<SHashObj *>(iHandle), key, keySize);
+  mutex.unlock();
 
-  atomic_sub_fetch_32(&pTable->numOfRows, 1);
+  atomic_sub_fetch_32(&numOfRows, 1);
 
-  sdbTrace("vgId:1, sdb:%s, delete key:%s from hash, numOfRows:%" PRId64 ", msg:%p", pTable->name,
-           sdbGetRowStr(pTable, pRow->pObj), pTable->numOfRows, pRow->pMsg);
+  sdbTrace("vgId:1, sdb:%s, delete key:%s from hash, numOfRows:%" PRId64 ", msg:%p", name,
+           getRowStr(pRow->pObj), numOfRows, pRow->pMsg);
 
-  sdbDecRef(pTable, pRow->pObj);
+  decRef(pRow->pObj);
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t sdbUpdateHash(SSdbTable *pTable, SSdbRow *pRow) {
-  sdbTrace("vgId:1, sdb:%s, update key:%s in hash, numOfRows:%" PRId64 ", msg:%p", pTable->name,
-           sdbGetRowStr(pTable, pRow->pObj), pTable->numOfRows, pRow->pMsg);
+int32_t SSdbTable::updateHash(SSdbRow *pRow) {
+  sdbTrace("vgId:1, sdb:%s, update key:%s in hash, numOfRows:%" PRId64 ", msg:%p", name,
+           getRowStr(pRow->pObj), numOfRows, pRow->pMsg);
 
-  (*pTable->fpUpdate)(pRow);
+  (*fpUpdate)(pRow);
   return TSDB_CODE_SUCCESS;
 }
 
 static int32_t sdbPerformInsertAction(SWalHead *pHead, SSdbTable *pTable) {
   SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont, .pTable = pTable};
   (*pTable->fpDecode)(&row);
-  return sdbInsertHash(pTable, &row);
+  return pTable->insertHash(&row);
 }
 
 static int32_t sdbPerformDeleteAction(SWalHead *pHead, SSdbTable *pTable) {
-  void *pObj = sdbGetRowMeta(pTable, pHead->cont);
+  void *pObj = pTable->getRowMeta(pHead->cont);
   if (pObj == NULL) {
     sdbDebug("vgId:1, sdb:%s, object:%s not exist in hash, ignore delete action", pTable->name,
              sdbGetKeyStr(pTable, pHead->cont));
@@ -624,11 +569,11 @@ static int32_t sdbPerformDeleteAction(SWalHead *pHead, SSdbTable *pTable) {
   SSdbRow row;
   row.pTable = pTable;
   row.pObj = pObj;
-  return sdbDeleteHash(pTable, &row);
+  return pTable->deleteHash(&row);
 }
 
 static int32_t sdbPerformUpdateAction(SWalHead *pHead, SSdbTable *pTable) {
-  void *pObj = sdbGetRowMeta(pTable, pHead->cont);
+  void *pObj = pTable->getRowMeta(pHead->cont);
   if (pObj == NULL) {
     sdbDebug("vgId:1, sdb:%s, object:%s not exist in hash, ignore update action", pTable->name,
              sdbGetKeyStr(pTable, pHead->cont));
@@ -636,7 +581,7 @@ static int32_t sdbPerformUpdateAction(SWalHead *pHead, SSdbTable *pTable) {
   }
   SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont, .pTable = pTable};
   (*pTable->fpDecode)(&row);
-  return sdbUpdateHash(pTable, &row);
+  return pTable->updateHash(&row);
 }
 
 static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *unused) {
@@ -645,7 +590,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
   int32_t tableId = pHead->msgType / 10;
   int32_t action = pHead->msgType % 10;
 
-  SSdbTable *pTable = static_cast<SSdbTable *>(sdbGetTableFromId(tableId));
+  SSdbTable *pTable = sdbGetTableFromId(tableId);
   assert(pTable != NULL);
 
   if (!mnodeIsRunning() && tsSdbMgmt.version % 100000 == 0) {
@@ -728,40 +673,39 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
   }
 }
 
-int32_t sdbInsertRow(SSdbRow *pRow) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(pRow->pTable);
+int32_t SSdbRow::Insert() {
   if (pTable == NULL) return TSDB_CODE_MND_SDB_INVALID_TABLE_TYPE;
 
-  if (sdbGetRowFromObj(pTable, pRow->pObj)) {
-    sdbError("vgId:1, sdb:%s, failed to insert:%s since it exist", pTable->name, sdbGetRowStr(pTable, pRow->pObj));
-    sdbDecRef(pTable, pRow->pObj);
+  if (pTable->getRowFromObj(pObj)) {
+    sdbError("vgId:1, sdb:%s, failed to insert:%s since it exist", pTable->name, pTable->getRowStr(pObj));
+    pTable->decRef(pObj);
     return TSDB_CODE_MND_SDB_OBJ_ALREADY_THERE;
   }
 
   if (pTable->keyType == SDB_KEY_AUTO) {
-    *((uint32_t *)pRow->pObj) = atomic_add_fetch_32(&pTable->autoIndex, 1);
+    *((uint32_t *)pObj) = atomic_add_fetch_32(&pTable->autoIndex, 1);
 
     // let vgId increase from 2
     if (pTable->autoIndex == 1 && pTable->id == SDB_TABLE_VGROUP) {
-      *((uint32_t *)pRow->pObj) = atomic_add_fetch_32(&pTable->autoIndex, 1);
+      *((uint32_t *)pObj) = atomic_add_fetch_32(&pTable->autoIndex, 1);
     }
   }
 
-  int32_t code = sdbInsertHash(pTable, pRow);
+  int32_t code = pTable->insertHash(this);
   if (code != TSDB_CODE_SUCCESS) {
-    sdbError("vgId:1, sdb:%s, failed to insert:%s into hash", pTable->name, sdbGetRowStr(pTable, pRow->pObj));
+    sdbError("vgId:1, sdb:%s, failed to insert:%s into hash", pTable->name, pTable->getRowStr(pObj));
     return code;
   }
 
   // just insert data into memory
-  if (pRow->type != SDB_OPER_GLOBAL) {
+  if (type != SDB_OPER_GLOBAL) {
     return TSDB_CODE_SUCCESS;
   }
 
-  if (pRow->fpReq) {
-    return (*pRow->fpReq)(pRow->pMsg);
+  if (fpReq) {
+    return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(pRow, SDB_ACTION_INSERT);
+    return sdbWriteRowToQueue(this, SDB_ACTION_INSERT);
   }
 }
 
@@ -773,157 +717,137 @@ bool sdbCheckRowDeleted(void *tparam, void *pRow) {
   return atomic_val_compare_exchange_32(updateEnd, 1, 1) == 1;
 }
 
-int32_t sdbDeleteRow(SSdbRow *pRow) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(pRow->pTable);
+int32_t SSdbRow::Delete() {
   if (pTable == NULL) return TSDB_CODE_MND_SDB_INVALID_TABLE_TYPE;
 
-  void *pObj = sdbGetRowMetaFromObj(pTable, pRow->pObj);
-  if (pObj == NULL) {
+  void *pObj1 = pTable->getRowMetaFromObj(pObj);
+  if (pObj1 == NULL) {
     sdbDebug("vgId:1, sdb:%s, record is not there, delete failed", pTable->name);
     return TSDB_CODE_MND_SDB_OBJ_NOT_THERE;
   }
 
-  int32_t code = sdbDeleteHash(pTable, pRow);
+  int32_t code = pTable->deleteHash(this);
   if (code != TSDB_CODE_SUCCESS) {
     sdbError("vgId:1, sdb:%s, failed to delete from hash", pTable->name);
     return code;
   }
 
   // just delete data from memory
-  if (pRow->type != SDB_OPER_GLOBAL) {
+  if (type != SDB_OPER_GLOBAL) {
     return TSDB_CODE_SUCCESS;
   }
 
-  if (pRow->fpReq) {
-    return (*pRow->fpReq)(pRow->pMsg);
+  if (fpReq) {
+    return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(pRow, SDB_ACTION_DELETE);
+    return sdbWriteRowToQueue(this, SDB_ACTION_DELETE);
   }
 }
 
-int32_t sdbUpdateRow(SSdbRow *pRow) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(pRow->pTable);
+int32_t SSdbRow::Update() {
   if (pTable == NULL) return TSDB_CODE_MND_SDB_INVALID_TABLE_TYPE;
 
-  void *pObj = sdbGetRowMetaFromObj(pTable, pRow->pObj);
-  if (pObj == NULL) {
+  void *pObj1 = pTable->getRowMetaFromObj(pObj);
+  if (pObj1 == NULL) {
     sdbDebug("vgId:1, sdb:%s, record is not there, update failed", pTable->name);
     return TSDB_CODE_MND_SDB_OBJ_NOT_THERE;
   }
 
-  int32_t code = sdbUpdateHash(pTable, pRow);
+  int32_t code = pTable->updateHash(this);
   if (code != TSDB_CODE_SUCCESS) {
     sdbError("vgId:1, sdb:%s, failed to update hash", pTable->name);
     return code;
   }
 
   // just update data in memory
-  if (pRow->type != SDB_OPER_GLOBAL) {
+  if (type != SDB_OPER_GLOBAL) {
     return TSDB_CODE_SUCCESS;
   }
 
-  if (pRow->fpReq) {
-    return (*pRow->fpReq)(pRow->pMsg);
+  if (fpReq) {
+    return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(pRow, SDB_ACTION_UPDATE);
+    return sdbWriteRowToQueue(this, SDB_ACTION_UPDATE);
   }
 }
 
-void *sdbFetchRow(void *tparam, void *pIter, void **ppRow) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(tparam);
+void *SSdbTable::fetchRow(void *pIter, void **ppRow) {
   *ppRow = NULL;
-  if (pTable == NULL) return NULL;
-
-  pIter = taosHashIterate(static_cast<SHashObj *>(pTable->iHandle), pIter);
+  pIter = taosHashIterate(static_cast<SHashObj *>(iHandle), pIter);
   if (pIter == NULL) return NULL;
 
   void **ppMetaRow = static_cast<void **>(pIter);
   if (ppMetaRow == NULL) {
-    taosHashCancelIterate(static_cast<SHashObj *>(pTable->iHandle), pIter);
+    taosHashCancelIterate(static_cast<SHashObj *>(iHandle), pIter);
     return NULL;
   }
 
   *ppRow = *ppMetaRow;
-  sdbIncRef(pTable, *ppMetaRow);
+  incRef(*ppMetaRow);
 
   return pIter;
 }
 
-void sdbFreeIter(void *tparam, void *pIter) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(tparam);
-  if (pTable == NULL || pIter == NULL) return;
+void SSdbTable::freeIter(void *pIter) {
+  if (pIter == NULL) return;
 
-  taosHashCancelIterate(static_cast<SHashObj *>(pTable->iHandle), pIter);
+  taosHashCancelIterate(static_cast<SHashObj *>(iHandle), pIter);
 }
 
-int64_t sdbOpenTable(SSdbTableDesc *pDesc) {
-  auto pTable = new(std::nothrow) SSdbTable;
-  
-  if (pTable == NULL) return -1;
-
-  tstrncpy(pTable->name, pDesc->name, SDB_TABLE_LEN);
-  pTable->keyType      = pDesc->keyType;
-  pTable->id           = pDesc->id;
-  pTable->hashSessions = pDesc->hashSessions;
-  pTable->maxRowSize   = pDesc->maxRowSize;
-  pTable->refCountPos  = pDesc->refCountPos;
-  pTable->fpInsert     = pDesc->fpInsert;
-  pTable->fpDelete     = pDesc->fpDelete;
-  pTable->fpUpdate     = pDesc->fpUpdate;
-  pTable->fpEncode     = pDesc->fpEncode;
-  pTable->fpDecode     = pDesc->fpDecode;
-  pTable->fpDestroy    = pDesc->fpDestroy;
-  pTable->fpRestored   = pDesc->fpRestored;
+SSdbTable::SSdbTable(const SSdbTableDesc& desc) 
+{
+  tstrncpy(name, desc.name, SDB_TABLE_LEN);
+  keyType = desc.keyType;
+  id = desc.id;
+  hashSessions = desc.hashSessions;
+  maxRowSize = desc.maxRowSize;
+  refCountPos = desc.refCountPos;
+  fpInsert = desc.fpInsert;
+  fpDelete = desc.fpDelete;
+  fpUpdate = desc.fpUpdate;
+  fpEncode = desc.fpEncode;
+  fpDecode = desc.fpDecode;
+  fpDestroy = desc.fpDestroy;
+  fpRestored = desc.fpRestored;
 
   _hash_fn_t hashFp = taosGetDefaultHashFunction(TSDB_DATA_TYPE_INT);
-  if (pTable->keyType == SDB_KEY_STRING || pTable->keyType == SDB_KEY_VAR_STRING) {
+  if (keyType == SDB_KEY_STRING || keyType == SDB_KEY_VAR_STRING) {
     hashFp = taosGetDefaultHashFunction(TSDB_DATA_TYPE_BINARY);
   }
-  pTable->iHandle = taosHashInit(pTable->hashSessions, hashFp, true, HASH_ENTRY_LOCK);
+  iHandle = taosHashInit(hashSessions, hashFp, true, HASH_ENTRY_LOCK);
+}
+
+std::shared_ptr<SSdbTable> sdbOpenTable(const SSdbTableDesc &desc) {
+  auto pTable = std::make_shared<SSdbTable>(desc);
 
   tsSdbMgmt.numOfTables++;
-  tsSdbMgmt.tableList[pTable->id] = pTable;
+  tsSdbMgmt.tableList[pTable->id] = pTable.get();
 
-  return taosAddRef(tsSdbRid, pTable);
+  return pTable;
 }
 
-void sdbCloseTable(int64_t rid) {
-  taosRemoveRef(tsSdbRid, rid);
-}
-
-void *sdbGetTableByRid(int64_t rid) {
-  void *handle = taosAcquireRef(tsSdbRid, rid);
-  taosReleaseRef(tsSdbRid, rid);
-  return handle;
-}
-
-static void sdbCloseTableObj(void *handle) {
-  SSdbTable *pTable = (SSdbTable *)handle;
-  if (pTable == NULL) return;
-  
+SSdbTable::~SSdbTable() { 
   tsSdbMgmt.numOfTables--;
-  tsSdbMgmt.tableList[pTable->id] = NULL;
+  tsSdbMgmt.tableList[id] = nullptr;
 
-  void *pIter = taosHashIterate(static_cast<SHashObj *>(pTable->iHandle), NULL);
+  void *pIter = taosHashIterate(static_cast<SHashObj *>(iHandle), NULL);
   while (pIter) {
     void **ppRow = static_cast<void **>(pIter);
-    pIter = taosHashIterate(static_cast<SHashObj *>(pTable->iHandle), pIter);
+    pIter = taosHashIterate(static_cast<SHashObj *>(iHandle), pIter);
     if (ppRow == NULL) continue;
 
     SSdbRow row = {
       .pObj = *ppRow,
-      .pTable = pTable,
+      .pTable = this,
     };
 
-    (*pTable->fpDestroy)(&row);
+    (*fpDestroy)(&row);
   }
 
-  taosHashCancelIterate(static_cast<SHashObj *>(pTable->iHandle), pIter);
-  taosHashCleanup(static_cast<SHashObj *>(pTable->iHandle));
-  pTable->iHandle = NULL;
+  taosHashCancelIterate(static_cast<SHashObj *>(iHandle), pIter);
+  taosHashCleanup(static_cast<SHashObj *>(iHandle));
 
-  sdbDebug("vgId:1, sdb:%s, is closed, numOfTables:%d", pTable->name, tsSdbMgmt.numOfTables);
-  delete pTable;
+  sdbDebug("vgId:1, sdb:%s, is closed, numOfTables:%d", name, tsSdbMgmt.numOfTables);
 }
 
 static int32_t sdbInitWorker() {
@@ -1027,7 +951,7 @@ static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
     taosMsleep(1);
   }
 
-  sdbIncRef(pRow->pTable, pRow->pObj);
+  pRow->pTable->incRef(pRow->pObj);
 
   sdbTrace("vgId:1, msg:%p qtype:%s write into to sdb queue, queued:%d", pRow->pMsg, qtypeStr[qtype], queued);
   tsSdbWQueue->writeQitem(qtype, pRow);
@@ -1039,7 +963,7 @@ static void sdbFreeFromQueue(SSdbRow *pRow) {
   int32_t queued = atomic_sub_fetch_32(&tsSdbMgmt.queuedMsg, 1);
   sdbTrace("vgId:1, msg:%p free from sdb queue, queued:%d", pRow->pMsg, queued);
 
-  sdbDecRef(pRow->pTable, pRow->pObj);
+  pRow->pTable->decRef(pRow->pObj);
   taosFreeQitem(pRow);
 }
 

@@ -130,7 +130,7 @@ int32_t main(int32_t argc, char *argv[]) {
     syslog(LOG_ERR, "Error initialize TDengine system");
     dInfo("Failed to start TDengine, please check the log at:%s", tsLogDir);
     closelog();
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
   syslog(LOG_INFO, "Started TDengine service successfully.");

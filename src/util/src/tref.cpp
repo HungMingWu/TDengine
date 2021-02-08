@@ -149,14 +149,14 @@ int64_t taosAddRef(int rsetId, void *p)
   }
 
   pSet = tsRefSetList + rsetId;
-  taosIncRsetCount(pSet);
+
   if (pSet->state != TSDB_REF_STATE_ACTIVE) {
-    taosDecRsetCount(pSet);
     uTrace("rsetId:%d p:%p failed to add, not active", rsetId, p);
     terrno = TSDB_CODE_REF_ID_REMOVED;
     return -1;
   }
-  
+
+  taosIncRsetCount(pSet);
   pNode = (SRefNode*)calloc(sizeof(SRefNode), 1);
   if (pNode == NULL) {
     terrno = TSDB_CODE_REF_NO_MEMORY;
@@ -209,14 +209,13 @@ void *taosAcquireRef(int rsetId, int64_t rid)
   }
 
   pSet = tsRefSetList + rsetId;
-  taosIncRsetCount(pSet);
   if (pSet->state != TSDB_REF_STATE_ACTIVE) {
     uTrace("rsetId:%d rid:%" PRId64 " failed to acquire, not active", rsetId, rid);
-    taosDecRsetCount(pSet);
     terrno = TSDB_CODE_REF_ID_REMOVED;
     return NULL;
   }
-  
+
+  taosIncRsetCount(pSet);
   hash = rid % pSet->max;
   taosLockList(pSet->lockedBy+hash);
 

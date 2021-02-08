@@ -18,8 +18,6 @@
 
 #include "dnodeInt.h"
 
-int32_t dnodeStepInit(SStep *pSteps, int32_t stepSize);
-void    dnodeStepCleanup(SStep *pSteps, int32_t stepSize);
 void    dnodeReportStep(char *name, char *desc, int8_t finished);
 void    dnodeSendStartupStep(SRpcMsg *pMsg);
 

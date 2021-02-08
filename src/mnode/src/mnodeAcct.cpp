@@ -26,8 +26,8 @@
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
 
-int64_t tsAcctRid = -1;
-void *  tsAcctSdb = NULL;
+std::shared_ptr<SSdbTable> tsAcctSdb;
+
 static int32_t tsAcctUpdateSize;
 static int32_t mnodeCreateRootAcct();
 
@@ -78,7 +78,7 @@ static int32_t mnodeAcctActionDecode(SSdbRow *pRow) {
 }
 
 static int32_t mnodeAcctActionRestored() {
-  int32_t numOfRows = sdbGetNumOfRows(tsAcctSdb);
+  int32_t numOfRows = tsAcctSdb->getNumOfRows();
   if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
     mInfo("dnode first deploy, create root acct");
     int32_t code = mnodeCreateRootAcct();
@@ -111,8 +111,7 @@ int32_t mnodeInitAccts() {
   desc.fpDestroy = mnodeAcctActionDestroy;
   desc.fpRestored = mnodeAcctActionRestored;
 
-  tsAcctRid = sdbOpenTable(&desc);
-  tsAcctSdb = sdbGetTableByRid(tsAcctRid);
+  tsAcctSdb = sdbOpenTable(desc);
   if (tsAcctSdb == NULL) {
     mError("table:%s, failed to create hash", desc.name);
     return -1;
@@ -124,8 +123,7 @@ int32_t mnodeInitAccts() {
 
 void mnodeCleanupAccts() {
   acctCleanUp();
-  sdbCloseTable(tsAcctRid);
-  tsAcctSdb = NULL;
+  tsAcctSdb.reset();
 }
 
 void mnodeGetStatOfAllAcct(SAcctInfo* pAcctInfo) {
@@ -158,23 +156,23 @@ void mnodeGetStatOfAllAcct(SAcctInfo* pAcctInfo) {
 }
 
 void *mnodeGetAcct(char *name) {
-  return sdbGetRow(tsAcctSdb, name);
+  return tsAcctSdb->getRow(name);
 }
 
 void *mnodeGetNextAcct(void *pIter, SAcctObj **pAcct) {
-  return sdbFetchRow(tsAcctSdb, pIter, (void **)pAcct); 
+  return tsAcctSdb->fetchRow(pIter, (void **)pAcct); 
 }
 
 void mnodeCancelGetNextAcct(void *pIter) {
-  sdbFreeIter(tsAcctSdb, pIter);
+  tsAcctSdb->freeIter(pIter);
 }
 
 void mnodeIncAcctRef(SAcctObj *pAcct) {
-  sdbIncRef(tsAcctSdb, pAcct);
+  tsAcctSdb->incRef(pAcct);
 }
 
 void mnodeDecAcctRef(SAcctObj *pAcct) {
-  sdbDecRef(tsAcctSdb, pAcct);
+  tsAcctSdb->decRef(pAcct);
 }
 
 void mnodeAddDbToAcct(SAcctObj *pAcct, SDbObj *pDb) {
@@ -202,7 +200,7 @@ void mnodeDropUserFromAcct(SAcctObj *pAcct, SUserObj *pUser) {
 }
 
 static int32_t mnodeCreateRootAcct() {
-  int32_t numOfAccts = sdbGetNumOfRows(tsAcctSdb);
+  int32_t numOfAccts = tsAcctSdb->getNumOfRows();
   if (numOfAccts != 0) return TSDB_CODE_SUCCESS;
 
   SAcctObj *pAcct = static_cast<SAcctObj *>(malloc(sizeof(SAcctObj)));
@@ -220,15 +218,15 @@ static int32_t mnodeCreateRootAcct() {
   pAcct->cfg.maxInbound = 0;
   pAcct->cfg.maxOutbound = 0;
   pAcct->cfg.accessState = TSDB_VN_ALL_ACCCESS;
-  pAcct->acctId = sdbGetId(tsAcctSdb);
+  pAcct->acctId = tsAcctSdb->Id();
   pAcct->createdTime = taosGetTimestampMs();
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsAcctSdb;
+  row.pTable = tsAcctSdb.get();
   row.pObj = pAcct;
 
-  return sdbInsertRow(&row);
+  return row.Insert();
 }
 
 #ifndef _ACCT

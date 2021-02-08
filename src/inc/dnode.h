@@ -16,6 +16,7 @@
 #ifndef TDENGINE_DNODE_H
 #define TDENGINE_DNODE_H
 
+#include <initializer_list>
 #include <memory>
 #include "trpc.h"
 #include "taosmsg.h"
@@ -63,14 +64,14 @@ void    dnodeDelayReprocessMWriteMsg(void *pMsg);
 
 void    dnodeSendStatusMsgToMnode();
 
-typedef struct {
+struct SStep {
   char *name;
   int32_t (*initFp)();
   void (*cleanupFp)();
-} SStep;
+};
 
-int32_t dnodeStepInit(SStep *pSteps, int32_t stepSize);
-void    dnodeStepCleanup(SStep *pSteps, int32_t stepSize);
+int32_t dnodeStepInit(const std::initializer_list<SStep> &steps);
+void    dnodeStepCleanup(const std::initializer_list<SStep> &steps);
 void    dnodeReportStep(char *name, char *desc, int8_t finished);
 
 #endif

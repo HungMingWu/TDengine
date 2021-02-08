@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <initializer_list>
 #include "os.h"
 #include "dnode.h"
 #include "vnodeStatus.h"
@@ -28,7 +29,7 @@ static int32_t vnodeInitHash(void);
 static void    vnodeCleanupHash(void);
 static void    vnodeIncRef(void *ptNode);
 
-static SStep tsVnodeSteps[] = {
+static std::initializer_list<SStep> tsVnodeSteps = {
   {"vnode-worker", vnodeInitMWorker,    vnodeCleanupMWorker},
   {"vnode-write",  vnodeInitWrite,      vnodeCleanupWrite},
   {"vnode-read",   vnodeInitRead,       vnodeCleanupRead},
@@ -37,13 +38,11 @@ static SStep tsVnodeSteps[] = {
 };
 
 int32_t vnodeInitMgmt() {
-  int32_t stepSize = sizeof(tsVnodeSteps) / sizeof(SStep);
-  return dnodeStepInit(tsVnodeSteps, stepSize);
+  return dnodeStepInit(tsVnodeSteps);
 }
 
 void vnodeCleanupMgmt() {
-  int32_t stepSize = sizeof(tsVnodeSteps) / sizeof(SStep);
-  dnodeStepCleanup(tsVnodeSteps, stepSize);
+  dnodeStepCleanup(tsVnodeSteps);
 }
 
 static int32_t vnodeInitHash() {

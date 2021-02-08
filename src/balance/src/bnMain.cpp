@@ -29,7 +29,6 @@
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
 
-extern int64_t tsDnodeRid;
 extern int64_t tsSdbRid;
 static std::mutex tsBnMgmt;
 static void  bnMonitorDnodeModule();
@@ -554,9 +553,6 @@ void bnCheckStatus() {
   void *     pIter = NULL;
   SDnodeObj *pDnode = NULL;
 
-  void *dnodeSdb = taosAcquireRef(tsSdbRid, tsDnodeRid);
-  if (dnodeSdb == NULL) return;
-
   while (1) {
     pIter = mnodeGetNextDnode(pIter, &pDnode);
     if (pDnode == NULL) break;
@@ -572,8 +568,6 @@ void bnCheckStatus() {
     }
     mnodeDecDnodeRef(pDnode);
   }
-
-  taosReleaseRef(tsSdbRid, tsDnodeRid);
 }
 
 void bnCheckModules() {

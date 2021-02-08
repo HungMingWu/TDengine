@@ -41,37 +41,31 @@ void dnodeSendStartupStep(SRpcMsg *pMsg) {
   rpcFreeCont(pMsg->pCont);
 }
 
-void taosStepCleanupImp(SStep *pSteps, int32_t stepId) {
-  for (int32_t step = stepId; step >= 0; step--) {
-    SStep *pStep = pSteps + step;
-    dDebug("step:%s will cleanup", pStep->name);
-    if (pStep->cleanupFp != NULL) {
-      (*pStep->cleanupFp)();
-    }
-  }
-}
+int32_t dnodeStepInit(const std::initializer_list<SStep> &steps) {
+  for (const auto &step : steps) {
+    if (step.initFp == NULL) continue;
 
-int32_t dnodeStepInit(SStep *pSteps, int32_t stepSize) {
-  for (int32_t step = 0; step < stepSize; step++) {
-    SStep *pStep = pSteps + step;
-    if (pStep->initFp == NULL) continue;
+    dnodeReportStep(step.name, "Start initialization", 0);
 
-    dnodeReportStep(pStep->name, "Start initialization", 0);
-
-    int32_t code = (*pStep->initFp)();
+    int32_t code = (*step.initFp)();
     if (code != 0) {
-      dDebug("step:%s will cleanup", pStep->name);
-      taosStepCleanupImp(pSteps, step);
+      dDebug("step:%s will cleanup", step.name);
+      dnodeStepCleanup(steps);
       return code;
     }
-    dInfo("step:%s is initialized", pStep->name);
+    dInfo("step:%s is initialized", step.name);
 
-    dnodeReportStep(pStep->name, "Initialization complete", 0);
+    dnodeReportStep(step.name, "Initialization complete", 0);
   }
 
   return 0;
 }
 
-void dnodeStepCleanup(SStep *pSteps, int32_t stepSize) { 
-  return taosStepCleanupImp(pSteps, stepSize - 1);
+void dnodeStepCleanup(const std::initializer_list<SStep> &steps) { 
+  for (const auto &step : steps) {
+    dDebug("step:%s will cleanup", step.name);
+    if (step.cleanupFp != NULL) {
+      (*step.cleanupFp)();
+    }
+  }
 }

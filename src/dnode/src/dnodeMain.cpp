@@ -26,6 +26,7 @@ namespace fs = std::filesystem;
 namespace fs = ghc::filesystem;
 #endif
 
+#include <initializer_list>
 #include "os.h"
 #include "taos.h"
 #include "tnote.h"
@@ -58,9 +59,8 @@ static SRunStatus tsRunStatus = TSDB_RUN_STATUS_STOPPED;
 static int32_t dnodeInitStorage();
 static void    dnodeCleanupStorage();
 static void    dnodeSetRunStatus(SRunStatus status);
-static void    dnodeCheckDataDirOpenned(char *dir);
 
-static SStep tsDnodeSteps[] = {
+static std::initializer_list<SStep> tsDnodeSteps = {
   {"dnode-tfile",     tfInit,              tfCleanup},
   {"dnode-rpc",       rpcInit,             rpcCleanup},
   {"dnode-globalcfg", taosCheckGlobalCfg,  NULL},
@@ -87,6 +87,7 @@ static SStep tsDnodeSteps[] = {
 };
 
 static bool dnodeCreateDir(const fs::path &dir, std::error_code &ec) {
+  if (fs::exists(dir) && fs::is_directory(dir)) return true;
   if (!fs::create_directory(dir, ec)) return false;
   fs::permissions(dir, fs::perms::owner_all 
       | fs::perms::group_read | fs::perms::group_exec 
@@ -95,13 +96,11 @@ static bool dnodeCreateDir(const fs::path &dir, std::error_code &ec) {
 }
 
 static void dnodeCleanupComponents() {
-  int32_t stepSize = sizeof(tsDnodeSteps) / sizeof(SStep);
-  dnodeStepCleanup(tsDnodeSteps, stepSize);
+  dnodeStepCleanup(tsDnodeSteps);
 }
 
 static int32_t dnodeInitComponents() {
-  int32_t stepSize = sizeof(tsDnodeSteps) / sizeof(SStep);
-  return dnodeStepInit(tsDnodeSteps, stepSize);
+  return dnodeStepInit(tsDnodeSteps);
 }
 
 static int32_t dnodeInitTmr() {
@@ -202,7 +201,7 @@ static void dnodeCheckDataDirOpenned(char *dir) {
 
 static int32_t dnodeInitStorage() {
   std::error_code ec;
-  if (dnodeCreateDir(tsDataDir, ec) < 0) {
+  if (!dnodeCreateDir(tsDataDir, ec)) {
    dError("failed to create dir: %s, reason: %s", tsDataDir, ec.message().c_str());
    return -1;
   }
@@ -212,20 +211,20 @@ static int32_t dnodeInitStorage() {
   sprintf(tsVnodeBakDir, "%s/vnode_bak", tsDataDir);
 
   //TODO(dengyihao): no need to init here 
-  if (dnodeCreateDir(tsMnodeDir, ec) < 0) {
+  if (!dnodeCreateDir(tsMnodeDir, ec)) {
    dError("failed to create dir: %s, reason: %s", tsMnodeDir, ec.message().c_str());
    return -1;
   } 
   //TODO(dengyihao): no need to init here
-  if (dnodeCreateDir(tsVnodeDir, ec) < 0) {
+  if (!dnodeCreateDir(tsVnodeDir, ec)) {
    dError("failed to create dir: %s, reason: %s", tsVnodeDir, ec.message().c_str());
    return -1;
   }
-  if (dnodeCreateDir(tsDnodeDir, ec) < 0) {
+  if (!dnodeCreateDir(tsDnodeDir, ec)) {
    dError("failed to create dir: %s, reason: %s", tsDnodeDir, ec.message().c_str());
    return -1;
   } 
-  if (dnodeCreateDir(tsVnodeBakDir, ec) < 0) {
+  if (!dnodeCreateDir(tsVnodeBakDir, ec)) {
    dError("failed to create dir: %s, reason: %s", tsVnodeBakDir, ec.message().c_str());
    return -1;
   }

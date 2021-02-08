@@ -33,8 +33,7 @@
 #include "mnodeWrite.h"
 #include "mnodePeer.h"
 
-int64_t        tsUserRid = -1;
-static void *  tsUserSdb = NULL;
+static std::shared_ptr<SSdbTable> tsUserSdb;
 static int32_t tsUserUpdateSize = 0;
 static int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn);
@@ -128,7 +127,7 @@ static void mnodePrintUserAuth() {
 }
 
 static int32_t mnodeUserActionRestored() {
-  int32_t numOfRows = sdbGetNumOfRows(tsUserSdb);
+  int32_t numOfRows = tsUserSdb->getNumOfRows();
   if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
     mInfo("dnode first deploy, create root user");
     SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(TSDB_DEFAULT_USER));
@@ -165,8 +164,7 @@ int32_t mnodeInitUsers() {
   desc.fpDestroy = mnodeUserActionDestroy;
   desc.fpRestored = mnodeUserActionRestored;
 
-  tsUserRid = sdbOpenTable(&desc);
-  tsUserSdb = sdbGetTableByRid(tsUserRid);
+  tsUserSdb = sdbOpenTable(desc);
   if (tsUserSdb == NULL) {
     mError("table:%s, failed to create hash", desc.name);
     return -1;
@@ -186,38 +184,37 @@ int32_t mnodeInitUsers() {
 }
 
 void mnodeCleanupUsers() {
-  sdbCloseTable(tsUserRid);
-  tsUserSdb = NULL;
+  tsUserSdb.reset();
 }
 
 SUserObj *mnodeGetUser(char *name) {
-  return (SUserObj *)sdbGetRow(tsUserSdb, name);
+  return (SUserObj *)tsUserSdb->getRow(name);
 }
 
 void *mnodeGetNextUser(void *pIter, SUserObj **pUser) { 
-  return sdbFetchRow(tsUserSdb, pIter, (void **)pUser); 
+  return tsUserSdb->fetchRow(pIter, (void **)pUser); 
 }
 
 void mnodeCancelGetNextUser(void *pIter) {
- sdbFreeIter(tsUserSdb, pIter);
+  tsUserSdb->freeIter(pIter);
 }
 
 void mnodeIncUserRef(SUserObj *pUser) { 
-  return sdbIncRef(tsUserSdb, pUser); 
+  return tsUserSdb->incRef(pUser); 
 }
 
 void mnodeDecUserRef(SUserObj *pUser) { 
-  return sdbDecRef(tsUserSdb, pUser); 
+  return tsUserSdb->decRef(pUser); 
 }
 
 static int32_t mnodeUpdateUser(SUserObj *pUser, void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsUserSdb;
+  row.pTable = tsUserSdb.get();
   row.pObj = pUser;
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
-  int32_t code = sdbUpdateRow(&row);
+  int32_t code = row.Update();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("user:%s, failed to alter by %s, reason:%s", pUser->user, mnodeGetUserFromMsg(pMsg), tstrerror(code));
   } else {
@@ -266,12 +263,12 @@ int32_t mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg) {
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsUserSdb;
+  row.pTable = tsUserSdb.get();
   row.pObj = pUser;
   row.rowSize = sizeof(SUserObj);
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
-  code = sdbInsertRow(&row);
+  code = row.Insert();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("user:%s, failed to create by %s, reason:%s", pUser->user, mnodeGetUserFromMsg(pMsg), tstrerror(code));
     tfree(pUser);
@@ -285,11 +282,11 @@ int32_t mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg) {
 static int32_t mnodeDropUser(SUserObj *pUser, void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsUserSdb;
+  row.pTable = tsUserSdb.get();
   row.pObj = pUser;
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
-  int32_t code = sdbDeleteRow(&row);
+  int32_t code = row.Delete();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("user:%s, failed to drop by %s, reason:%s", pUser->user, mnodeGetUserFromMsg(pMsg), tstrerror(code));
   } else {
@@ -567,9 +564,9 @@ void mnodeDropAllUsers(SAcctObj *pAcct)  {
     if (strncmp(pUser->acct, pAcct->user, acctNameLen) == 0) {
       SSdbRow row;
       row.type = SDB_OPER_LOCAL;
-      row.pTable = tsUserSdb;
+      row.pTable = tsUserSdb.get();
       row.pObj = pUser;
-      sdbDeleteRow(&row);
+      row.Delete();
       numOfUsers++;
     }
 

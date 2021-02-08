@@ -38,8 +38,7 @@
 #include "mnodeVgroup.h"
 
 #define VG_LIST_SIZE 8
-int64_t        tsDbRid = -1;
-static void *  tsDbSdb = NULL;
+static std::shared_ptr<SSdbTable> tsDbSdb;
 static int32_t tsDbUpdateSize;
 
 static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *pMsg);
@@ -62,7 +61,7 @@ static int32_t mnodeDbActionDestroy(SSdbRow *pRow) {
 }
 
 int64_t mnodeGetDbNum() {
-  return sdbGetNumOfRows(tsDbSdb);
+  return tsDbSdb->getNumOfRows();
 }
 
 static int32_t mnodeDbActionInsert(SSdbRow *pRow) {
@@ -158,8 +157,7 @@ int32_t mnodeInitDbs() {
   desc.fpDestroy = mnodeDbActionDestroy;
   desc.fpRestored = mnodeDbActionRestored;
 
-  tsDbRid = sdbOpenTable(&desc);
-  tsDbSdb = sdbGetTableByRid(tsDbRid);
+  tsDbSdb = sdbOpenTable(desc);
   if (tsDbSdb == NULL) {
     mError("failed to init db data");
     return -1;
@@ -177,23 +175,23 @@ int32_t mnodeInitDbs() {
 }
 
 void *mnodeGetNextDb(void *pIter, SDbObj **pDb) {
-  return sdbFetchRow(tsDbSdb, pIter, (void **)pDb);
+  return tsDbSdb->fetchRow(pIter, (void **)pDb);
 }
 
 void mnodeCancelGetNextDb(void *pIter) {
-  sdbFreeIter(tsDbSdb, pIter);
+  tsDbSdb->freeIter(pIter);
 }
 
 SDbObj *mnodeGetDb(char *db) {
-  return (SDbObj *)sdbGetRow(tsDbSdb, db);
+  return (SDbObj *)tsDbSdb->getRow(db);
 }
 
 void mnodeIncDbRef(SDbObj *pDb) {
-  return sdbIncRef(tsDbSdb, pDb); 
+  return tsDbSdb->incRef(pDb); 
 }
 
 void mnodeDecDbRef(SDbObj *pDb) { 
-  return sdbDecRef(tsDbSdb, pDb); 
+  return tsDbSdb->decRef(pDb); 
 }
 
 SDbObj *mnodeGetDbByTableId(char *tableId) {
@@ -424,13 +422,13 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsDbSdb;
+  row.pTable = tsDbSdb.get();
   row.pObj = pDb;
   row.rowSize = sizeof(SDbObj);
   row.pMsg = pMsg;
   row.fpRsp = mnodeCreateDbCb;
 
-  code = sdbInsertRow(&row);
+  code = row.Insert();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("db:%s, failed to create, reason:%s", pDb->name, tstrerror(code));
     pMsg->pDb = NULL;
@@ -497,8 +495,7 @@ void mnodeRemoveVgroupFromDb(SVgObj *pVgroup) {
 }
 
 void mnodeCleanupDbs() {
-  sdbCloseTable(tsDbRid);
-  tsDbSdb = NULL;
+  tsDbSdb.reset();
 }
 
 static int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
@@ -809,10 +806,10 @@ static int32_t mnodeSetDbDropping(SDbObj *pDb) {
   pDb->status = true;
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsDbSdb;
+  row.pTable = tsDbSdb.get();
   row.pObj = pDb;
 
-  int32_t code = sdbUpdateRow(&row);
+  int32_t code = row.Update();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("db:%s, failed to set dropping state, reason:%s", pDb->name, tstrerror(code));
   }
@@ -1025,12 +1022,12 @@ static int32_t mnodeAlterDb(SDbObj *pDb, SAlterDbMsg *pAlter, void *pMsg) {
     pDb->dbCfgVersion++;
     SSdbRow row;
     row.type = SDB_OPER_GLOBAL;
-    row.pTable = tsDbSdb;
+    row.pTable = tsDbSdb.get();
     row.pObj = pDb;
     row.pMsg = static_cast<SMnodeMsg *>(pMsg);
     row.fpRsp = mnodeAlterDbCb;
 
-    code = sdbUpdateRow(&row);
+    code = row.Update();
     if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
       mError("db:%s, failed to alter, reason:%s", pDb->name, tstrerror(code));
     }
@@ -1076,12 +1073,12 @@ static int32_t mnodeDropDb(SMnodeMsg *pMsg) {
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsDbSdb;
+  row.pTable = tsDbSdb.get();
   row.pObj = pDb;
   row.pMsg = pMsg;
   row.fpRsp = mnodeDropDbCb;
 
-  int32_t code = sdbDeleteRow(&row);
+  int32_t code = row.Delete();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("db:%s, failed to drop, reason:%s", pDb->name, tstrerror(code));
   }
@@ -1138,10 +1135,10 @@ void  mnodeDropAllDbs(SAcctObj *pAcct)  {
       mInfo("db:%s, drop db from sdb for acct:%s is dropped", pDb->name, pAcct->user);
       SSdbRow row;
       row.type = SDB_OPER_LOCAL;
-      row.pTable = tsDbSdb;
+      row.pTable = tsDbSdb.get();
       row.pObj = pDb;
       
-      sdbDeleteRow(&row);
+      row.Delete();
       numOfDbs++;
     }
     mnodeDecDbRef(pDb);

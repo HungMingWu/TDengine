@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <initializer_list>
 #include "os.h"
 #include "taosdef.h"
 #include "tsched.h"
@@ -40,8 +41,7 @@
 void *tsMnodeTmr = NULL;
 static bool tsMgmtIsRunning = false;
 
-static SStep tsMnodeSteps[] = {
-  {"sdbref",  sdbInitRef,       sdbCleanUpRef},
+static std::initializer_list<SStep> tsMnodeSteps = {
   {"profile", mnodeInitProfile, mnodeCleanupProfile},
   {"cluster", mnodeInitCluster, mnodeCleanupCluster},
   {"accts",   mnodeInitAccts,   mnodeCleanupAccts},
@@ -62,13 +62,11 @@ static void mnodeCleanupTimer();
 static bool mnodeNeedStart() ;
 
 static void mnodeCleanupComponents() {
-  int32_t stepSize = sizeof(tsMnodeSteps) / sizeof(SStep);
-  dnodeStepCleanup(tsMnodeSteps, stepSize);
+  dnodeStepCleanup(tsMnodeSteps);
 }
 
 static int32_t mnodeInitComponents() {
-  int32_t stepSize = sizeof(tsMnodeSteps) / sizeof(SStep);
-  return dnodeStepInit(tsMnodeSteps, stepSize);
+  return dnodeStepInit(tsMnodeSteps);
 }
 
 int32_t mnodeStartSystem() {

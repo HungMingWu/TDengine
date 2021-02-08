@@ -24,8 +24,7 @@
 #include "mnodeShow.h"
 #include "tglobal.h"
 
-int64_t        tsClusterRid = -1;
-static void *  tsClusterSdb = NULL;
+static std::shared_ptr<SSdbTable> tsClusterSdb;
 static int32_t tsClusterUpdateSize;
 static char    tsClusterId[TSDB_CLUSTER_ID_LEN];
 static int32_t mnodeCreateCluster();
@@ -68,7 +67,7 @@ static int32_t mnodeClusterActionDecode(SSdbRow *pRow) {
 }
 
 static int32_t mnodeClusterActionRestored() {
-  int32_t numOfRows = sdbGetNumOfRows(tsClusterSdb);
+  int32_t numOfRows = tsClusterSdb->getNumOfRows();
   if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
     mInfo("dnode first deploy, create cluster");
     int32_t code = mnodeCreateCluster();
@@ -101,10 +100,9 @@ int32_t mnodeInitCluster() {
   desc.fpDestroy = mnodeClusterActionDestroy;
   desc.fpRestored = mnodeClusterActionRestored;
 
-  tsClusterRid = sdbOpenTable(&desc);
-  tsClusterSdb = sdbGetTableByRid(tsClusterRid);
+  tsClusterSdb = sdbOpenTable(desc);
   if (tsClusterSdb == NULL) {
-    mError("table:%s, rid:%" PRId64 ", failed to create hash", desc.name, tsClusterRid);
+    mError("table:%s failed to create hash", desc.name);
     return -1;
   }
 
@@ -117,28 +115,27 @@ int32_t mnodeInitCluster() {
 }
 
 void mnodeCleanupCluster() {
-  sdbCloseTable(tsClusterRid);
-  tsClusterSdb = NULL;
+  tsClusterSdb.reset();
 }
 
 void *mnodeGetNextCluster(void *pIter, SClusterObj **pCluster) {
-  return sdbFetchRow(tsClusterSdb, pIter, (void **)pCluster); 
+  return tsClusterSdb->fetchRow(pIter, (void **)pCluster); 
 }
 
 void mnodeCancelGetNextCluster(void *pIter) {
-  sdbFreeIter(tsClusterSdb, pIter);
+  tsClusterSdb->freeIter(pIter);
 }
 
 void mnodeIncClusterRef(SClusterObj *pCluster) {
-  sdbIncRef(tsClusterSdb, pCluster);
+  tsClusterSdb->incRef(pCluster);
 }
 
 void mnodeDecClusterRef(SClusterObj *pCluster) {
-  sdbDecRef(tsClusterSdb, pCluster);
+  tsClusterSdb->decRef(pCluster);
 }
 
 static int32_t mnodeCreateCluster() {
-  int32_t numOfClusters = sdbGetNumOfRows(tsClusterSdb);
+  int32_t numOfClusters = tsClusterSdb->getNumOfRows();
   if (numOfClusters != 0) return TSDB_CODE_SUCCESS;
 
   SClusterObj *pCluster = static_cast<SClusterObj *>(malloc(sizeof(SClusterObj)));
@@ -154,10 +151,10 @@ static int32_t mnodeCreateCluster() {
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsClusterSdb;
+  row.pTable = tsClusterSdb.get();
   row.pObj = pCluster;
 
-  return sdbInsertRow(&row);
+  return row.Insert();
 }
 
 const char* mnodeGetClusterId() {
