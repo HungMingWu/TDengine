@@ -92,7 +92,7 @@ int32_t vnodeProcessWrite(void *vparam, void *wparam, int32_t qtype, void *rpara
   if (syncCode < 0) return syncCode;
 
   // write into WAL
-  code = walWrite(pVnode->wal, pHead);
+  code = pVnode->wal->write(pHead);
   if (code < 0) {
     vError("vgId:%d, hver:%" PRIu64 " vver:%" PRIu64 " code:0x%x", pVnode->vgId, pHead->version, pVnode->version, code);
     return code;
@@ -300,8 +300,7 @@ void vnodeFreeFromWQueue(void *vparam, SVWriteMsg *pWrite) {
   pVnode->Release();
 }
 
-static void vnodeFlowCtrlMsgToWQueue(void *param, void *tmrId) {
-  SVWriteMsg *pWrite = (SVWriteMsg *)param;
+static void vnodeFlowCtrlMsgToWQueue(SVWriteMsg *pWrite, void *tmrId) {
   SVnodeObj * pVnode = (SVnodeObj *)pWrite->pVnode;
   int32_t     code = TSDB_CODE_VND_IS_SYNCING;
 
@@ -340,7 +339,7 @@ static int32_t vnodePerformFlowCtrl(SVWriteMsg *pWrite) {
     return 0;
   } else {
     void *unUsed = NULL;
-    taosTmrReset(vnodeFlowCtrlMsgToWQueue, 100, pWrite, tsDnodeTmr, &unUsed);
+    taosTmrReset([pWrite](void *tmrId) { vnodeFlowCtrlMsgToWQueue(pWrite, tmrId); }, 100, tsDnodeTmr, &unUsed);
 
     vTrace("vgId:%d, msg:%p, app:%p, perform flowctrl, retry:%d", pVnode->vgId, pWrite, pWrite->rpcMsg.ahandle,
            pWrite->processedCount);

@@ -16,11 +16,12 @@
 #ifndef TDENGINE_SYNC_INT_H
 #define TDENGINE_SYNC_INT_H
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include "syncMsg.h"
-#include "twal.h"
+#include "walInt.h"
 
 #define sFatal(...) { if (sDebugFlag & DEBUG_FATAL) { taosPrintLog("SYN FATAL ", sDebugFlag, __VA_ARGS__); }}
 #define sError(...) { if (sDebugFlag & DEBUG_ERROR) { taosPrintLog("SYN ERROR ", sDebugFlag, __VA_ARGS__); }}
@@ -41,10 +42,6 @@ static constexpr size_t SYNC_RECV_BUFFER_SIZE = 5 * 1024 * 1024;
 #define SYNC_CHECK_INTERVAL 1000          // ms
 #define SYNC_WAIT_AFTER_CHOOSE_MASTER 10  // ms
 
-#define nodeRole    pNode->peerInfo[pNode->selfIndex]->role
-#define nodeVersion pNode->peerInfo[pNode->selfIndex]->version
-#define nodeSStatus pNode->peerInfo[pNode->selfIndex]->sstatus
-
 struct SRecvBuffer {
   std::vector<char> buffer;
   char *  offset;
@@ -64,14 +61,19 @@ typedef struct {
   int64_t   time;
 } SFwdInfo;
 
-typedef struct {
-  int32_t  first;
-  int32_t  last;
-  int32_t  fwds;  // number of forwards
-  SFwdInfo fwdInfo[];
-} SSyncFwds;
+struct SSyncFwds {
+  int32_t  first = 0;
+  int32_t  last = 0;
+  int32_t  fwds = 0;  // number of forwards
+  std::vector<SFwdInfo> fwdInfo;
+ public:
+  SSyncFwds(size_t infos) : fwdInfo(infos) {}
+};
 
-typedef struct SsyncPeer {
+struct SConnObj;
+struct SSyncNode;
+
+struct SSyncPeer : public std::enable_shared_from_this<SSyncPeer> {
   int32_t  nodeId;
   uint32_t ip;
   uint16_t port;
@@ -87,26 +89,29 @@ typedef struct SsyncPeer {
   int32_t  peerFd;          // forward FD
   int32_t  numOfRetrieves;  // number of retrieves tried
   int32_t  fileChanged;     // a flag to indicate file is changed during retrieving process
-  int32_t  refCount;
   int8_t   isArb;
-  int64_t  rid;
   void *   timer;
-  void *   pConn;
-  struct   SSyncNode *pSyncNode;
-} SSyncPeer;
+  SConnObj*        pConn;
+  std::weak_ptr<SSyncNode> pSyncNode;
 
-typedef struct SSyncNode {
+ public:
+  ~SSyncPeer();
+  void recoverFromMaster();
+  void closeConn();
+  void restart();
+};
+using SSyncPeerPtr = std::shared_ptr<SSyncPeer>;
+
+struct SSyncNode : public std::enable_shared_from_this<SSyncNode> {
   char         path[TSDB_FILENAME_LEN];
   int8_t       replica;
   int8_t       quorum;
   int8_t       selfIndex;
   uint32_t     vgId;
-  int32_t      refCount;
-  int64_t      rid;
-  SSyncPeer *  peerInfo[TAOS_SYNC_MAX_REPLICA + 1];  // extra one for arbitrator
-  SSyncPeer *  pMaster;
+  SSyncPeerPtr peerInfo[TAOS_SYNC_MAX_REPLICA + 1];  // extra one for arbitrator
+  SSyncPeerPtr pMaster;
   std::unique_ptr<SRecvBuffer> pRecv;
-  SSyncFwds *  pSyncFwds;  // saved forward info if quorum >1
+  std::unique_ptr<SSyncFwds>  pSyncFwds;  // saved forward info if quorum >1
   void *       pFwdTimer;
   void *       pRoleTimer;
   FGetFileInfo      getFileInfo;
@@ -118,19 +123,73 @@ typedef struct SSyncNode {
   FNotifyFileSynced notifyFileSynced;
   FGetVersion       getVersion;
   std::mutex        mutex;
-} SSyncNode;
+
+ protected:
+  int32_t save(uint64_t version, void *mhandle) const;
+ public:
+  ~SSyncNode();
+  void process(SFwdInfo *pFwdInfo, int32_t code) const;
+  int8_t getRole() const { return peerInfo[selfIndex]->role; }
+  void setRole(int8_t newRole) { peerInfo[selfIndex]->role = newRole; }
+  uint64_t getVer() const { return peerInfo[selfIndex]->version; }
+  void setVer(uint64_t newVersion) { peerInfo[selfIndex]->version = newVersion; }
+  int8_t   getStatus() const { return peerInfo[selfIndex]->sstatus; }
+  void     setStatus(int8_t newStatus) { peerInfo[selfIndex]->sstatus = newStatus; }
+  int32_t  forwardToPeerImpl(void *data, void *mhandle, int32_t qtype);
+  void     removeConfirmedFwdInfo();
+  void     monitorFwdInfos(void *tmrId);
+  void     monitorNodeRole(void *tmrId);
+};
+
+using SSyncNodePtr = std::shared_ptr<SSyncNode>;
+
+typedef struct SThreadObj {
+  pthread_t        thread;
+  bool             stop;
+  int32_t          pollFd;
+  int32_t          numOfFds;
+  struct SPoolObj *pPool;
+} SThreadObj;
+
+struct SPoolInfo {
+  int32_t  numOfThreads;
+  uint32_t serverIp;
+  int16_t  port;
+  int32_t  bufferSize;
+  void (*processIncomingConn)(int32_t fd, uint32_t ip);
+};
+
+typedef struct SPoolObj {
+  SPoolInfo    info;
+  SThreadObj **pThread;
+  pthread_t    thread;
+  int32_t      nextId;
+  int32_t      acceptFd;  // FD for accept new connection
+} SPoolObj;
+
+struct SConnObj {
+  SThreadObj *                   pThread;
+  int32_t                        fd;
+  int32_t                        closedByApp;
+  std::function<void(void)>      processBrokenLink;
+  std::function<int32_t(void *)> processIncomingMsg;
+};
 
 // sync module global
 extern int32_t tsSyncNum;
 extern char    tsNodeFqdn[TSDB_FQDN_LEN];
 extern const char *  syncStatus[];
 
-void *     syncRetrieveData(void *param);
-void *     syncRestoreData(void *param);
-int32_t    syncSaveIntoBuffer(SSyncPeer *pPeer, SWalHead *pHead);
-void       syncRestartConnection(SSyncPeer *pPeer);
-void       syncBroadcastStatus(SSyncNode *pNode);
-SSyncPeer *syncAcquirePeer(int64_t rid);
-void       syncReleasePeer(SSyncPeer *pPeer);
+void       syncRetrieveData(SSyncPeerPtr pPeer);
+void       syncRestoreData(SSyncPeerPtr rid);
+int32_t    syncSaveIntoBuffer(SSyncPeerPtr pPeer, SWalHead *pHead);
+void       syncRestartConnection(SSyncPeerPtr pPeer);
+void       syncBroadcastStatus(SSyncNodePtr pNode);
 
+SSyncNodePtr syncStart(const SSyncInfo *);
+void         syncStop(SSyncNodePtr pNode);
+int32_t      syncReconfig(SSyncNodePtr pNode, const SSyncCfg *);
+int32_t      syncForwardToPeer(SSyncNodePtr pNode, void *pHead, void *mhandle, int32_t qtype);
+void         syncConfirmForward(SSyncNodePtr pNode, uint64_t version, int32_t code);
+int32_t      syncGetNodesRole(SSyncNodePtr pNode, SNodesRole *);
 #endif  // TDENGINE_VNODEPEER_H

@@ -22,7 +22,7 @@ int32_t vnodeInitMgmt();
 void    vnodeCleanupMgmt();
 
 SVnodeObj *vnodeAcquire(int32_t vgId);
-void*   vnodeGetWal(void *pVnode);
+SWal*     vnodeGetWal(void *pVnode);
 
 int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
 void    vnodeBuildStatusMsg(void *pStatus);

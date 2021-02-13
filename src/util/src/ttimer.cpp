@@ -61,7 +61,6 @@ typedef struct tmr_obj_t {
     int64_t executedBy;
   };
   TAOS_TMR_CALLBACK fp;
-  void*             param;
 } tmr_obj_t;
 
 typedef struct timer_list_t {
@@ -262,26 +261,26 @@ static void processExpiredTimer(void* handle, void* arg) {
   timer->executedBy = taosGetSelfPthreadId();
   uint8_t state = atomic_val_compare_exchange_8(&timer->state, TIMER_STATE_WAITING, TIMER_STATE_EXPIRED);
   if (state == TIMER_STATE_WAITING) {
-    const char* fmt = "%s timer[id=%" PRIuPTR ", fp=%p, param=%p] execution start.";
-    tmrDebug(fmt, timer->ctrl->label, timer->id, timer->fp, timer->param);
+    const char* fmt = "%s timer[id=%" PRIuPTR "] execution start.";
+    tmrDebug(fmt, timer->ctrl->label, timer->id);
 
-    (*timer->fp)(timer->param, (tmr_h)timer->id);
+    timer->fp((tmr_h)timer->id);
     atomic_store_8(&timer->state, TIMER_STATE_STOPPED);
 
-    fmt = "%s timer[id=%" PRIuPTR ", fp=%p, param=%p] execution end.";
-    tmrDebug(fmt, timer->ctrl->label, timer->id, timer->fp, timer->param);
+    fmt = "%s timer[id=%" PRIuPTR "] execution end.";
+    tmrDebug(fmt, timer->ctrl->label, timer->id);
   }
   removeTimer(timer->id);
   timerDecRef(timer);
 }
 
 static void addToExpired(tmr_obj_t* head) {
-  const char* fmt = "%s adding expired timer[id=%" PRIuPTR ", fp=%p, param=%p] to queue.";
+  const char* fmt = "%s adding expired timer[id=%" PRIuPTR "] to queue.";
 
   while (head != NULL) {
     uintptr_t id = head->id;
     tmr_obj_t* next = head->next;
-    tmrDebug(fmt, head->ctrl->label, id, head->fp, head->param);
+    tmrDebug(fmt, head->ctrl->label, id);
 
     SSchedMsg  schedMsg;
     schedMsg.fp = NULL;
@@ -296,17 +295,16 @@ static void addToExpired(tmr_obj_t* head) {
   }
 }
 
-static uintptr_t doStartTimer(tmr_obj_t* timer, TAOS_TMR_CALLBACK fp, int mseconds, void* param, tmr_ctrl_t* ctrl) {
+static uintptr_t doStartTimer(tmr_obj_t* timer, TAOS_TMR_CALLBACK fp, int mseconds, tmr_ctrl_t* ctrl) {
   uintptr_t id = getNextTimerId();
   timer->id = id;
   timer->state = TIMER_STATE_WAITING;
   timer->fp = fp;
-  timer->param = param;
   timer->ctrl = ctrl;
   addTimer(timer);
 
-  const char* fmt = "%s timer[id=%" PRIuPTR ", fp=%p, param=%p] started";
-  tmrDebug(fmt, ctrl->label, timer->id, timer->fp, timer->param);
+  const char* fmt = "%s timer[id=%" PRIuPTR "] started";
+  tmrDebug(fmt, ctrl->label, timer->id);
 
   if (mseconds == 0) {
     timer->wheel = tListLen(wheels);
@@ -320,7 +318,7 @@ static uintptr_t doStartTimer(tmr_obj_t* timer, TAOS_TMR_CALLBACK fp, int msecon
   return id;
 }
 
-tmr_h taosTmrStart(TAOS_TMR_CALLBACK fp, int mseconds, void* param, void* handle) {
+tmr_h taosTmrStart(TAOS_TMR_CALLBACK fp, int mseconds, void* handle) {
   tmr_ctrl_t* ctrl = (tmr_ctrl_t*)handle;
   if (ctrl == NULL || ctrl->label[0] == 0) {
     return NULL;
@@ -332,7 +330,7 @@ tmr_h taosTmrStart(TAOS_TMR_CALLBACK fp, int mseconds, void* param, void* handle
     return NULL;
   }
 
-  return (tmr_h)doStartTimer(timer, fp, mseconds, param, ctrl);
+  return (tmr_h)doStartTimer(timer, fp, mseconds, ctrl);
 }
 
 static void taosTimerLoopFunc(int signo) {
@@ -398,8 +396,8 @@ static bool doStopTimer(tmr_obj_t* timer, uint8_t state) {
       // we cannot guarantee the thread safety of the timr in all other cases.
       reusable = true;
     }
-    const char* fmt = "%s timer[id=%" PRIuPTR ", fp=%p, param=%p] is cancelled.";
-    tmrDebug(fmt, timer->ctrl->label, timer->id, timer->fp, timer->param);
+    const char* fmt = "%s timer[id=%" PRIuPTR "] is cancelled.";
+    tmrDebug(fmt, timer->ctrl->label, timer->id);
     return reusable;
   }
 
@@ -418,8 +416,8 @@ static bool doStopTimer(tmr_obj_t* timer, uint8_t state) {
   // timer callback is executing in another thread, we SHOULD wait it to stop,
   // BUT this may result in dead lock if current thread are holding a lock which
   // the timer callback need to acquire. so, we HAVE TO return directly.
-  const char* fmt = "%s timer[id=%" PRIuPTR ", fp=%p, param=%p] is executing and cannot be stopped.";
-  tmrDebug(fmt, timer->ctrl->label, timer->id, timer->fp, timer->param);
+  const char* fmt = "%s timer[id=%" PRIuPTR "] is executing and cannot be stopped.";
+  tmrDebug(fmt, timer->ctrl->label, timer->id);
   return false;
 }
 
@@ -445,7 +443,7 @@ bool taosTmrStopA(tmr_h* timerId) {
   return ret;
 }
 
-bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void* param, void* handle, tmr_h* pTmrId) {
+bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void* handle, tmr_h* pTmrId) {
   tmr_ctrl_t* ctrl = (tmr_ctrl_t*)handle;
   if (ctrl == NULL || ctrl->label[0] == 0) {
     return false;
@@ -466,7 +464,7 @@ bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void* param, void* handle,
   }
 
   if (timer == NULL) {
-    *pTmrId = taosTmrStart(fp, mseconds, param, handle);
+    *pTmrId = taosTmrStart(fp, mseconds, handle);
     return stopped;
   }
 
@@ -482,7 +480,7 @@ bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void* param, void* handle,
 
   assert(timer->refCount == 1);
   memset(timer, 0, sizeof(*timer));
-  *pTmrId = (tmr_h)doStartTimer(timer, fp, mseconds, param, ctrl);
+  *pTmrId = (tmr_h)doStartTimer(timer, fp, mseconds, ctrl);
 
   return stopped;
 }

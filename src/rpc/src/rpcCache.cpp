@@ -82,7 +82,7 @@ void rpcLock::unlock()
 }
 
 static int  rpcHashConn(void *handle, char *fqdn, uint16_t port, int8_t connType);
-static void rpcCleanConnCache(void *handle, void *tmrId);
+static void rpcCleanConnCache(SConnCache *pCache, void *tmrId);
 static void rpcRemoveExpiredNodes(SConnCache *pCache, SConnHash *pNode, int hash, uint64_t time);
 
 void *rpcOpenConnCache(int maxSessions, void (*cleanFp)(void *), void *tmrCtrl, int64_t keepTimer) {
@@ -112,7 +112,8 @@ void *rpcOpenConnCache(int maxSessions, void (*cleanFp)(void *), void *tmrCtrl, 
   pCache->connHashList = connHashList;
   pCache->cleanFp = cleanFp;
   pCache->tmrCtrl = tmrCtrl;
-  taosTmrReset(rpcCleanConnCache, (int32_t)(pCache->keepTimer * 2), pCache, pCache->tmrCtrl, &pCache->pTimer);
+  taosTmrReset([pCache](void *tmrId) { rpcCleanConnCache(pCache, tmrId); }, (int32_t)(pCache->keepTimer * 2),
+               pCache->tmrCtrl, &pCache->pTimer);
 
   return pCache;
 }
@@ -218,12 +219,10 @@ void *rpcGetConnFromCache(void *handle, char *fqdn, uint16_t port, int8_t connTy
   return pData;
 }
 
-static void rpcCleanConnCache(void *handle, void *tmrId) {
+static void rpcCleanConnCache(SConnCache *pCache, void *tmrId) {
   int         hash;
   SConnHash * pNode;
-  SConnCache *pCache;
 
-  pCache = (SConnCache *)handle;
   if (pCache == NULL || pCache->maxSessions == 0) return;
   if (pCache->pTimer != tmrId) return;
 
@@ -237,7 +236,8 @@ static void rpcCleanConnCache(void *handle, void *tmrId) {
   }
 
   // tTrace("timer, total connections in cache:%d", pCache->total);
-  taosTmrReset(rpcCleanConnCache, (int32_t)(pCache->keepTimer * 2), pCache, pCache->tmrCtrl, &pCache->pTimer);
+  taosTmrReset([pCache](void *tmrId) { rpcCleanConnCache(pCache, tmrId); }, (int32_t)(pCache->keepTimer * 2),
+               pCache->tmrCtrl, &pCache->pTimer);
 }
 
 static void rpcRemoveExpiredNodes(SConnCache *pCache, SConnHash *pNode, int hash, uint64_t time) {

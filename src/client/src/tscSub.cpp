@@ -197,8 +197,7 @@ static SSub* tscCreateSubscription(STscObj* pObj, const char* topic, const char*
 }
 
 
-static void tscProcessSubscriptionTimer(void *handle, void *tmrId) {
-  SSub *pSub = (SSub *)handle;
+static void tscProcessSubscriptionTimer(SSub* pSub, void* tmrId) {
   if (pSub == NULL || pSub->pTimer != tmrId) return;
 
   TAOS_RES* res = taos_consume(pSub);
@@ -206,7 +205,8 @@ static void tscProcessSubscriptionTimer(void *handle, void *tmrId) {
     pSub->fp(pSub, res, pSub->param, 0);
   }
 
-  taosTmrReset(tscProcessSubscriptionTimer, pSub->interval, pSub, tscTmr, &pSub->pTimer);
+  taosTmrReset([pSub](void* tmrId) { tscProcessSubscriptionTimer(pSub, tmrId); }, pSub->interval, tscTmr,
+               &pSub->pTimer);
 }
 
 
@@ -410,7 +410,8 @@ TAOS_SUB *taos_subscribe(TAOS *taos, int restart, const char* topic, const char 
     tscDebug("asynchronize subscription, create new timer: %s", topic);
     pSub->fp = fp;
     pSub->param = param;
-    taosTmrReset(tscProcessSubscriptionTimer, interval, pSub, tscTmr, &pSub->pTimer);
+    taosTmrReset([pSub](void* tmrId) { tscProcessSubscriptionTimer(pSub, tmrId); }, interval, tscTmr,
+                 &pSub->pTimer);
   }
 
   return pSub;

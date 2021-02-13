@@ -13,5 +13,5 @@ IF (TD_LINUX)
 	${TD_ENTERPRISE_DIR}/src/inc
 	inc
   )
-  TARGET_LINK_LIBRARIES(vnode tsdb tcq)
+  TARGET_LINK_LIBRARIES(vnode tsdb tcq twal)
 ENDIF ()

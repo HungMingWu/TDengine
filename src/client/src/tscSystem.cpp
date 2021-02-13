@@ -47,12 +47,12 @@ int32_t    tscRefId = -1;
 static void  *tscCheckDiskUsageTmr;
 static std::once_flag tscinit;
 
-void tscCheckDiskUsage(void *UNUSED_PARAM(para), void* UNUSED_PARAM(param)) {
+void tscCheckDiskUsage(void* UNUSED_PARAM(param)) {
   taosGetDisk();
-  taosTmrReset(tscCheckDiskUsage, 1000, NULL, tscTmr, &tscCheckDiskUsageTmr);
+  taosTmrReset(tscCheckDiskUsage, 1000, tscTmr, &tscCheckDiskUsageTmr);
 }
 
-int32_t tscInitRpc(std::string_view user, const char *secretEncrypt, void **pDnodeConn) {
+int32_t tscInitRpc(std::string_view user, const char *secretEncrypt, SRpcInfo **pDnodeConn) {
   SRpcInit rpcInit;
 
   if (*pDnodeConn == NULL) {
@@ -131,7 +131,7 @@ void taos_init_imp() {
 
   tscTmr = taosTmrInit(tsMaxConnections * 2, 200, 60000, "TSC");
   if(0 == tscEmbedded){
-    taosTmrReset(tscCheckDiskUsage, 10, NULL, tscTmr, &tscCheckDiskUsageTmr);      
+    taosTmrReset(tscCheckDiskUsage, 10, tscTmr, &tscCheckDiskUsageTmr);
   }
 
   if (tscTableMetaInfo == NULL) {

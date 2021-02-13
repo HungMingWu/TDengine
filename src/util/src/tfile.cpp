@@ -19,117 +19,41 @@
 #include "tulog.h"
 #include "tutil.h"
 #include "tref.h"
+#include "tfile.h"
 
-static int32_t tsFileRsetId = -1;
-
-static void tfCloseFile(void *p) {
-  close((int32_t)(uintptr_t)p);
-}
-
-int32_t tfInit() {
-  tsFileRsetId = taosOpenRef(2000, tfCloseFile);
-  if (tsFileRsetId > 0) {
-    return 0;
-  } else {
-    return -1;
-  }
-}
-
-void tfCleanup() {
-  if (tsFileRsetId >= 0) taosCloseRef(tsFileRsetId);
-  tsFileRsetId = -1;
-}
-
-static int64_t tfOpenImp(int32_t fd) {
-  if (fd < 0) {
-    terrno = TAOS_SYSTEM_ERROR(errno);
-    return -1;
-  }
-
-  void *  p = (void *)(int64_t)fd;
-  int64_t rid = taosAddRef(tsFileRsetId, p);
-  if (rid < 0) close(fd);
-
-  return rid;
-}
-
-int64_t tfOpen(const char *pathname, int32_t flags) {
+FileOpPtr tfOpen(const char *pathname, int32_t flags) {
   int32_t fd = open(pathname, flags);
-  return tfOpenImp(fd);
+  return std::make_shared<FileOp>(fd);
 }
 
-int64_t tfOpenM(const char *pathname, int32_t flags, mode_t mode) {
+FileOpPtr tfOpenM(const char *pathname, int32_t flags, mode_t mode) {
   int32_t fd = open(pathname, flags, mode);
-  return tfOpenImp(fd);
+  return std::make_shared<FileOp>(fd);
 }
 
-int64_t tfClose(int64_t tfd) {
-  return taosRemoveRef(tsFileRsetId, tfd);
-}
-
-int64_t tfWrite(int64_t tfd, void *buf, int64_t count) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return -1;
-
-  int32_t fd = (int32_t)(uintptr_t)p;
-
+int64_t FileOp::write(void *buf, int64_t count) {
   int64_t ret = taosWrite(fd, buf, count);
   if (ret < 0) terrno = TAOS_SYSTEM_ERROR(errno);
-
-  taosReleaseRef(tsFileRsetId, tfd);
   return ret;
 }
 
-int64_t tfRead(int64_t tfd, void *buf, int64_t count) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return -1;
-
-  int32_t fd = (int32_t)(uintptr_t)p;
-
+int64_t FileOp::read(void *buf, int64_t count) {
   int64_t ret = taosRead(fd, buf, count);
   if (ret < 0) terrno = TAOS_SYSTEM_ERROR(errno);
-
-  taosReleaseRef(tsFileRsetId, tfd);
   return ret;
 }
 
-int32_t tfFsync(int64_t tfd) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return -1;
-
-  int32_t fd = (int32_t)(uintptr_t)p;
-  int32_t code = fsync(fd);
-
-  taosReleaseRef(tsFileRsetId, tfd);
+int32_t FileOp::fsync() {
+  int32_t code = ::fsync(fd);
   return code;
 }
 
-bool tfValid(int64_t tfd) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return false;
-
-  taosReleaseRef(tsFileRsetId, tfd);
-  return true;
-}
-
-int64_t tfLseek(int64_t tfd, int64_t offset, int32_t whence) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return -1;
-
-  int32_t fd = (int32_t)(uintptr_t)p;
+int64_t FileOp::lseek(int64_t offset, int32_t whence) {
   int64_t ret = taosLSeek(fd, offset, whence);
-
-  taosReleaseRef(tsFileRsetId, tfd);
   return ret;
 }
 
-int32_t tfFtruncate(int64_t tfd, int64_t length) {
-  void *p = taosAcquireRef(tsFileRsetId, tfd);
-  if (p == NULL) return -1;
-
-  int32_t fd = (int32_t)(uintptr_t)p;
+int32_t FileOp::ftruncate(int64_t length) {
   int32_t code = taosFtruncate(fd, length);
-
-  taosReleaseRef(tsFileRsetId, tfd);
   return code;
 }

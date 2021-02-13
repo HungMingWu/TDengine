@@ -133,7 +133,7 @@ static int32_t vnodeAlterImp(SVnodeObj *pVnode, SCreateVnodeMsg *pVnodeCfg) {
     return code; 
   }
 
-  code = walAlter(pVnode->wal, &pVnode->walCfg);
+  code = pVnode->wal->alter(&pVnode->walCfg);
   if (code != TSDB_CODE_SUCCESS) {
     return code;
   }
@@ -269,10 +269,10 @@ int32_t vnodeOpen(int32_t vgId) {
     return terrno;
   }
 
-  walRestore(pVnode->wal, pVnode, vnodeProcessWrite);
+  pVnode->wal->restore(pVnode, vnodeProcessWrite);
   if (pVnode->version == 0) {
     pVnode->fversion = 0;
-    pVnode->version = walGetVersion(pVnode->wal);
+    pVnode->version = pVnode->wal->getVersion();
   }
 
   code = tsdbSyncCommit(pVnode->tsdb);
@@ -282,8 +282,8 @@ int32_t vnodeOpen(int32_t vgId) {
     return code;
   }
 
-  walRemoveAllOldFiles(pVnode->wal);
-  walRenew(pVnode->wal);
+  pVnode->wal->removeAllOldFiles();
+  pVnode->wal->renew();
 
   pVnode->qMgmt = qOpenQueryMgmt(pVnode->vgId);
   if (pVnode->qMgmt == NULL) {
@@ -346,7 +346,7 @@ void SVnodeObj::Destroy() {
   }
 
   if (wal) {
-    walStop(wal);
+    wal->stop();
   }
 
   if (tsdb) {
@@ -362,9 +362,9 @@ void SVnodeObj::Destroy() {
     if (code != 0) {
       vError("vgId:%d, failed to commit while close tsdb repo, keep wal", vgId);
     } else {
-      walRemoveAllOldFiles(wal);
+      wal->removeAllOldFiles();
     }
-    walClose(wal);
+    wal->stop();
   }
 
   wqueue.reset();
@@ -401,10 +401,9 @@ void SVnodeObj::CleanUp() {
   vnodeSetClosingStatus(this);
 
   // stop replication module
-  if (sync > 0) {
-    int64_t sync = this->sync;
-    this->sync = -1;
+  if (sync) {
     syncStop(sync);
+    sync.reset();
   }
 
   vDebug("vgId:%d, vnode is cleaned, refCount:%d pVnode:%p", vgId, refCount, this);
@@ -427,7 +426,7 @@ static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
     pVnode->cversion = pVnode->version;
     vDebug("vgId:%d, start commit, fver:%" PRIu64 " vver:%" PRIu64, pVnode->vgId, pVnode->fversion, pVnode->version);
     if (!pVnode->InStatus(TAOS_VN_STATUS_INIT)) {
-      return walRenew(pVnode->wal);
+      return pVnode->wal->renew();
     }
     return 0;
   }
@@ -438,7 +437,7 @@ static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno) {
     pVnode->fversion = pVnode->cversion;
     vDebug("vgId:%d, commit over, fver:%" PRIu64 " vver:%" PRIu64, pVnode->vgId, pVnode->fversion, pVnode->version);
     if (!pVnode->InStatus(TAOS_VN_STATUS_INIT)) {
-      walRemoveOneOldFile(pVnode->wal);
+      pVnode->wal->removeOneOldFile();
     }
     return vnodeSaveVersion(pVnode);
   }

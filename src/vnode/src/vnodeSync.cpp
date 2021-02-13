@@ -44,7 +44,7 @@ int32_t vnodeGetWalInfo(int32_t vgId, char *fileName, int64_t *fileId) {
     return -1;
   }
 
-  int32_t code = walGetWalFile(pVnode->wal, fileName, fileId);
+  int32_t code = pVnode->wal->getWalFile(fileName, fileId);
 
   pVnode->Release();
   return code;

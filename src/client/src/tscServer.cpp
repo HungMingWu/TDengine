@@ -28,7 +28,7 @@
 int (*tscBuildMsg[TSDB_SQL_MAX])(SSqlObj *pSql, SSqlInfo *pInfo) = {0};
 
 int (*tscProcessMsgRsp[TSDB_SQL_MAX])(SSqlObj *pSql);
-void tscProcessActivityTimer(void *handle, void *tmrId);
+void tscProcessActivityTimer(int64_t rid, void *tmrId);
 int tscKeepConn[TSDB_SQL_MAX] = {0};
 
 TSKEY tscGetSubscriptionProgress(void* sub, int64_t uid, TSKEY dflt);
@@ -207,14 +207,14 @@ void tscProcessHeartBeatRsp(void *param, TAOS_RES *tres, int code) {
     int32_t waitingDuring = tsShellActivityTimer * 500;
     tscDebug("%p send heartbeat in %dms", pSql, waitingDuring);
 
-    taosTmrReset(tscProcessActivityTimer, waitingDuring, (void *)pObj->rid, tscTmr, &pObj->pTimer);
+    taosTmrReset([pObj](void *tmrId) { tscProcessActivityTimer(pObj->rid, tmrId); }, waitingDuring,
+                 tscTmr, &pObj->pTimer);
   } else {
     tscDebug("%p start to close tscObj:%p, not send heartbeat again", pSql, pObj);
   }
 }
 
-void tscProcessActivityTimer(void *handle, void *tmrId) {
-  int64_t rid = (int64_t) handle;
+void tscProcessActivityTimer(int64_t rid, void *tmrId) {
   STscObj *pObj = (STscObj *)taosAcquireRef(tscRefId, rid);
   if (pObj == NULL) {
     return;
@@ -2052,7 +2052,8 @@ int tscProcessConnectRsp(SSqlObj *pSql) {
   createHbObj(pObj);
 
   //launch a timer to send heartbeat to maintain the connection and send status to mnode
-  taosTmrReset(tscProcessActivityTimer, tsShellActivityTimer * 500, (void *)pObj->rid, tscTmr, &pObj->pTimer);
+  taosTmrReset([pObj](void *tmrId) { tscProcessActivityTimer(pObj->rid, tmrId); }, tsShellActivityTimer * 500,
+               tscTmr, &pObj->pTimer);
 
   return 0;
 }

@@ -138,8 +138,7 @@ static int32_t mnodeCreateCluster() {
   int32_t numOfClusters = tsClusterSdb->getNumOfRows();
   if (numOfClusters != 0) return TSDB_CODE_SUCCESS;
 
-  SClusterObj *pCluster = static_cast<SClusterObj *>(malloc(sizeof(SClusterObj)));
-  memset(pCluster, 0, sizeof(SClusterObj));
+  auto pCluster = new SClusterObj;
   pCluster->createdTime = taosGetTimestampMs();
   bool getuid = taosGetSystemUid(pCluster->uid);
   if (!getuid) {

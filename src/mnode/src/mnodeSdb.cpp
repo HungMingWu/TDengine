@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include <mutex>
 #include "os.h"
@@ -23,7 +22,6 @@
 #include "tref.h"
 #include "tbn.h"
 #include "tqueue.h"
-#include "twal.h"
 #include "tsync.h"
 #include "ttimer.h"
 #include "tglobal.h"
@@ -35,6 +33,8 @@
 #include "mnodeDnode.h"
 #include "mnodeCluster.h"
 #include "mnodeSdb.h"
+#include "syncInt.h"
+#include "walInt.h"
 
 #define MAX_QUEUED_MSG_NUM 10000
 
@@ -61,8 +61,8 @@ struct SSdbMgmt {
   ESyncRole  role;
   ESdbStatus status;
   uint64_t   version;
-  int64_t    sync;
-  void *     wal;
+  SSyncNodePtr sync;
+  SWal*      wal;
   SSyncCfg   cfg;
   int32_t    queuedMsg;
   int32_t    numOfTables;
@@ -157,7 +157,7 @@ static int32_t sdbInitWal() {
   }
 
   sdbInfo("vgId:1, open sdb wal for restore");
-  int32_t code = walRestore(tsSdbMgmt.wal, NULL, sdbProcessWrite);
+  int32_t code = tsSdbMgmt.wal->restore(NULL, sdbProcessWrite);
   if (code != TSDB_CODE_SUCCESS) {
     sdbError("vgId:1, failed to open wal for restore since %s", tstrerror(code));
     return -1;
@@ -221,7 +221,7 @@ static uint32_t sdbGetFileInfo(int32_t vgId, char *name, uint32_t *index, uint32
 }
 
 static int32_t sdbGetWalInfo(int32_t vgId, char *fileName, int64_t *fileId) {
-  return walGetWalFile(tsSdbMgmt.wal, fileName, fileId);
+  return tsSdbMgmt.wal->getWalFile(fileName, fileId);
 }
 
 static void sdbNotifyRole(int32_t vgId, int8_t role) {
@@ -289,10 +289,10 @@ static void sdbConfirmForward(int32_t vgId, void *wparam, int32_t code) {
   sdbFreeFromQueue(pRow);
 }
 
-static void sdbUpdateSyncTmrFp(void *param, void *tmrId) { sdbUpdateSync(NULL); }
+static void sdbUpdateSyncTmrFp(void *tmrId) { sdbUpdateSync(NULL); }
 
 void sdbUpdateAsync() {
-  taosTmrReset(sdbUpdateSyncTmrFp, 200, NULL, tsMnodeTmr, &tsSdbTmr);
+  taosTmrReset(sdbUpdateSyncTmrFp, 200, tsMnodeTmr, &tsSdbTmr);
 }
 
 int32_t sdbUpdateSync(void *pMnodes) {
@@ -424,11 +424,11 @@ void sdbCleanUp() {
 
   if (tsSdbMgmt.sync) {
     syncStop(tsSdbMgmt.sync);
-    tsSdbMgmt.sync = -1;
+    tsSdbMgmt.sync.reset();
   }
 
   if (tsSdbMgmt.wal) {
-    walClose(tsSdbMgmt.wal);
+    tsSdbMgmt.wal->close();
     tsSdbMgmt.wal = NULL;
   }
 }
@@ -622,7 +622,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
     }
   }
 
-  int32_t code = walWrite(tsSdbMgmt.wal, pHead);
+  int32_t code = tsSdbMgmt.wal->write(pHead);
   if (code < 0) {
     return code;
   }
@@ -986,7 +986,7 @@ static int32_t sdbWriteFwdToQueue(int32_t vgId, void *wparam, int32_t qtype, voi
 }
 
 static int32_t sdbWriteRowToQueue(SSdbRow *pInputRow, int32_t action) {
-  SSdbTable *pTable = static_cast<SSdbTable *>(pInputRow->pTable);
+  SSdbTable *pTable = pInputRow->pTable;
   if (pTable == NULL) return TSDB_CODE_MND_SDB_INVALID_TABLE_TYPE;
 
   int32_t  size = sizeof(SSdbRow) + sizeof(SWalHead) + pTable->maxRowSize;
@@ -1036,7 +1036,7 @@ static void *sdbWorkerFp(void *pWorker) {
       sdbTrace("vgId:1, msg:%p is processed in sdb queue, code:%x", pRow->pMsg, pRow->code);
     }
 
-    walFsync(tsSdbMgmt.wal, true);
+    tsSdbMgmt.wal->fsync(true);
 
     // browse all items, and process them one by one
     taosResetQitems(tsSdbWQall);

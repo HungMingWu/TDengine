@@ -59,8 +59,9 @@ void    dnodeFreeMReadQueue();
 int32_t dnodeAllocMWritequeue();
 void    dnodeFreeMWritequeue();
 void    dnodeSendRpcMWriteRsp(void *pMsg, int32_t code);
-void    dnodeReprocessMWriteMsg(void *pMsg);
-void    dnodeDelayReprocessMWriteMsg(void *pMsg);
+struct SMnodeMsg;
+void dnodeReprocessMWriteMsg(SMnodeMsg *pWrite);
+void dnodeDelayReprocessMWriteMsg(SMnodeMsg *pMsg);
 
 void    dnodeSendStatusMsgToMnode();
 

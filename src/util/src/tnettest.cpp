@@ -304,9 +304,9 @@ static void taosNetCheckPort(uint32_t hostIp, int32_t startPort, int32_t endPort
   }
 }
 
-void *taosNetInitRpc(char *secretEncrypt, char spi) {
+SRpcInfo *taosNetInitRpc(char *secretEncrypt, char spi) {
   SRpcInit rpcInit;
-  void *   pRpcConn = NULL;
+  SRpcInfo *pRpcConn = NULL;
 
   char user[] = "nettestinternal";
   char pass[] = "nettestinternal";
@@ -333,7 +333,7 @@ static int32_t taosNetCheckRpc(const char* serverFqdn, uint16_t port, uint16_t p
   SRpcEpSet epSet;
   SRpcMsg   reqMsg;
   SRpcMsg   rspMsg;
-  void *    pRpcConn;
+  SRpcInfo *pRpcConn;
 
   char secretEncrypt[32] = {0};
 

@@ -17,13 +17,13 @@
 #include "os.h"
 #include "walInt.h"
 
-int32_t walGetNextFile(SWal *pWal, int64_t *nextFileId) {
+int32_t SWal::getNextFile(int64_t *nextFileId) {
   int64_t curFileId = *nextFileId;
   int64_t minFileId = INT64_MAX;
 
-  DIR *dir = opendir(pWal->path);
+  DIR *dir = opendir(path);
   if (dir == NULL) {
-    wError("vgId:%d, path:%s, failed to open since %s", pWal->vgId, pWal->path, strerror(errno));
+    wError("vgId:%d, path:%s, failed to open since %s", vgId, path, strerror(errno));
     return -1;
   }
 
@@ -45,17 +45,17 @@ int32_t walGetNextFile(SWal *pWal, int64_t *nextFileId) {
   if (minFileId == INT64_MAX) return -1;
 
   *nextFileId = minFileId;
-  wTrace("vgId:%d, path:%s, curFileId:%" PRId64 " nextFileId:%" PRId64, pWal->vgId, pWal->path, curFileId, *nextFileId);
+  wTrace("vgId:%d, path:%s, curFileId:%" PRId64 " nextFileId:%" PRId64, vgId, path, curFileId, *nextFileId);
 
   return 0;
 }
 
-int32_t walGetOldFile(SWal *pWal, int64_t curFileId, int32_t minDiff, int64_t *oldFileId) {
+int32_t SWal::getOldFile(int64_t curFileId, int32_t minDiff, int64_t *oldFileId) {
   int64_t minFileId = INT64_MAX;
 
-  DIR *dir = opendir(pWal->path);
+  DIR *dir = opendir(path);
   if (dir == NULL) {
-    wError("vgId:%d, path:%s, failed to open since %s", pWal->vgId, pWal->path, strerror(errno));
+    wError("vgId:%d, path:%s, failed to open since %s", vgId, path, strerror(errno));
     return -1;
   }
 
@@ -79,17 +79,17 @@ int32_t walGetOldFile(SWal *pWal, int64_t curFileId, int32_t minDiff, int64_t *o
   if (minDiff > 0) return -1;
 
   *oldFileId = minFileId;
-  wTrace("vgId:%d, path:%s, curFileId:%" PRId64 " oldFildId:%" PRId64, pWal->vgId, pWal->path, curFileId, *oldFileId);
+  wTrace("vgId:%d, path:%s, curFileId:%" PRId64 " oldFildId:%" PRId64, vgId, path, curFileId, *oldFileId);
 
   return 0;
 }
 
-int32_t walGetNewFile(SWal *pWal, int64_t *newFileId) {
+int32_t SWal::getNewFile(int64_t *newFileId) {
   int64_t maxFileId = INT64_MIN;
 
-  DIR *dir = opendir(pWal->path);
+  DIR *dir = opendir(path);
   if (dir == NULL) {
-    wError("vgId:%d, path:%s, failed to open since %s", pWal->vgId, pWal->path, strerror(errno));
+    wError("vgId:%d, path:%s, failed to open since %s", vgId, path, strerror(errno));
     return -1;
   }
 
@@ -112,7 +112,7 @@ int32_t walGetNewFile(SWal *pWal, int64_t *newFileId) {
     *newFileId = maxFileId;
   }
 
-  wTrace("vgId:%d, path:%s, newFileId:%" PRId64, pWal->vgId, pWal->path, *newFileId);
+  wTrace("vgId:%d, path:%s, newFileId:%" PRId64, vgId, path, *newFileId);
 
   return 0;
 }

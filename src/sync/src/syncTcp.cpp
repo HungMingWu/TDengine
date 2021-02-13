@@ -13,39 +13,14 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tulog.h"
 #include "tutil.h"
 #include "tsocket.h"
 #include "taoserror.h"
-#include "twal.h"
 #include "tsync.h"
 #include "syncInt.h"
 #include "syncTcp.h"
-
-typedef struct SThreadObj {
-  pthread_t thread;
-  bool      stop;
-  int32_t   pollFd;
-  int32_t   numOfFds;
-  struct SPoolObj *pPool;
-} SThreadObj;
-
-typedef struct SPoolObj {
-  SPoolInfo    info;
-  SThreadObj **pThread;
-  pthread_t    thread;
-  int32_t      nextId;
-  int32_t      acceptFd;  // FD for accept new connection
-} SPoolObj;
-
-typedef struct {
-  SThreadObj *pThread;
-  int64_t     handleId;
-  int32_t     fd;
-  int32_t     closedByApp;
-} SConnObj;
 
 static void *syncAcceptPeerTcpConnection(void *argv);
 static void *syncProcessTcpData(void *param);
@@ -112,7 +87,7 @@ void syncCloseTcpThreadPool(void *param) {
   tfree(pPool);
 }
 
-void *syncAllocateTcpConn(void *param, int64_t rid, int32_t connFd) {
+SConnObj *syncAllocateTcpConn(void *param, int32_t connFd) {
   struct epoll_event event;
   SPoolObj *pPool = (SPoolObj*)param;
 
@@ -130,7 +105,6 @@ void *syncAllocateTcpConn(void *param, int64_t rid, int32_t connFd) {
 
   pConn->fd = connFd;
   pConn->pThread = pThread;
-  pConn->handleId = rid;
   pConn->closedByApp = 0;
 
   event.events = EPOLLIN | EPOLLRDHUP;
@@ -164,7 +138,7 @@ static void taosProcessBrokenLink(SConnObj *pConn) {
   SPoolInfo * pInfo = &pPool->info;
 
   if (pConn->closedByApp == 0) shutdown(pConn->fd, SHUT_WR);
-  (*pInfo->processBrokenLink)(pConn->handleId);
+  pConn->processBrokenLink();
 
   pThread->numOfFds--;
   epoll_ctl(pThread->pollFd, EPOLL_CTL_DEL, pConn->fd, NULL);
@@ -221,7 +195,7 @@ static void *syncProcessTcpData(void *param) {
       }
 
       if (pConn->closedByApp == 0) {
-        if ((*pInfo->processIncomingMsg)(pConn->handleId, buffer) < 0) {
+        if (pConn->processIncomingMsg(buffer) < 0) {
           syncFreeTcpConn(pConn);
           continue;
         }

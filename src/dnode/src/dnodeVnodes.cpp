@@ -14,6 +14,7 @@
  */
 
 #define _DEFAULT_SOURCE
+#include <atomic>
 #include "os.h"
 #include "ttimer.h"
 #include "dnodeEps.h"
@@ -33,17 +34,17 @@ typedef struct {
 extern void *   tsDnodeTmr;
 static void *   tsStatusTimer = NULL;
 static uint32_t tsRebootTime = 0;
-static int32_t  tsOpenVnodes = 0;
+static std::atomic<int32_t>  tsOpenVnodes;
 static int32_t  tsTotalVnodes = 0;
 
-static void dnodeSendStatusMsg(void *handle, void *tmrId);
+static void dnodeSendStatusMsg(void *tmrId);
 static void dnodeProcessStatusRsp(SRpcMsg *pMsg);
 
 int32_t dnodeInitStatusTimer() {
   dnodeAddClientRspHandle(TSDB_MSG_TYPE_DM_STATUS_RSP, dnodeProcessStatusRsp);
 
   tsRebootTime = taosGetTimestampSec();
-  taosTmrReset(dnodeSendStatusMsg, 500, NULL, tsDnodeTmr, &tsStatusTimer);
+  taosTmrReset(dnodeSendStatusMsg, 500, tsDnodeTmr, &tsStatusTimer);
 
   dInfo("dnode status timer is initialized");
   return TSDB_CODE_SUCCESS;
@@ -93,7 +94,7 @@ static void *dnodeOpenVnode(void *param) {
 
   for (int32_t v = 0; v < pThread->vnodeNum; ++v) {
     int32_t vgId = pThread->vnodeList[v];
-    snprintf(stepDesc, TSDB_STEP_DESC_LEN, "vgId:%d, start to restore, %d of %d have been opened", vgId, tsOpenVnodes, tsTotalVnodes);
+    snprintf(stepDesc, TSDB_STEP_DESC_LEN, "vgId:%d, start to restore, %d of %d have been opened", vgId, tsOpenVnodes.load(), tsTotalVnodes);
     dnodeReportStep("open-vnodes", stepDesc, 0);
 
     if (vnodeOpen(vgId) < 0) {
@@ -104,7 +105,7 @@ static void *dnodeOpenVnode(void *param) {
       pThread->opened++;
     }
 
-    atomic_add_fetch_32(&tsOpenVnodes, 1);
+    tsOpenVnodes++;
   }
 
   dDebug("thread:%d, total vnodes:%d, opened:%d failed:%d", pThread->threadIndex, pThread->vnodeNum, pThread->opened,
@@ -198,7 +199,7 @@ void dnodeCleanupVnodes() {
 static void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
   if (pMsg->code != TSDB_CODE_SUCCESS) {
     dError("status rsp is received, error:%s", tstrerror(pMsg->code));
-    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
+    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, tsDnodeTmr, &tsStatusTimer);
     return;
   }
 
@@ -217,17 +218,17 @@ static void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
   SDnodeEps *pEps = (SDnodeEps *)((char *)pStatusRsp->vgAccess + pCfg->numOfVnodes * sizeof(SVgroupAccess));
   pEps->update();
 
-  taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
+  taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, tsDnodeTmr, &tsStatusTimer);
 }
 
-static void dnodeSendStatusMsg(void *handle, void *tmrId) {
+static void dnodeSendStatusMsg(void *tmrId) {
   if (tsDnodeTmr == NULL) {
     dError("dnode timer is already released");
     return;
   }
 
   if (tsStatusTimer == NULL) {
-    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
+    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, tsDnodeTmr, &tsStatusTimer);
     dError("failed to start status timer");
     return;
   }
@@ -235,7 +236,7 @@ static void dnodeSendStatusMsg(void *handle, void *tmrId) {
   int32_t contLen = sizeof(SStatusMsg) + TSDB_MAX_VNODES * sizeof(SVnodeLoad);
   SStatusMsg *pStatus = static_cast<SStatusMsg *>(rpcMallocCont(contLen));
   if (pStatus == NULL) {
-    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, NULL, tsDnodeTmr, &tsStatusTimer);
+    taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, tsDnodeTmr, &tsStatusTimer);
     dError("failed to malloc status message");
     return;
   }
@@ -286,6 +287,6 @@ static void dnodeSendStatusMsg(void *handle, void *tmrId) {
 void dnodeSendStatusMsgToMnode() {
   if (tsDnodeTmr != NULL && tsStatusTimer != NULL) {
     dInfo("force send status msg to mnode");
-    taosTmrReset(dnodeSendStatusMsg, 3, NULL, tsDnodeTmr, &tsStatusTimer);
+    taosTmrReset(dnodeSendStatusMsg, 3, tsDnodeTmr, &tsStatusTimer);
   }
 }

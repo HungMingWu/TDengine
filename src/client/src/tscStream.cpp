@@ -120,8 +120,7 @@ static void tscProcessStreamLaunchQuery(SSchedMsg *pMsg) {
   doLaunchQuery(pStream, pStream->pSql, 0);
 }
 
-static void tscProcessStreamTimer(void *handle, void *tmrId) {
-  SSqlStream *pStream = (SSqlStream *)handle;
+static void tscProcessStreamTimer(SSqlStream *pStream, void *tmrId) {
   if (pStream == NULL || pStream->pTimer != tmrId) {
     return;
   }
@@ -336,7 +335,8 @@ static void tscSetRetryTimer(SSqlStream *pStream, SSqlObj *pSql, int64_t timer) 
   pSql->cmd.command = TSDB_SQL_SELECT;
 
   // start timer for next computing
-  taosTmrReset(tscProcessStreamTimer, (int32_t)timer, pStream, tscTmr, &pStream->pTimer);
+  taosTmrReset([pStream](void *tmrId) { tscProcessStreamTimer(pStream, tmrId); }, (int32_t)timer, tscTmr,
+               &pStream->pTimer);
 }
 
 static int64_t getLaunchTimeDelay(const SSqlStream* pStream) {
@@ -553,7 +553,8 @@ static void tscCreateStream(void *param, TAOS_RES *res, int code) {
 
   tscAddIntoStreamList(pStream);
 
-  taosTmrReset(tscProcessStreamTimer, (int32_t)starttime, pStream, tscTmr, &pStream->pTimer);
+  taosTmrReset([pStream](void *tmrId) { tscProcessStreamTimer(pStream, tmrId); }, (int32_t)starttime, tscTmr,
+               &pStream->pTimer);
 
   tscDebug("%p stream:%p is opened, query on:%s, interval:%" PRId64 ", sliding:%" PRId64 ", first launched in:%" PRId64 ", sql:%s", pSql,
            pStream, pTableMetaInfo->name, pStream->interval.interval, pStream->interval.sliding, starttime, pSql->sqlstr);

@@ -1,13 +1,15 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.15)
 PROJECT(TDengine)
 
-INCLUDE_DIRECTORIES(inc)
 AUX_SOURCE_DIRECTORY(src SRC)
   
 IF (TD_LINUX)
   LIST(REMOVE_ITEM SRC src/syncArbitrator.cpp)
   ADD_LIBRARY(sync ${SRC})
-  TARGET_LINK_LIBRARIES(sync tutil pthread common)
+  target_include_directories(sync PUBLIC
+	inc/
+  )
+  TARGET_LINK_LIBRARIES(sync tutil pthread common twal)
 
   LIST(APPEND BIN_SRC src/syncArbitrator.cpp)
   LIST(APPEND BIN_SRC src/syncTcp.cpp)

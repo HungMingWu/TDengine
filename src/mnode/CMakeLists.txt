@@ -10,3 +10,4 @@ PUBLIC
 PRIVATE
 	../dnode/inc
 )
+target_link_libraries(mnode PUBLIC sync twal)

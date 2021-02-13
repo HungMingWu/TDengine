@@ -22,7 +22,7 @@
 
 #include "taos.h"
 
-void  tscSaveSlowQueryFp(void *handle, void *tmrId);
+void  tscSaveSlowQueryFp(char *sql, void *tmrId);
 TAOS *tscSlowQueryConn = NULL;
 bool  tscSlowQueryConnInitialized = false;
 
@@ -73,8 +73,7 @@ void tscSaveSlowQueryFpCb(void *param, TAOS_RES *result, int code) {
   taos_free_result(result);
 }
 
-void tscSaveSlowQueryFp(void *handle, void *tmrId) {
-  char *sql = (char*)handle;
+void tscSaveSlowQueryFp(char *sql, void *tmrId) {
 
   if (!tscSlowQueryConnInitialized) {
     if (tscSlowQueryConn == NULL) {
@@ -118,7 +117,7 @@ void tscSaveSlowQuery(SSqlObj *pSql) {
   }
   
   strcpy(sql + sqlLen, "')");
-  taosTmrStart(tscSaveSlowQueryFp, 200, sql, tscTmr);
+  taosTmrStart([sql](void *tmrId) { tscSaveSlowQueryFp(sql, tmrId); }, 200, tscTmr);
 }
 
 void tscRemoveFromSqlList(SSqlObj *pSql) {

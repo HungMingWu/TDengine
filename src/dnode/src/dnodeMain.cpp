@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include)
 #if __has_include(<filesystem>)
 #define GHC_USE_STD_FS
@@ -33,7 +32,6 @@ namespace fs = ghc::filesystem;
 #include "ttimer.h"
 #include "tconfig.h"
 #include "tfile.h"
-#include "twal.h"
 // #include "tfs.h"
 #include "tsync.h"
 #include "dnodeStep.h"
@@ -52,6 +50,7 @@ namespace fs = ghc::filesystem;
 #include "dnodeMPeer.h"
 #include "dnodeShell.h"
 #include "dnodeTelemetry.h"
+#include "walInt.h"
 
 void *tsDnodeTmr = NULL;
 static SRunStatus tsRunStatus = TSDB_RUN_STATUS_STOPPED;
@@ -61,14 +60,12 @@ static void    dnodeCleanupStorage();
 static void    dnodeSetRunStatus(SRunStatus status);
 
 static std::initializer_list<SStep> tsDnodeSteps = {
-  {"dnode-tfile",     tfInit,              tfCleanup},
   {"dnode-rpc",       rpcInit,             rpcCleanup},
   {"dnode-globalcfg", taosCheckGlobalCfg,  NULL},
   {"dnode-storage",   dnodeInitStorage,    dnodeCleanupStorage},
   {"dnode-cfg",       dnodeInitCfg,        NULL},
   {"dnode-eps",       dnodeInitEps,        dnodeCleanupEps},
   {"dnode-minfos",    dnodeInitMInfos,     NULL},
-  {"dnode-wal",       walInit,             walCleanUp},
   {"dnode-sync",      syncInit,            syncCleanUp},
   {"dnode-check",     dnodeInitCheck,      dnodeCleanupCheck},     // NOTES: dnodeInitCheck must be behind the dnodeinitStorage component !!!
   {"dnode-vread",     dnodeInitVRead,      dnodeCleanupVRead},
@@ -88,7 +85,7 @@ static std::initializer_list<SStep> tsDnodeSteps = {
 
 static bool dnodeCreateDir(const fs::path &dir, std::error_code &ec) {
   if (fs::exists(dir) && fs::is_directory(dir)) return true;
-  if (!fs::create_directory(dir, ec)) return false;
+  if (!fs::create_directories(dir, ec)) return false;
   fs::permissions(dir, fs::perms::owner_all 
       | fs::perms::group_read | fs::perms::group_exec 
       | fs::perms::others_read | fs::perms::others_exec, ec);
@@ -133,7 +130,7 @@ int32_t dnodeInitSystem() {
   dnodeInitTmr();
 
   std::error_code ec;
-  if (dnodeCreateDir(tsLogDir, ec) < 0) {
+  if (!dnodeCreateDir(tsLogDir, ec)) {
    printf("failed to create dir: %s, reason: %s\n", tsLogDir, ec.message().c_str());
    return -1;
   }

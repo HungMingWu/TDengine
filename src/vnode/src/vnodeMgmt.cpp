@@ -63,7 +63,7 @@ static void vnodeCleanupHash() {
   }
 }
 
-void *vnodeGetWal(void *pVnode) {
+SWal *vnodeGetWal(void *pVnode) {
   return ((SVnodeObj *)pVnode)->wal;
 }
 

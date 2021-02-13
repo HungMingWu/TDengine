@@ -29,7 +29,7 @@ typedef struct {
   tsem_t    rspSem; 
   tsem_t   *pOverSem; 
   pthread_t thread;
-  void     *pRpc;
+  SRpcInfo *pRpc;
 } SInfo;
 
 static void processResponse(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
 
   taosInitLog("client.log", 100000, 10);
 
-  void *pRpc = rpcOpen(rpcInit);
+  SRpcInfo *pRpc = rpcOpen(rpcInit);
   if (pRpc == NULL) {
     tError("failed to initialize RPC");
     return -1;

@@ -86,7 +86,7 @@ static void bnPostSignal() {
  * increase tsAccessSquence every balance interval
  */
 
-static void bnProcessTimer(void *handle, void *tmrId) {
+static void bnProcessTimer(void *tmrId) {
   if (!sdbIsMaster()) return;
   if (tsBnThread.stop) return;
 
@@ -95,17 +95,6 @@ static void bnProcessTimer(void *handle, void *tmrId) {
 
   bnStartTimer(-1);
   bnCheckStatus();
-
-  if (handle == NULL) {
-    if (tsAccessSquence % tsBalanceInterval == 0) {
-      mDebug("balance function is scheduled by timer");
-      bnPostSignal();
-    }
-  } else {
-    int64_t mseconds = (int64_t)handle;
-    mDebug("balance function is scheduled by event for %" PRId64 " mseconds arrived", mseconds);
-    bnPostSignal();
-  }
 }
 
 void bnStartTimer(int64_t mseconds) {
@@ -114,9 +103,19 @@ void bnStartTimer(int64_t mseconds) {
   bool updateSoon = (mseconds != -1);
   if (updateSoon) {
     mTrace("balance function will be called after %" PRId64 " ms", mseconds);
-    taosTmrReset(bnProcessTimer, mseconds, (void *)mseconds, tsMnodeTmr, &tsBnThread.timer);
+    taosTmrReset([mseconds](void *tmrId) { 
+        bnProcessTimer(tmrId);
+        mDebug("balance function is scheduled by event for %" PRId64 " mseconds arrived", mseconds);
+        bnPostSignal();
+    }, mseconds, tsMnodeTmr, &tsBnThread.timer);
   } else {
-    taosTmrReset(bnProcessTimer, tsStatusInterval * 1000, NULL, tsMnodeTmr, &tsBnThread.timer);
+    taosTmrReset([](void *tmrId) {
+        bnProcessTimer(tmrId);
+        if (tsAccessSquence % tsBalanceInterval == 0) {
+          mDebug("balance function is scheduled by timer");
+          bnPostSignal();
+        }
+    }, tsStatusInterval * 1000, tsMnodeTmr, &tsBnThread.timer);
   }
 }
 

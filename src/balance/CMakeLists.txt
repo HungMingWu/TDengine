@@ -9,5 +9,5 @@ add_library(balance
 target_include_directories(balance
 PRIVATE
 	inc
-	../mnode/inc
 )
+target_link_libraries(balance mnode)

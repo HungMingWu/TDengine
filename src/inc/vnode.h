@@ -17,7 +17,7 @@
 #define TDENGINE_VNODE_H
 
 #include "trpc.h"
-#include "twal.h"
+#include "walInt.h"
 
 typedef struct {
   int32_t len;
@@ -61,7 +61,7 @@ int32_t vnodeClose(int32_t vgId);
 // vnodeMgmt
 int32_t vnodeInitMgmt();
 void    vnodeCleanupMgmt();
-void*   vnodeGetWal(void *pVnode);
+SWal*   vnodeGetWal(void *pVnode);
 int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
 void    vnodeBuildStatusMsg(void *pStatus);
 void    vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes);

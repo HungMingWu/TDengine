@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#define _DEFAULT_SOURCE
 #include "os.h"
 #include "hash.h"
 #include "tlog.h"
@@ -22,23 +21,22 @@
 #include "tsocket.h"
 #include "tglobal.h"
 #include "taoserror.h"
-#include "twal.h"
 #include "tsync.h"
 #include "syncInt.h"
 #include "syncTcp.h"
 
+typedef struct {
+  char      id[TSDB_EP_LEN + 24];
+  int32_t   nodeFd;
+  SConnObj *pConn;
+} SNodeConn;
+
 static void    arbSignalHandler(int32_t signum, siginfo_t *sigInfo, void *context);
 static void    arbProcessIncommingConnection(int32_t connFd, uint32_t sourceIp);
-static void    arbProcessBrokenLink(int64_t rid);
-static int32_t arbProcessPeerMsg(int64_t rid, void *buffer);
+static void    arbProcessBrokenLink(SNodeConn* pNode);
+static int32_t arbProcessPeerMsg(SNodeConn *pNode, void *buffer);
 static tsem_t  tsArbSem;
 static void *  tsArbTcpPool;
-
-typedef struct {
-  char    id[TSDB_EP_LEN + 24];
-  int32_t nodeFd;
-  void *  pConn;
-} SNodeConn;
 
 int32_t main(int32_t argc, char *argv[]) {
   char arbLogPath[TSDB_FILENAME_LEN + 16] = {0};
@@ -87,8 +85,6 @@ int32_t main(int32_t argc, char *argv[]) {
   info.serverIp = 0;
   info.port = tsArbitratorPort;
   info.bufferSize = SYNC_MAX_SIZE;
-  info.processBrokenLink = arbProcessBrokenLink;
-  info.processIncomingMsg = arbProcessPeerMsg;
   info.processIncomingConn = arbProcessIncommingConnection;
   tsArbTcpPool = syncOpenTcpThreadPool(&info);
 
@@ -138,20 +134,18 @@ static void arbProcessIncommingConnection(int32_t connFd, uint32_t sourceIp) {
 
   sDebug("%s, arbitrator request is accepted", pNode->id);
   pNode->nodeFd = connFd;
-  pNode->pConn = syncAllocateTcpConn(tsArbTcpPool, (int64_t)pNode, connFd);
-
+  pNode->pConn = syncAllocateTcpConn(tsArbTcpPool, connFd);
+  pNode->pConn->processBrokenLink = [pNode] { arbProcessBrokenLink(pNode); };
+  pNode->pConn->processIncomingMsg = [pNode](void *buffer) { return arbProcessPeerMsg(pNode, buffer); };
   return;
 }
 
-static void arbProcessBrokenLink(int64_t rid) {
-  SNodeConn *pNode = (SNodeConn *)rid;
-
+static void arbProcessBrokenLink(SNodeConn *pNode) {
   sDebug("%s, TCP link is broken since %s, close connection", pNode->id, strerror(errno));
   tfree(pNode);
 }
 
-static int32_t arbProcessPeerMsg(int64_t rid, void *buffer) {
-  SNodeConn *pNode = (SNodeConn *)rid;
+static int32_t arbProcessPeerMsg(SNodeConn *pNode, void *buffer) {
   SSyncHead  head;
   int32_t    bytes = 0;
   char *     cont = (char *)buffer;

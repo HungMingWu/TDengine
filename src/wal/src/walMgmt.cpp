@@ -13,62 +13,100 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
+#include <thread>
 #include "os.h"
 #include "taoserror.h"
 #include "tref.h"
 #include "tfile.h"
-#include "twal.h"
 #include "walInt.h"
 
-typedef struct {
-  int32_t   refId;
-  int32_t   seq;
-  int8_t    stop;
-  pthread_t thread;
-  pthread_mutex_t mutex;
-} SWalMgmt;
+static int32_t walInitObj(SWal *pWal);
+static void    walFreeObj(void *pWal);
 
-static SWalMgmt tsWal = {0};
-static int32_t  walCreateThread();
-static void     walStopThread();
-static int32_t  walInitObj(SWal *pWal);
-static void     walFreeObj(void *pWal);
+struct SWalMgmt 
+{
+  int32_t   refId = 0;
+  int32_t   seq = 0;
+  int8_t    stop = 0;
+  std::thread thread;
 
-int32_t walInit() {
-  tsWal.refId = taosOpenRef(TSDB_MIN_VNODES, walFreeObj);
+ protected:
+  bool needFsync(SWal *pWal);
+  void updateSeq();
+  void fsyncAll();
+ public:
+  SWalMgmt();
+  ~SWalMgmt();
+};
 
-  int32_t code = walCreateThread();
-  if (code != TSDB_CODE_SUCCESS) {
-    wError("failed to init wal module since %s", tstrerror(code));
-    return code;
-  }
-
-  wInfo("wal module is initialized, refId:%d", tsWal.refId);
-  return code;
+SWalMgmt::SWalMgmt() {
+  refId = taosOpenRef(TSDB_MIN_VNODES, walFreeObj);
+  thread = std::thread([this] { 
+      while (1) {
+        updateSeq();
+        fsyncAll();
+        if (stop) break;
+      }
+  });
 }
 
-void walCleanUp() {
-  walStopThread();
-  taosCloseRef(tsWal.refId);
+SWalMgmt::~SWalMgmt() {
+  stop = 1;
+  thread.join();
+
+  wDebug("wal thread is stopped");
+  taosCloseRef(refId);
   wInfo("wal module is cleaned up");
 }
 
-void *walOpen(char *path, SWalCfg *pCfg) {
-  SWal *pWal = (SWal*)tcalloc(1, sizeof(SWal));
+static SWalMgmt tsWal;
+
+void SWalMgmt::updateSeq() {
+  taosMsleep(WAL_REFRESH_MS);
+  if (++seq <= 0) {
+    seq = 1;
+  }
+}
+
+bool SWalMgmt::needFsync(SWal *pWal) {
+  if (pWal->fsyncPeriod <= 0 || pWal->level != TAOS_WAL_FSYNC) {
+    return false;
+  }
+
+  if (seq % pWal->fsyncSeq == 0) {
+    return true;
+  }
+
+  return false;
+}
+
+void SWalMgmt::fsyncAll() {
+  SWal *pWal = (SWal *)taosIterateRef(refId, 0);
+  while (pWal) {
+    if (needFsync(pWal)) {
+      wTrace("vgId:%d, do fsync, level:%d seq:%d rseq:%d", pWal->vgId, pWal->level, pWal->fsyncSeq, tsWal.seq);
+      int32_t code = pWal->tfd->fsync();
+      if (code != 0) {
+        wError("vgId:%d, file:%s, failed to fsync since %s", pWal->vgId, pWal->name, strerror(code));
+      }
+    }
+    pWal = (SWal *)taosIterateRef(refId, pWal->rid);
+  }
+}
+
+SWal *walOpen(char *path, SWalCfg *pCfg) {
+  auto pWal = new SWal;
   if (pWal == NULL) {
     terrno = TAOS_SYSTEM_ERROR(errno);
     return NULL;
   }
 
   pWal->vgId = pCfg->vgId;
-  pWal->tfd = -1;
   pWal->fileId = -1;
   pWal->level = pCfg->walLevel;
   pWal->keep = pCfg->keep;
   pWal->fsyncPeriod = pCfg->fsyncPeriod;
   tstrncpy(pWal->path, path, sizeof(pWal->path));
-  pthread_mutex_init(&pWal->mutex, NULL);
 
   pWal->fsyncSeq = pCfg->fsyncPeriod / 1000;
   if (pWal->fsyncSeq <= 0) pWal->fsyncSeq = 1;
@@ -89,45 +127,36 @@ void *walOpen(char *path, SWalCfg *pCfg) {
   return pWal;
 }
 
-int32_t walAlter(void *handle, SWalCfg *pCfg) {
-  if (handle == NULL) return TSDB_CODE_WAL_APP_ERROR;
-  SWal *pWal = (SWal*)handle;
-
-  if (pWal->level == pCfg->walLevel && pWal->fsyncPeriod == pCfg->fsyncPeriod) {
-    wDebug("vgId:%d, old walLevel:%d fsync:%d, new walLevel:%d fsync:%d not change", pWal->vgId, pWal->level,
-           pWal->fsyncPeriod, pCfg->walLevel, pCfg->fsyncPeriod);
+int32_t SWal::alter(SWalCfg *pCfg) {
+  if (level == pCfg->walLevel && fsyncPeriod == pCfg->fsyncPeriod) {
+    wDebug("vgId:%d, old walLevel:%d fsync:%d, new walLevel:%d fsync:%d not change", vgId, level,
+           fsyncPeriod, pCfg->walLevel, pCfg->fsyncPeriod);
     return TSDB_CODE_SUCCESS;
   }
 
-  wInfo("vgId:%d, change old walLevel:%d fsync:%d, new walLevel:%d fsync:%d", pWal->vgId, pWal->level,
-        pWal->fsyncPeriod, pCfg->walLevel, pCfg->fsyncPeriod);
+  wInfo("vgId:%d, change old walLevel:%d fsync:%d, new walLevel:%d fsync:%d", vgId, level,
+        fsyncPeriod, pCfg->walLevel, pCfg->fsyncPeriod);
 
-  pWal->level = pCfg->walLevel;
-  pWal->fsyncPeriod = pCfg->fsyncPeriod;
-  pWal->fsyncSeq = pCfg->fsyncPeriod % 1000;
-  if (pWal->fsyncSeq <= 0) pWal->fsyncSeq = 1;
+  level = pCfg->walLevel;
+  fsyncPeriod = pCfg->fsyncPeriod;
+  fsyncSeq = pCfg->fsyncPeriod % 1000;
+  if (fsyncSeq <= 0) fsyncSeq = 1;
 
   return TSDB_CODE_SUCCESS;
 }
 
-void walStop(void *handle) {
-  if (handle == NULL) return;
-  SWal *pWal = (SWal*)handle;
-
-  pthread_mutex_lock(&pWal->mutex);
-  pWal->stop = 1;
-  pthread_mutex_unlock(&pWal->mutex);
-  wDebug("vgId:%d, stop write wal", pWal->vgId);
+void SWal::stop() {
+  mutex.lock();
+  stop_ = 1;
+  mutex.unlock();
+  wDebug("vgId:%d, stop write wal", vgId);
 }
 
-void walClose(void *handle) {
-  if (handle == NULL) return;
-
-  SWal *pWal = (SWal*)handle;
-  pthread_mutex_lock(&pWal->mutex);
-  tfClose(pWal->tfd);
-  pthread_mutex_unlock(&pWal->mutex);
-  taosRemoveRef(tsWal.refId, pWal->rid);
+void SWal::close() {
+  mutex.lock();
+  tfd.reset();
+  mutex.unlock();
+  taosRemoveRef(tsWal.refId, rid);
 }
 
 static int32_t walInitObj(SWal *pWal) {
@@ -144,75 +173,6 @@ static void walFreeObj(void *wal) {
   SWal *pWal = (SWal*)wal;
   wDebug("vgId:%d, wal:%p is freed", pWal->vgId, pWal);
 
-  tfClose(pWal->tfd);
-  pthread_mutex_destroy(&pWal->mutex);
+  pWal->tfd.reset();
   tfree(pWal);
-}
-
-static bool walNeedFsync(SWal *pWal) {
-  if (pWal->fsyncPeriod <= 0 || pWal->level != TAOS_WAL_FSYNC) {
-    return false;
-  }
-
-  if (tsWal.seq % pWal->fsyncSeq == 0) {
-    return true;
-  }
-
-  return false;
-}
-
-static void walUpdateSeq() {
-  taosMsleep(WAL_REFRESH_MS);
-  if (++tsWal.seq <= 0) {
-    tsWal.seq = 1;
-  }
-}
-
-static void walFsyncAll() {
-  SWal *pWal = (SWal*)taosIterateRef(tsWal.refId, 0);
-  while (pWal) {
-    if (walNeedFsync(pWal)) {
-      wTrace("vgId:%d, do fsync, level:%d seq:%d rseq:%d", pWal->vgId, pWal->level, pWal->fsyncSeq, tsWal.seq);
-      int32_t code = tfFsync(pWal->tfd);
-      if (code != 0) {
-        wError("vgId:%d, file:%s, failed to fsync since %s", pWal->vgId, pWal->name, strerror(code));
-      }
-    }
-    pWal = (SWal*)taosIterateRef(tsWal.refId, pWal->rid);
-  }
-}
-
-static void *walThreadFunc(void *param) {
-  while (1) {
-    walUpdateSeq();
-    walFsyncAll();
-    if (tsWal.stop) break;
-  }
-
-  return NULL;
-}
-
-static int32_t walCreateThread() {
-  pthread_attr_t thAttr;
-  pthread_attr_init(&thAttr);
-  pthread_attr_setdetachstate(&thAttr, PTHREAD_CREATE_JOINABLE);
-
-  if (pthread_create(&tsWal.thread, &thAttr, walThreadFunc, NULL) != 0) {
-    wError("failed to create wal thread since %s", strerror(errno));
-    return TAOS_SYSTEM_ERROR(errno);
-  }
-
-  pthread_attr_destroy(&thAttr);
-  wDebug("wal thread is launched");
-
-  return TSDB_CODE_SUCCESS;
-}
-
-static void walStopThread() {
-  tsWal.stop = 1;
-  if (tsWal.thread) {
-    pthread_join(tsWal.thread, NULL);
-  }
-
-  wDebug("wal thread is stopped");
 }

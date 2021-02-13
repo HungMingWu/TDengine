@@ -175,9 +175,7 @@ static void *dnodeProcessMWriteQueue(void *param) {
   return NULL;
 }
 
-void dnodeReprocessMWriteMsg(void *pMsg) {
-  SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(pMsg);
-
+void dnodeReprocessMWriteMsg(SMnodeMsg *pWrite) {
   if (!mnodeIsRunning() || tsMWriteQueue == NULL) {
     dDebug("msg:%p, app:%p type:%s is redirected for mnode not running, retry times:%d", pWrite, pWrite->rpcMsg.ahandle,
            taosMsg[pWrite->rpcMsg.msgType], pWrite->retry);
@@ -204,12 +202,8 @@ void dnodeReprocessMWriteMsg(void *pMsg) {
   }
 }
 
-static void dnodeDoDelayReprocessMWriteMsg(void *param, void *tmrId) {
-  dnodeReprocessMWriteMsg(param);
-}
-
-void dnodeDelayReprocessMWriteMsg(void *pMsg) {
-  SMnodeMsg *mnodeMsg = static_cast<SMnodeMsg *>(pMsg);
+void dnodeDelayReprocessMWriteMsg(SMnodeMsg *pMsg) {
   void *unUsed = NULL;
-  taosTmrReset(dnodeDoDelayReprocessMWriteMsg, 300, mnodeMsg, tsDnodeTmr, &unUsed);
+  taosTmrReset([pMsg](void *) { dnodeReprocessMWriteMsg(pMsg); }, 300, tsDnodeTmr,
+               &unUsed);
 }

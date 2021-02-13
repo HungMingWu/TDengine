@@ -16,19 +16,11 @@
 #ifndef TDENGINE_SYNC_TCP_POOL_H
 #define TDENGINE_SYNC_TCP_POOL_H
 
-typedef struct {
-  int32_t   numOfThreads;
-  uint32_t  serverIp;
-  int16_t   port;
-  int32_t   bufferSize;
-  void    (*processBrokenLink)(int64_t handleId);
-  int32_t (*processIncomingMsg)(int64_t handleId, void *buffer);
-  void    (*processIncomingConn)(int32_t fd, uint32_t ip);
-} SPoolInfo;
+#include "syncInt.h"
 
-void *syncOpenTcpThreadPool(SPoolInfo *pInfo);
+void *    syncOpenTcpThreadPool(SPoolInfo *pInfo);
 void  syncCloseTcpThreadPool(void *);
-void *syncAllocateTcpConn(void *, int64_t rid, int32_t connFd);
+SConnObj *syncAllocateTcpConn(void *, int32_t connFd);
 void  syncFreeTcpConn(void *);
 
 #endif  // TDENGINE_TCP_POOL_H

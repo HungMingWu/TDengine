@@ -16,7 +16,9 @@
 #ifndef TDENGINE_WAL_INT_H
 #define TDENGINE_WAL_INT_H
 
+#include <mutex>
 #include "tlog.h"
+#include "tfile.h"
 
 extern int32_t wDebugFlag;
 
@@ -36,25 +38,66 @@ extern int32_t wDebugFlag;
 #define WAL_FILE_LEN   (WAL_PATH_LEN + 32)
 #define WAL_FILE_NUM   1 // 3
 
-typedef struct {
+typedef enum { TAOS_WAL_NOLOG = 0, TAOS_WAL_WRITE = 1, TAOS_WAL_FSYNC = 2 } EWalType;
+
+typedef enum { TAOS_WAL_NOT_KEEP = 0, TAOS_WAL_KEEP = 1 } EWalKeep;
+
+struct SWalCfg {
+  int32_t  vgId;
+  int32_t  fsyncPeriod;  // millisecond
+  EWalType walLevel;     // wal level
+  EWalKeep keep;         // keep the wal file when closed
+};
+
+typedef int32_t FWalWrite(void *ahandle, void *pHead, int32_t qtype, void *pMsg);
+
+struct SWalHead {
+  int8_t   msgType;
+  int8_t   sver;
+  int8_t   reserved[2];
+  int32_t  len;
+  uint64_t version;
+  uint32_t signature;
+  uint32_t cksum;
+  char     cont[];
+};
+
+struct SWal {
   uint64_t version;
   int64_t  fileId;
   int64_t  rid;
-  int64_t  tfd;
+  FileOpPtr tfd;
   int32_t  vgId;
   int32_t  keep;
   int32_t  level;
   int32_t  fsyncPeriod;
   int32_t  fsyncSeq;
-  int8_t   stop;
+  int8_t   stop_;
   int8_t   reserved[3];
   char     path[WAL_PATH_LEN];
   char     name[WAL_FILE_LEN];
-  pthread_mutex_t mutex;
-} SWal;
+  std::mutex mutex;
 
-int32_t walGetNextFile(SWal *pWal, int64_t *nextFileId);
-int32_t walGetOldFile(SWal *pWal, int64_t curFileId, int32_t minDiff, int64_t *oldFileId);
-int32_t walGetNewFile(SWal *pWal, int64_t *newFileId);
+ protected:
+  int32_t restoreWalFile(void *pVnode, FWalWrite writeFp, char *name, int64_t fileId);
+  int32_t skipCorruptedRecord(SWalHead *pHead, FileOpPtr tfd, int64_t *offset);
+  int32_t getNextFile(int64_t *nextFileId);
+  int32_t getOldFile(int64_t curFileId, int32_t minDiff, int64_t *oldFileId);
+  int32_t getNewFile(int64_t *newFileId);
+ public:
+  int32_t alter(SWalCfg *pCfg);
+  void    stop();
+  void    close();
+  int32_t renew();
+  void    removeOneOldFile();
+  void    removeAllOldFiles();
+  int32_t write(SWalHead *);
+  int32_t restore(void *pVnode, FWalWrite writeFp);
+  void    fsync(bool forceFsync);
+  int32_t getWalFile(char *fileName, int64_t *fileId);
+  uint64_t getVersion();
+};
+
+SWal*         walOpen(char *path, SWalCfg *pCfg);
 
 #endif

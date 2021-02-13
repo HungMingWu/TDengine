@@ -19,7 +19,7 @@
 #include <memory>
 #include <mutex>
 #include "mnode.h"
-#include "twal.h"
+#include "walInt.h"
 
 typedef enum {
   SDB_TABLE_CLUSTER = 0,
@@ -56,8 +56,8 @@ struct SSdbRow {
   void *     pObj;
   SSdbTable *pTable;
   SMnodeMsg *pMsg;
-  int32_t  (*fpReq)(SMnodeMsg *pMsg);
-  int32_t  (*fpRsp)(SMnodeMsg *pMsg, int32_t code);
+  int32_t  (*fpReq)(SMnodeMsg *pMsg) = nullptr;
+  int32_t  (*fpRsp)(SMnodeMsg *pMsg, int32_t code) = nullptr;
   char       reserveForSync[24];
   SWalHead   pHead;
 

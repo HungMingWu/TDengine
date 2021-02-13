@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#define _DEFAULT_SOURCE
 #include <stdint.h>
 #include "os.h"
 #include "tulog.h"
@@ -21,8 +20,8 @@
 #include "tsocket.h"
 #include "trpc.h"
 #include "tqueue.h"
-#include "twal.h"
 #include "tsync.h"
+#include "syncInt.h"
 
 int       msgSize = 128;
 int       commit = 0;
@@ -30,7 +29,7 @@ int       dataFd = -1;
 STaosQueue* qhandle = nullptr;
 int       walNum = 0;
 uint64_t  tversion = 0;
-int64_t   syncHandle;
+SSyncNodePtr syncHandle;
 int       role;
 int       nodeId;
 char      path[256];

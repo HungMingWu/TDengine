@@ -366,7 +366,7 @@ struct STscObj {
   struct SSqlObj *   sqlList;
   struct SSqlStream *streamList;
   SRpcCorEpSet       *tscCorMgmtEpSet;
-  void*              pDnodeConn;
+  SRpcInfo*          pDnodeConn;
   std::mutex         mutex;
   std::atomic<int32_t>            numOfObj; // number of sqlObj from this tscObj
 };
@@ -441,7 +441,7 @@ typedef struct SSqlStream {
 
 void tscSetStreamDestTable(SSqlStream* pStream, const char* dstTable);
 
-int32_t tscInitRpc(std::string_view user, const char *secret, void** pDnodeConn);
+int32_t tscInitRpc(std::string_view user, const char *secret, SRpcInfo **pDnodeConn);
 void    tscInitMsgsFp();
 
 int tsParseSql(SSqlObj *pSql, bool initial);

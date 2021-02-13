@@ -200,7 +200,7 @@ static void *dnodeProcessVWriteQueue(void *wparam) {
       dTrace("msg:%p is processed in vwrite queue, code:0x%x", pWrite, pWrite->code);
     }
 
-    walFsync(vnodeGetWal(pVnode), forceFsync);
+    vnodeGetWal(pVnode)->fsync(forceFsync);
 
     // browse all items, and process them one by one
     taosResetQitems(pWorker->qall);

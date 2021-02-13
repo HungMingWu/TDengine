@@ -16,8 +16,10 @@
 #ifndef TDENGINE_TTIMER_H
 #define TDENGINE_TTIMER_H
 
+#include <functional>
+
 typedef void *tmr_h;
-typedef void (*TAOS_TMR_CALLBACK)(void *, void *);
+using TAOS_TMR_CALLBACK = std::function<void (void *)>;
 
 extern int      taosTmrThreads;
 extern uint32_t tsMaxTmrCtrl;
@@ -26,13 +28,13 @@ extern uint32_t tsMaxTmrCtrl;
 
 void *taosTmrInit(int maxTmr, int resoultion, int longest, const char *label);
 
-tmr_h taosTmrStart(TAOS_TMR_CALLBACK fp, int mseconds, void *param, void *handle);
+tmr_h taosTmrStart(TAOS_TMR_CALLBACK fp, int mseconds, void *handle);
 
 bool taosTmrStop(tmr_h tmrId);
 
 bool taosTmrStopA(tmr_h *timerId);
 
-bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void *param, void *handle, tmr_h *pTmrId);
+bool taosTmrReset(TAOS_TMR_CALLBACK fp, int mseconds, void *handle, tmr_h *pTmrId);
 
 void taosTmrCleanUp(void *handle);
 

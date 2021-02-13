@@ -13,15 +13,14 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tutil.h"
 #include "tglobal.h"
 #include "tlog.h"
-#include "twal.h"
+#include "walInt.h"
 
 int64_t  ver = 0;
-void    *pWal = NULL;
+SWal*    pWal = NULL;
 
 int writeToQueue(void *pVnode, void *data, int type, void *pMsg) {
   // do nothing
@@ -30,7 +29,7 @@ int writeToQueue(void *pVnode, void *data, int type, void *pMsg) {
   if (pHead->version > ver)
     ver = pHead->version;
 
-  walWrite(pWal, pHead);
+  pWal->write(pHead);
 
   return 0;
 }
@@ -86,7 +85,7 @@ int main(int argc, char *argv[]) {
     exit(-1);
   }
 
-  int ret = walRestore(pWal, NULL, writeToQueue);
+  int ret = pWal->restore(NULL, writeToQueue);
   if (ret <0) {
     printf("failed to restore wal\n");
     exit(-1);
@@ -101,11 +100,11 @@ int main(int argc, char *argv[]) {
     for (int k=0; k<rows; ++k) {
       pHead->version = ++ver;
       pHead->len = size;
-      walWrite(pWal, pHead);
+      pWal->write(pHead);
     }
        
     printf("renew a wal, i:%d\n", i);
-    walRenew(pWal);
+    pWal->renew();
   }
 
   printf("%d wal files are written\n", total);
@@ -114,7 +113,7 @@ int main(int argc, char *argv[]) {
   char    name[256];
 
   while (1) {
-    int code = walGetWalFile(pWal, name, &index);
+    int code = pWal->getWalFile(name, &index);
     if (code == -1) {
       printf("failed to get wal file, index:%" PRId64 "\n", index);
       break;
@@ -128,7 +127,7 @@ int main(int argc, char *argv[]) {
 
   getchar();
 
-  walClose(pWal);
+  pWal->close();
 
   return 0;
 }

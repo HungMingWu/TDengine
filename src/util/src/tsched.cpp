@@ -39,7 +39,7 @@ typedef struct {
 } SSchedQueue;
 
 static void *taosProcessSchedQueue(void *param);
-static void taosDumpSchedulerStatus(void *qhandle, void *tmrId);
+static void taosDumpSchedulerStatus(SSchedQueue *pSched, void *tmrId);
 
 void *taosInitScheduler(int queueSize, int numOfThreads, const char *label) {
   SSchedQueue *pSched = (SSchedQueue *)calloc(sizeof(SSchedQueue), 1);
@@ -111,7 +111,8 @@ void *taosInitSchedulerWithInfo(int queueSize, int numOfThreads, const char *lab
   
   if (tmrCtrl != NULL && pSched != NULL) {
     pSched->pTmrCtrl = tmrCtrl;
-    taosTmrReset(taosDumpSchedulerStatus, DUMP_SCHEDULER_TIME_WINDOW, pSched, pSched->pTmrCtrl, &pSched->pTimer);
+    taosTmrReset([pSched](void *tmrId) { taosDumpSchedulerStatus(pSched, tmrId); }, DUMP_SCHEDULER_TIME_WINDOW,
+                 pSched->pTmrCtrl, &pSched->pTimer);
   }
   
   return pSched;
@@ -207,8 +208,7 @@ void taosCleanUpScheduler(void *param) {
 }
 
 // for debug purpose, dump the scheduler status every 1min.
-void taosDumpSchedulerStatus(void *qhandle, void *tmrId) {
-  SSchedQueue *pSched = (SSchedQueue *)qhandle;
+void taosDumpSchedulerStatus(SSchedQueue *pSched, void *tmrId) {
   if (pSched == NULL || pSched->pTimer == NULL || pSched->pTimer != tmrId) {
     return;
   }
@@ -218,5 +218,6 @@ void taosDumpSchedulerStatus(void *qhandle, void *tmrId) {
     uDebug("scheduler:%s, current tasks in queue:%d, task thread:%d", pSched->label, size, pSched->numOfThreads);
   }
   
-  taosTmrReset(taosDumpSchedulerStatus, DUMP_SCHEDULER_TIME_WINDOW, pSched, pSched->pTmrCtrl, &pSched->pTimer);
+  taosTmrReset([pSched](void *tmrId) { taosDumpSchedulerStatus(pSched, tmrId); },
+      DUMP_SCHEDULER_TIME_WINDOW, pSched->pTmrCtrl, &pSched->pTimer);
 }

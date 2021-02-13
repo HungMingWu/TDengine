@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <sys/inotify.h>
 #include "os.h"
 #include "taoserror.h"
@@ -22,11 +21,10 @@
 #include "tglobal.h"
 #include "ttimer.h"
 #include "tsocket.h"
-#include "twal.h"
 #include "tsync.h"
 #include "syncInt.h"
 
-static int32_t syncGetWalVersion(SSyncNode *pNode, SSyncPeer *pPeer) {
+static int32_t syncGetWalVersion(SSyncNodePtr pNode, SSyncPeerPtr pPeer) {
   uint64_t fver, wver;
   int32_t  code = (*pNode->getVersion)(pNode->vgId, &fver, &wver);
   if (code != 0) {
@@ -38,7 +36,7 @@ static int32_t syncGetWalVersion(SSyncNode *pNode, SSyncPeer *pPeer) {
   return code;
 }
 
-static bool syncIsWalModified(SSyncNode *pNode, SSyncPeer *pPeer) {
+static bool syncIsWalModified(SSyncNodePtr pNode, SSyncPeerPtr pPeer) {
   uint64_t fver, wver;
   int32_t  code = (*pNode->getVersion)(pNode->vgId, &fver, &wver);
   if (code != 0) {
@@ -54,7 +52,7 @@ static bool syncIsWalModified(SSyncNode *pNode, SSyncPeer *pPeer) {
   return false;
 }
 
-static int32_t syncGetFileVersion(SSyncNode *pNode, SSyncPeer *pPeer) {
+static int32_t syncGetFileVersion(SSyncNodePtr pNode, SSyncPeerPtr pPeer) {
   uint64_t fver, wver;
   int32_t  code = (*pNode->getVersion)(pNode->vgId, &fver, &wver);
   if (code != 0) {
@@ -66,7 +64,7 @@ static int32_t syncGetFileVersion(SSyncNode *pNode, SSyncPeer *pPeer) {
   return code;
 }
 
-static bool syncAreFilesModified(SSyncNode *pNode, SSyncPeer *pPeer) {
+static bool syncAreFilesModified(SSyncNodePtr pNode, SSyncPeerPtr pPeer) {
   uint64_t fver, wver;
   int32_t  code = (*pNode->getVersion)(pNode->vgId, &fver, &wver);
   if (code != 0) {
@@ -85,8 +83,8 @@ static bool syncAreFilesModified(SSyncNode *pNode, SSyncPeer *pPeer) {
   return false;
 }
 
-static int32_t syncRetrieveFile(SSyncPeer *pPeer) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static int32_t syncRetrieveFile(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
   SFileInfo  fileInfo; memset(&fileInfo, 0, sizeof(SFileInfo));
   SFileAck   fileAck; memset(&fileAck, 0, sizeof(SFileAck));
   int32_t    code = -1;
@@ -221,7 +219,7 @@ static int32_t syncReadOneWalRecord(int32_t sfd, SWalHead *pHead) {
   return sizeof(SWalHead) + pHead->len;
 }
 
-static int32_t syncRetrieveLastWal(SSyncPeer *pPeer, char *name, uint64_t fversion, int64_t offset) {
+static int32_t syncRetrieveLastWal(SSyncPeerPtr pPeer, char *name, uint64_t fversion, int64_t offset) {
   int32_t sfd = open(name, O_RDONLY);
   if (sfd < 0) {
     sError("%s, failed to open wal:%s for retrieve since:%s", pPeer->id, name, tstrerror(errno));
@@ -279,8 +277,8 @@ static int32_t syncRetrieveLastWal(SSyncPeer *pPeer, char *name, uint64_t fversi
   return code;
 }
 
-static int32_t syncProcessLastWal(SSyncPeer *pPeer, char *wname, int64_t index) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static int32_t syncProcessLastWal(SSyncPeerPtr pPeer, char *wname, int64_t index) {
+  auto pNode = pPeer->pSyncNode.lock();
   int32_t    once = 0;  // last WAL has once ever been processed
   int64_t    offset = 0;
   uint64_t   fversion = 0;
@@ -307,7 +305,7 @@ static int32_t syncProcessLastWal(SSyncPeer *pPeer, char *wname, int64_t index) 
     if (!walModified || once) {
       if (fversion == 0) {
         pPeer->sstatus = TAOS_SYNC_STATUS_CACHE;  // start to forward pkt
-        fversion = nodeVersion;                   // must read data to fversion
+        fversion = pNode->getVer();                   // must read data to fversion
         sDebug("%s, set sstatus:%s and fver:%" PRIu64, pPeer->id, syncStatus[pPeer->sstatus], fversion);
       }
     }
@@ -335,8 +333,8 @@ static int32_t syncProcessLastWal(SSyncPeer *pPeer, char *wname, int64_t index) 
   return -1;
 }
 
-static int32_t syncRetrieveWal(SSyncPeer *pPeer) {
-  SSyncNode * pNode = pPeer->pSyncNode;
+static int32_t syncRetrieveWal(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
   char        fname[TSDB_FILENAME_LEN * 3];
   char        wname[TSDB_FILENAME_LEN * 2];
   int32_t     size;
@@ -414,8 +412,8 @@ static int32_t syncRetrieveWal(SSyncPeer *pPeer) {
   return code;
 }
 
-static int32_t syncRetrieveFirstPkt(SSyncPeer *pPeer) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static int32_t syncRetrieveFirstPkt(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
 
   SSyncMsg msg;
   syncBuildSyncDataMsg(&msg, pNode->vgId);
@@ -436,7 +434,7 @@ static int32_t syncRetrieveFirstPkt(SSyncPeer *pPeer) {
   return 0;
 }
 
-static int32_t syncRetrieveDataStepByStep(SSyncPeer *pPeer) {
+static int32_t syncRetrieveDataStepByStep(SSyncPeerPtr pPeer) {
   sInfo("%s, start to retrieve, sstatus:%s", pPeer->id, syncStatus[pPeer->sstatus]);
   if (syncRetrieveFirstPkt(pPeer) < 0) {
     sError("%s, failed to start retrieve", pPeer->id);
@@ -464,15 +462,8 @@ static int32_t syncRetrieveDataStepByStep(SSyncPeer *pPeer) {
   return 0;
 }
 
-void *syncRetrieveData(void *param) {
-  int64_t    rid = (int64_t)param;
-  SSyncPeer *pPeer = syncAcquirePeer(rid);
-  if (pPeer == NULL) {
-    sError("failed to retrieve data, invalid peer rid:%" PRId64, rid);
-    return NULL;
-  }
-
-  SSyncNode *pNode = pPeer->pSyncNode;
+void syncRetrieveData(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
 
   taosBlockSIGPIPE();
   sInfo("%s, start to retrieve data, sstatus:%s, numOfRetrieves:%d", pPeer->id, syncStatus[pPeer->sstatus],
@@ -508,9 +499,4 @@ void *syncRetrieveData(void *param) {
 
   // The ref is obtained in both the create thread and the current thread, so it is released twice
   sInfo("%s, sync retrieve data over, sstatus:%s", pPeer->id, syncStatus[pPeer->sstatus]);
-
-  syncReleasePeer(pPeer);
-  syncReleasePeer(pPeer);
-
-  return NULL;
 }

@@ -13,11 +13,9 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include "os.h"
 #include "tqueue.h"
-#include "twal.h"
 #include "mnode.h"
 #include "dnodeVMgmt.h"
 #include "dnodeMInfos.h"

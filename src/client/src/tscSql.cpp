@@ -76,7 +76,7 @@ static SSqlObj *taosConnectImpl(const char *ip, std::string_view user, const cha
     if (tscSetMgmtEpSetFromCfg(tsFirst, tsSecond, &corMgmtEpSet) < 0) return NULL;
   }
  
-  void *pDnodeConn = NULL;
+  SRpcInfo *pDnodeConn = NULL;
   if (tscInitRpc(user, secretEncrypt, &pDnodeConn) != 0) {
     terrno = TSDB_CODE_RPC_NETWORK_UNAVAIL;
     return NULL;

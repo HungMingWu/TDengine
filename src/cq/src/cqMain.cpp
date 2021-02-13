@@ -13,8 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
-
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -29,7 +27,7 @@
 #include "tdataformat.h"
 #include "tglobal.h"
 #include "tlog.h"
-#include "twal.h"
+#include "walInt.h"
 #include <algorithm>
 #include <list>
 #include <mutex>
@@ -242,13 +240,12 @@ static void doCreateStream(void *param, TAOS_RES *result, int32_t code) {
   cqCreateStream(pContext, pObj);
 }
 
-static void cqProcessCreateTimer(void *param, void *tmrId) {
-  SCqObj* pObj = (SCqObj*)param;
+static void cqProcessCreateTimer(SCqObj *pObj, void *tmrId) {
   SCqContext* pContext = pObj->pContext;
 
   if (pContext->dbConn == NULL) {
     cDebug("vgId:%d, try connect to TDengine", pContext->vgId);
-    taos_connect_a(NULL, pContext->user, pContext->pass, pContext->db, 0, doCreateStream, param, NULL);
+    taos_connect_a(NULL, pContext->user, pContext->pass, pContext->db, 0, doCreateStream, pObj, NULL);
   } else {
     std::lock_guard<std::mutex> lock(pContext->mutex);
     cqCreateStream(pContext, pObj);
@@ -260,7 +257,7 @@ static void cqCreateStream(SCqContext *pContext, SCqObj *pObj) {
 
   if (pContext->dbConn == NULL) {
     cDebug("vgId:%d, create dbConn after 1000 ms", pContext->vgId);
-    pObj->tmrId = taosTmrStart(cqProcessCreateTimer, 1000, pObj, pContext->tmrCtrl);
+    pObj->tmrId = taosTmrStart([pObj](void *tmrId) { cqProcessCreateTimer(pObj, tmrId); }, 1000, pContext->tmrCtrl);
     return;
   }
   pObj->tmrId = 0;

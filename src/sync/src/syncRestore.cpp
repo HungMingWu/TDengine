@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "tlog.h"
@@ -21,18 +20,17 @@
 #include "ttimer.h"
 #include "tsocket.h"
 #include "tqueue.h"
-#include "twal.h"
 #include "tsync.h"
 #include "syncInt.h"
 
-static void syncRemoveExtraFile(SSyncPeer *pPeer, int32_t sindex, int32_t eindex) {
+static void syncRemoveExtraFile(SSyncPeerPtr pPeer, int32_t sindex, int32_t eindex) {
   char       name[TSDB_FILENAME_LEN * 2] = {0};
   char       fname[TSDB_FILENAME_LEN * 3] = {0};
   uint32_t   magic;
   uint64_t   fversion;
   int64_t    size;
   uint32_t   index = sindex;
-  SSyncNode *pNode = pPeer->pSyncNode;
+  auto pNode = pPeer->pSyncNode.lock();
 
   if (sindex < 0 || eindex < sindex) return;
 
@@ -52,8 +50,8 @@ static void syncRemoveExtraFile(SSyncPeer *pPeer, int32_t sindex, int32_t eindex
   }
 }
 
-static int32_t syncRestoreFile(SSyncPeer *pPeer, uint64_t *fversion) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static int32_t syncRestoreFile(SSyncPeerPtr pPeer, uint64_t *fversion) {
+  auto pNode = pPeer->pSyncNode.lock();
   SFileInfo  minfo; memset(&minfo, 0, sizeof(SFileInfo)); /* = {0}; */
   SFileInfo  sinfo; memset(&sinfo, 0, sizeof(SFileInfo)); /* = {0}; */
   SFileAck   fileAck; memset(&fileAck, 0, sizeof(SFileAck));
@@ -160,8 +158,8 @@ static int32_t syncRestoreFile(SSyncPeer *pPeer, uint64_t *fversion) {
   return code;
 }
 
-static int32_t syncRestoreWal(SSyncPeer *pPeer, uint64_t *wver) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static int32_t syncRestoreWal(SSyncPeerPtr pPeer, uint64_t *wver) {
+  auto pNode = pPeer->pSyncNode.lock();
   int32_t    ret, code = -1;
   uint64_t   lastVer = 0;
 
@@ -211,8 +209,8 @@ static int32_t syncRestoreWal(SSyncPeer *pPeer, uint64_t *wver) {
   return code;
 }
 
-static char *syncProcessOneBufferedFwd(SSyncPeer *pPeer, char *offset) {
-  SSyncNode *pNode = pPeer->pSyncNode;
+static char *syncProcessOneBufferedFwd(SSyncPeerPtr pPeer, char *offset) {
+  auto pNode = pPeer->pSyncNode.lock();
   SWalHead * pHead = (SWalHead *)offset;
 
   (*pNode->writeToCache)(pNode->vgId, pHead, TAOS_QTYPE_FWD, NULL);
@@ -221,8 +219,8 @@ static char *syncProcessOneBufferedFwd(SSyncPeer *pPeer, char *offset) {
   return offset;
 }
 
-static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
-  SSyncNode *  pNode = pPeer->pSyncNode;
+static int32_t syncProcessBufferedFwd(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
   auto &pRecv = pNode->pRecv;
   int32_t      forwards = 0;
 
@@ -241,14 +239,14 @@ static int32_t syncProcessBufferedFwd(SSyncPeer *pPeer) {
     forwards++;
   }
 
-  nodeRole = TAOS_SYNC_ROLE_SLAVE;
+  pNode->setRole(TAOS_SYNC_ROLE_SLAVE);
   sDebug("%s, finish processing buffered fwds:%d", pPeer->id, forwards);
 
   return pRecv->code;
 }
 
-int32_t syncSaveIntoBuffer(SSyncPeer *pPeer, SWalHead *pHead) {
-  SSyncNode *  pNode = pPeer->pSyncNode;
+int32_t syncSaveIntoBuffer(SSyncPeerPtr pPeer, SWalHead *pHead) {
+  auto pNode = pPeer->pSyncNode.lock();
   auto &pRecv = pNode->pRecv;
   int32_t len = pHead->len + sizeof(SWalHead);
 
@@ -270,9 +268,9 @@ int32_t syncSaveIntoBuffer(SSyncPeer *pPeer, SWalHead *pHead) {
   return pRecv->code;
 }
 
-static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
-  SSyncNode *pNode = pPeer->pSyncNode;
-  nodeSStatus = TAOS_SYNC_STATUS_FILE;
+static int32_t syncRestoreDataStepByStep(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
+  pNode->setStatus(TAOS_SYNC_STATUS_FILE);
   uint64_t fversion = 0;
 
   sInfo("%s, start to restore, sstatus:%s", pPeer->id, syncStatus[pPeer->sstatus]);
@@ -283,7 +281,7 @@ static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
   }
   sDebug("%s, send sync rsp to peer, tranId:%u", pPeer->id, rsp.tranId);
 
-  sInfo("%s, start to restore file, set sstatus:%s", pPeer->id, syncStatus[nodeSStatus]);
+  sInfo("%s, start to restore file, set sstatus:%s", pPeer->id, syncStatus[pNode->getStatus()]);
   int32_t code = syncRestoreFile(pPeer, &fversion);
   if (code < 0) {
     sError("%s, failed to restore file", pPeer->id);
@@ -298,9 +296,9 @@ static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
     }
   }
 
-  nodeVersion = fversion;
+  pNode->setVer(fversion);
 
-  sInfo("%s, start to restore wal, fver:%" PRIu64, pPeer->id, nodeVersion);
+  sInfo("%s, start to restore wal, fver:%" PRIu64, pPeer->id, pNode->getVer());
   uint64_t wver = 0;
   code = syncRestoreWal(pPeer, &wver);  // lastwar
   if (code < 0) {
@@ -309,12 +307,12 @@ static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
   }
 
   if (wver != 0) {
-    nodeVersion = wver;
-    sDebug("%s, restore wal finished, set sver:%" PRIu64, pPeer->id, nodeVersion);
+    pNode->setVer(wver);
+    sDebug("%s, restore wal finished, set sver:%" PRIu64, pPeer->id, pNode->getVer());
   }
 
-  nodeSStatus = TAOS_SYNC_STATUS_CACHE;
-  sInfo("%s, start to insert buffered points, set sstatus:%s", pPeer->id, syncStatus[nodeSStatus]);
+  pNode->setStatus(TAOS_SYNC_STATUS_CACHE);
+  sInfo("%s, start to insert buffered points, set sstatus:%s", pPeer->id, syncStatus[pNode->getStatus()]);
   if (syncProcessBufferedFwd(pPeer) < 0) {
     sError("%s, failed to insert buffered points", pPeer->id);
     return -1;
@@ -323,19 +321,12 @@ static int32_t syncRestoreDataStepByStep(SSyncPeer *pPeer) {
   return 0;
 }
 
-void *syncRestoreData(void *param) {
-  int64_t    rid = (int64_t)param;
-  SSyncPeer *pPeer = syncAcquirePeer(rid);
-  if (pPeer == NULL) {
-    sError("failed to restore data, invalid peer rid:%" PRId64, rid);
-    return NULL;
-  }
-
-  SSyncNode *pNode = pPeer->pSyncNode;
+void syncRestoreData(SSyncPeerPtr pPeer) {
+  auto pNode = pPeer->pSyncNode.lock();
 
   taosBlockSIGPIPE();
   __sync_fetch_and_add(&tsSyncNum, 1);
-  sInfo("%s, start to restore data, sstatus:%s", pPeer->id, syncStatus[nodeSStatus]);
+  sInfo("%s, start to restore data, sstatus:%s", pPeer->id, syncStatus[pNode->getStatus()]);
 
   (*pNode->notifyRole)(pNode->vgId, TAOS_SYNC_ROLE_SYNCING);
 
@@ -343,26 +334,22 @@ void *syncRestoreData(void *param) {
 
   if (syncRestoreDataStepByStep(pPeer) == 0) {
     sInfo("%s, it is synced successfully", pPeer->id);
-    nodeRole = TAOS_SYNC_ROLE_SLAVE;
+    pNode->setRole(TAOS_SYNC_ROLE_SLAVE);
     syncBroadcastStatus(pNode);
   } else {
     sError("%s, failed to restore data, restart connection", pPeer->id);
-    nodeRole = TAOS_SYNC_ROLE_UNSYNCED;
+    pNode->setRole(TAOS_SYNC_ROLE_UNSYNCED);
     syncRestartConnection(pPeer);
   }
 
-  (*pNode->notifyRole)(pNode->vgId, nodeRole);
+  (*pNode->notifyRole)(pNode->vgId, pNode->getRole());
 
-  nodeSStatus = TAOS_SYNC_STATUS_INIT;
-  sInfo("%s, restore data over, set sstatus:%s", pPeer->id, syncStatus[nodeSStatus]);
+  pNode->setStatus(TAOS_SYNC_STATUS_INIT);
+  sInfo("%s, restore data over, set sstatus:%s", pPeer->id, syncStatus[pNode->getStatus()]);
 
   taosClose(pPeer->syncFd);
   pNode->pRecv.reset();
   __sync_fetch_and_sub(&tsSyncNum, 1);
 
-  // The ref is obtained in both the create thread and the current thread, so it is released twice
-  syncReleasePeer(pPeer);
-  syncReleasePeer(pPeer);
-
-  return NULL;
+  return;
 }
