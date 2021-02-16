@@ -17,7 +17,8 @@
 
 #include "tdataformat.h"
 
-typedef int32_t (*FCqWrite)(int32_t vgId, void *pHead, int32_t qtype, void *pMsg);
+struct SWalHead;
+typedef int32_t (*FCqWrite)(int32_t vgId, SWalHead *pHead, int32_t qtype, void *pMsg);
 
 typedef struct {
   int32_t  vgId;

@@ -24,7 +24,7 @@ void     vnodeNotifyRole(int32_t vgId, int8_t role);
 void     vnodeCtrlFlow(int32_t vgId, int32_t level);
 int32_t  vnodeNotifyFileSynced(int32_t vgId, uint64_t fversion);
 void     vnodeConfirmForard(int32_t vgId, void *wparam, int32_t code);
-int32_t  vnodeWriteToCache(int32_t vgId, void *wparam, int32_t qtype, void *rparam);
+int32_t  vnodeWriteToCache(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam);
 int32_t  vnodeGetVersion(int32_t vgId, uint64_t *fver, uint64_t *wver);
 
 void     vnodeConfirmForward(void *pVnode, uint64_t version, int32_t code);

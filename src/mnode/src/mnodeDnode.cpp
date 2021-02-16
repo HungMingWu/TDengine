@@ -152,7 +152,7 @@ static int32_t mnodeDnodeActionRestored() {
   if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
     mInfo("dnode first deploy, create dnode:%s", tsLocalEp);
     mnodeCreateDnode(tsLocalEp, NULL);
-    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(tsLocalEp));
+    SDnodeObj *pDnode = mnodeGetDnodeByEp(tsLocalEp);
     if (pDnode != NULL) {
       mnodeCreateMnode(pDnode->dnodeId, pDnode->dnodeEp, false);
       mnodeDecDnodeRef(pDnode);
@@ -264,7 +264,7 @@ void *mnodeGetDnode(int32_t dnodeId) {
   return tsDnodeSdb->getRow(&dnodeId);
 }
 
-void *mnodeGetDnodeByEp(char *ep) {
+SDnodeObj *mnodeGetDnodeByEp(char *ep) {
   SDnodeObj *pDnode = NULL;
   void *     pIter = NULL;
 
@@ -314,7 +314,7 @@ static int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg) {
     tstrncpy(pCmCfgDnode->ep, tsLocalEp, TSDB_EP_LEN);
   }
 
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(pCmCfgDnode->ep));
+  SDnodeObj *pDnode = mnodeGetDnodeByEp(pCmCfgDnode->ep);
   if (pDnode == NULL) {
     int32_t dnodeId = strtol(pCmCfgDnode->ep, NULL, 10);
     if (dnodeId <= 0 || dnodeId > 65536) {
@@ -506,7 +506,7 @@ static int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
   }
 
   if (pStatus->dnodeId == 0) {
-    pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(pStatus->dnodeEp));
+    pDnode = mnodeGetDnodeByEp(pStatus->dnodeEp);
     if (pDnode == NULL) {
       mDebug("dnode %s not created", pStatus->dnodeEp);
       return TSDB_CODE_MND_DNODE_NOT_EXIST;
@@ -514,7 +514,7 @@ static int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
   } else {
     pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pStatus->dnodeId));
     if (pDnode == NULL) {
-      pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(pStatus->dnodeEp));
+      pDnode = mnodeGetDnodeByEp(pStatus->dnodeEp);
       if (pDnode != NULL && pDnode->status != TAOS_DN_STATUS_READY) {
         pDnode->offlineReason = TAOS_DN_OFF_DNODE_ID_NOT_MATCH;
       }
@@ -641,7 +641,7 @@ static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg) {
   }
   ep = dnodeEp;
 
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(ep));
+  SDnodeObj *pDnode = mnodeGetDnodeByEp(ep);
   if (pDnode != NULL) {
     mnodeDecDnodeRef(pDnode);
     mError("dnode:%d, already exist, %s:%d", pDnode->dnodeId, pDnode->dnodeFqdn, pDnode->dnodePort);
@@ -692,7 +692,7 @@ int32_t SDnodeObj::drop(void *pMsg) {
 }
 
 static int32_t mnodeDropDnodeByEp(char *ep, SMnodeMsg *pMsg) {
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(ep));
+  SDnodeObj *pDnode = mnodeGetDnodeByEp(ep);
   if (pDnode == NULL) {
     int32_t dnodeId = (int32_t)strtol(ep, NULL, 10);
     pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(dnodeId));
@@ -1150,7 +1150,7 @@ static int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pC
 
   SDnodeObj *pDnode = NULL;
   if (pShow->payloadLen > 0 ) {
-    pDnode = static_cast<SDnodeObj *>(mnodeGetDnodeByEp(pShow->payload));
+    pDnode = mnodeGetDnodeByEp(pShow->payload);
   } else {
     void *pIter = mnodeGetNextDnode(NULL, (SDnodeObj **)&pDnode);
     mnodeCancelGetNextDnode(pIter);

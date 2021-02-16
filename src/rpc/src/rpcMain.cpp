@@ -287,7 +287,7 @@ void *rpcReallocCont(void *ptr, int contLen) {
   return start + sizeof(SRpcReqContext) + sizeof(SRpcHead);
 }
 
-void rpcSendRequest(SRpcInfo *pRpc, const SRpcEpSet *pEpSet, SRpcMsg *pMsg, int64_t *pRid) {
+int64_t rpcSendRequest(SRpcInfo *pRpc, const SRpcEpSet *pEpSet, SRpcMsg *pMsg) {
   SRpcReqContext *pContext;
 
   int contLen = rpcCompressRpcMsg((char *)pMsg->pCont, pMsg->contLen);
@@ -313,9 +313,9 @@ void rpcSendRequest(SRpcInfo *pRpc, const SRpcEpSet *pEpSet, SRpcMsg *pMsg, int6
     pContext->connType = RPC_CONN_TCPC;
   
   pContext->rid = taosAddRef(tsRpcRefId, pContext);
-  if (pRid) *pRid = pContext->rid;
 
   rpcSendReqToServer(pRpc, pContext);
+  return pContext->rid;
 }
 
 void rpcSendResponse(const SRpcMsg *pRsp) {
@@ -432,7 +432,7 @@ void rpcSendRecv(SRpcInfo *pRpc, SRpcEpSet *pEpSet, SRpcMsg *pMsg, SRpcMsg *pRsp
   pContext->pRsp = pRsp;
   pContext->pSet = pEpSet;
 
-  rpcSendRequest(pRpc, pEpSet, pMsg, NULL);
+  rpcSendRequest(pRpc, pEpSet, pMsg);
 
   tsem_wait(&sem);
   tsem_destroy(&sem);

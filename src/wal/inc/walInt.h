@@ -49,8 +49,6 @@ struct SWalCfg {
   EWalKeep keep;         // keep the wal file when closed
 };
 
-typedef int32_t FWalWrite(void *ahandle, void *pHead, int32_t qtype, void *pMsg);
-
 struct SWalHead {
   int8_t   msgType;
   int8_t   sver;
@@ -61,6 +59,8 @@ struct SWalHead {
   uint32_t cksum;
   char     cont[];
 };
+
+typedef int32_t FWalWrite(void *ahandle, SWalHead *pHead, int32_t qtype, void *pMsg);
 
 struct SWal {
   uint64_t version;

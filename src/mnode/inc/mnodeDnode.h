@@ -68,7 +68,7 @@ void    mnodeCancelGetNextDnode(void *pIter);
 void    mnodeIncDnodeRef(SDnodeObj *pDnode);
 void    mnodeDecDnodeRef(SDnodeObj *pDnode);
 void *  mnodeGetDnode(int32_t dnodeId);
-void *  mnodeGetDnodeByEp(char *ep);
+SDnodeObj *mnodeGetDnodeByEp(char *ep);
 
 extern int32_t tsAccessSquence;
 

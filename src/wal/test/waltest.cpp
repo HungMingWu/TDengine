@@ -22,10 +22,7 @@
 int64_t  ver = 0;
 SWal*    pWal = NULL;
 
-int writeToQueue(void *pVnode, void *data, int type, void *pMsg) {
-  // do nothing
-  SWalHead *pHead = (SWalHead*)data;
-
+int writeToQueue(void *pVnode, SWalHead *pHead, int type, void *pMsg) {
   if (pHead->version > ver)
     ver = pHead->version;
 

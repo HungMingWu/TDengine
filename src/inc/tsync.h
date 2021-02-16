@@ -66,8 +66,9 @@ typedef uint32_t (*FGetFileInfo)(int32_t vgId, char *name, uint32_t *index, uint
 // return value, -1: error, 1:more wal files, 0:last WAL. if name[0]==0, no WAL file
 typedef int32_t  (*FGetWalInfo)(int32_t vgId, char *fileName, int64_t *fileId); 
  
+struct SWalHead;
 // when a forward pkt is received, call this to handle data
-typedef int32_t  (*FWriteToCache)(int32_t vgId, void *pHead, int32_t qtype, void *pMsg);
+typedef int32_t (*FWriteToCache)(int32_t vgId, SWalHead *pHead, int32_t qtype, void *pMsg);
 
 // when forward is confirmed by peer, master call this API to notify app
 typedef void     (*FConfirmForward)(int32_t vgId, void *mhandle, int32_t code);

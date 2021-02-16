@@ -24,7 +24,7 @@
 int64_t  ver = 0;
 void    *pCq = NULL;
 
-int writeToQueue(int32_t vgId, void *data, int type, void *pMsg) { 
+int writeToQueue(int32_t vgId, SWalHead *pHead, int type, void *pMsg) { 
   return 0;
 }
 

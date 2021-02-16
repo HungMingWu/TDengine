@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <mutex>
+#include <thread>
 #include "os.h"
 #include "taoserror.h"
 #include "hash.h"
@@ -70,10 +71,10 @@ struct SSdbMgmt {
   std::mutex mutex;
 };
 
-typedef struct {
-  pthread_t thread;
+struct SSdbWorker {
+  std::thread thread;
   int32_t   workerId;
-} SSdbWorker;
+};
 
 typedef struct {
   int32_t num;
@@ -88,11 +89,11 @@ static taos_qall  tsSdbWQall;
 static std::unique_ptr<STaosQueue>     tsSdbWQueue;
 static SSdbWorkerPool tsSdbPool;
 
-static int32_t sdbProcessWrite(void *pRow, void *pHead, int32_t qtype, void *unused);
-static int32_t sdbWriteFwdToQueue(int32_t vgId, void *pHead, int32_t qtype, void *rparam);
+static int32_t sdbProcessWrite(void *pRow, SWalHead *pHead, int32_t qtype, void *unused);
+static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam);
 static int32_t sdbWriteRowToQueue(SSdbRow *pRow, int32_t action);
 static void    sdbFreeFromQueue(SSdbRow *pRow);
-static void *  sdbWorkerFp(void *pWorker);
+static void    sdbWorkerFp(SSdbWorker *pWorker);
 static int32_t sdbInitWorker();
 static void    sdbCleanupWorker();
 static int32_t sdbAllocQueue();
@@ -584,9 +585,8 @@ static int32_t sdbPerformUpdateAction(SWalHead *pHead, SSdbTable *pTable) {
   return pTable->updateHash(&row);
 }
 
-static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *unused) {
+static int32_t sdbProcessWrite(void *wparam, SWalHead *pHead, int32_t qtype, void *unused) {
   SSdbRow * pRow = static_cast<SSdbRow *>(wparam);
-  SWalHead *pHead = static_cast<SWalHead * >(hparam);
   int32_t tableId = pHead->msgType / 10;
   int32_t action = pHead->msgType % 10;
 
@@ -633,7 +633,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
   if (pRow != NULL) {
     // forward to peers
     pRow->processedCount = 0;
-    int32_t syncCode = syncForwardToPeer(tsSdbMgmt.sync, pHead, pRow, TAOS_QTYPE_RPC);
+    int32_t syncCode = tsSdbMgmt.sync->forwardToPeerImpl(pHead, pRow, TAOS_QTYPE_RPC);
     if (syncCode <= 0) pRow->processedCount = 1;
 
     if (syncCode < 0) {
@@ -653,7 +653,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
            actStr[action], sdbGetKeyStr(pTable, pHead->cont), pHead->version);
 
   // even it is WAL/FWD, it shall be called to update version in sync
-  syncForwardToPeer(tsSdbMgmt.sync, pHead, pRow, TAOS_QTYPE_RPC);
+  tsSdbMgmt.sync->forwardToPeerImpl(pHead, pRow, TAOS_QTYPE_RPC);
 
   // from wal or forward msg, row not created, should add into hash
   if (action == SDB_ACTION_INSERT) {
@@ -661,7 +661,7 @@ static int32_t sdbProcessWrite(void *wparam, void *hparam, int32_t qtype, void *
   } else if (action == SDB_ACTION_DELETE) {
     if (qtype == TAOS_QTYPE_FWD) {
       // Drop database/stable may take a long time and cause a timeout, so we confirm first then reput it into queue
-      sdbWriteFwdToQueue(1, hparam, TAOS_QTYPE_QUERY, unused);
+      sdbWriteFwdToQueue(1, pHead, TAOS_QTYPE_QUERY, unused);
       return TSDB_CODE_SUCCESS;
     } else {
       return sdbPerformDeleteAction(pHead, pTable);
@@ -869,16 +869,12 @@ static int32_t sdbInitWorker() {
 static void sdbCleanupWorker() {
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
     SSdbWorker *pWorker = tsSdbPool.worker + i;
-    if (pWorker->thread) {
-      taosQsetThreadResume(tsSdbWQset);
-    }
+    taosQsetThreadResume(tsSdbWQset);
   }
 
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
     SSdbWorker *pWorker = tsSdbPool.worker + i;
-    if (pWorker->thread) {
-      pthread_join(pWorker->thread, NULL);
-    }
+    pWorker->thread.join();
   }
 
   sdbFreeQueue();
@@ -907,20 +903,7 @@ static int32_t sdbAllocQueue() {
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
     SSdbWorker *pWorker = tsSdbPool.worker + i;
     pWorker->workerId = i;
-
-    pthread_attr_t thAttr;
-    pthread_attr_init(&thAttr);
-    pthread_attr_setdetachstate(&thAttr, PTHREAD_CREATE_JOINABLE);
-
-    if (pthread_create(&pWorker->thread, &thAttr, sdbWorkerFp, pWorker) != 0) {
-      mError("failed to create thread to process sdb write queue, reason:%s", strerror(errno));
-      taosFreeQall(tsSdbWQall);
-      taosCloseQset(tsSdbWQset);
-      tsSdbWQueue.reset();
-      return TSDB_CODE_MND_OUT_OF_MEMORY;
-    }
-
-    pthread_attr_destroy(&thAttr);
+    pWorker->thread = std::thread([pWorker] { sdbWorkerFp(pWorker); });
     mDebug("sdb write worker:%d is launched, total:%d", pWorker->workerId, tsSdbPool.num);
   }
 
@@ -967,9 +950,7 @@ static void sdbFreeFromQueue(SSdbRow *pRow) {
   taosFreeQitem(pRow);
 }
 
-static int32_t sdbWriteFwdToQueue(int32_t vgId, void *wparam, int32_t qtype, void *rparam) {
-  SWalHead *pHead = static_cast<SWalHead *>(wparam);
-
+static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam) {
   int32_t  size = sizeof(SSdbRow) + sizeof(SWalHead) + pHead->len;
   SSdbRow *pRow = static_cast<SSdbRow *>(taosAllocateQitem(size));
   if (pRow == NULL) {
@@ -1011,7 +992,7 @@ static int32_t sdbWriteRowToQueue(SSdbRow *pInputRow, int32_t action) {
 
 int32_t sdbInsertRowToQueue(SSdbRow *pRow) { return sdbWriteRowToQueue(pRow, SDB_ACTION_INSERT); }
 
-static void *sdbWorkerFp(void *pWorker) {
+static void sdbWorkerFp(SSdbWorker *pWorker) {
   SSdbRow *pRow;
   int32_t  qtype;
   void *   unUsed;
@@ -1054,7 +1035,7 @@ static void *sdbWorkerFp(void *pWorker) {
     }
   }
 
-  return NULL;
+  return;
 }
 
 int32_t sdbGetReplicaNum() {

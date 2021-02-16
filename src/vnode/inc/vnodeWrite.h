@@ -21,9 +21,9 @@
 int32_t vnodeInitWrite(void);
 void    vnodeCleanupWrite(void);
 
-int32_t vnodeWriteToWQueue(SVnodeObj *pVnode, void *pHead, int32_t qtype, void *pRpcMsg);
+int32_t vnodeWriteToWQueue(SVnodeObj *pVnode, SWalHead *pHead, int32_t qtype, void *pRpcMsg);
 void    vnodeFreeFromWQueue(void *pVnode, SVWriteMsg *pWrite);
-int32_t vnodeProcessWrite(void *pVnode, void *pHead, int32_t qtype, void *pRspRet);
+int32_t vnodeProcessWrite(void *pVnode, SWalHead *pHead, int32_t qtype, void *pRspRet);
 void    vnodeWaitWriteCompleted(SVnodeObj *pVnode);
 
 #endif

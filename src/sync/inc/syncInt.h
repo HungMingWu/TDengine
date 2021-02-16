@@ -135,7 +135,7 @@ struct SSyncNode : public std::enable_shared_from_this<SSyncNode> {
   void setVer(uint64_t newVersion) { peerInfo[selfIndex]->version = newVersion; }
   int8_t   getStatus() const { return peerInfo[selfIndex]->sstatus; }
   void     setStatus(int8_t newStatus) { peerInfo[selfIndex]->sstatus = newStatus; }
-  int32_t  forwardToPeerImpl(void *data, void *mhandle, int32_t qtype);
+  int32_t  forwardToPeerImpl(SWalHead *pWalHead, void *mhandle, int32_t qtype);
   void     removeConfirmedFwdInfo();
   void     monitorFwdInfos(void *tmrId);
   void     monitorNodeRole(void *tmrId);
@@ -189,7 +189,6 @@ void       syncBroadcastStatus(SSyncNodePtr pNode);
 SSyncNodePtr syncStart(const SSyncInfo *);
 void         syncStop(SSyncNodePtr pNode);
 int32_t      syncReconfig(SSyncNodePtr pNode, const SSyncCfg *);
-int32_t      syncForwardToPeer(SSyncNodePtr pNode, void *pHead, void *mhandle, int32_t qtype);
 void         syncConfirmForward(SSyncNodePtr pNode, uint64_t version, int32_t code);
 int32_t      syncGetNodesRole(SSyncNodePtr pNode, SNodesRole *);
 #endif  // TDENGINE_VNODEPEER_H

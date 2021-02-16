@@ -43,7 +43,6 @@ static void    syncProcessBrokenLink(SSyncPeerPtr pPeer);
 static int32_t syncProcessPeerMsg(SSyncPeerPtr pPeer, void *buffer);
 static void    syncProcessIncommingConnection(int32_t connFd, uint32_t sourceIp);
 static void    syncAddArbitrator(SSyncNodePtr pNode);
-static void    syncMonitorFwdInfos(SSyncNodePtr pNode, void *tmrId);
 static void    syncMonitorNodeRole(SSyncNodePtr pNode, void *tmrId);
 
 static SSyncPeerPtr syncAddPeer(SSyncNodePtr pNode, const SNodeInfo *pInfo);
@@ -169,7 +168,8 @@ SSyncNodePtr syncStart(const SSyncInfo *pInfo) {
         syncRole[pNode->getRole()]);
 
   pNode->pSyncFwds.reset(new SSyncFwds(SYNC_MAX_FWDS));
-  pNode->pFwdTimer = taosTmrStart([pNode](void *tmrId) { syncMonitorFwdInfos(pNode, tmrId); }, SYNC_FWD_TIMER,
+  pNode->pFwdTimer =
+      taosTmrStart([pNode](void *tmrId) { pNode->monitorFwdInfos(tmrId); }, SYNC_FWD_TIMER,
                                    tsSyncTmrCtrl);
   if (pNode->pFwdTimer == NULL) {
     sError("vgId:%d, failed to allocate fwd timer", pNode->vgId);
@@ -296,10 +296,6 @@ int32_t syncReconfig(SSyncNodePtr pNode, const SSyncCfg *pNewCfg) {
   syncBroadcastStatus(pNode);
 
   return 0;
-}
-
-int32_t syncForwardToPeer(SSyncNodePtr pNode, void *data, void *mhandle, int32_t qtype) {
-  return pNode->forwardToPeerImpl(data, mhandle, qtype);
 }
 
 void syncConfirmForward(SSyncNodePtr pNode, uint64_t version, int32_t code) {
@@ -1164,19 +1160,15 @@ void SSyncNode::monitorFwdInfos(void* tmrId)
     }
 
     auto self = shared_from_this();
-    pFwdTimer = taosTmrStart([self](void *tmrId) { syncMonitorFwdInfos(self, tmrId); }, SYNC_FWD_TIMER,
+    pFwdTimer =
+        taosTmrStart([self, this](void *tmrId) { monitorFwdInfos(tmrId); }, SYNC_FWD_TIMER,
                              tsSyncTmrCtrl);
   }
 }
 
-static void syncMonitorFwdInfos(SSyncNodePtr pNode, void *tmrId) {
-  pNode->monitorFwdInfos(tmrId);
-}
-
-int32_t SSyncNode::forwardToPeerImpl(void *data, void *mhandle, int32_t qtype) {
+int32_t SSyncNode::forwardToPeerImpl(SWalHead *pWalHead, void *mhandle, int32_t qtype) {
   SSyncPeerPtr pPeer;
   SSyncHead *pSyncHead;
-  SWalHead * pWalHead = static_cast<SWalHead *>(data);
   int32_t    fwdLen;
   int32_t    code = 0;
 

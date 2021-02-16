@@ -48,10 +48,9 @@ int32_t vnodeInitWrite(void) {
 
 void vnodeCleanupWrite() {}
 
-int32_t vnodeProcessWrite(void *vparam, void *wparam, int32_t qtype, void *rparam) {
+int32_t vnodeProcessWrite(void *vparam, SWalHead *pHead, int32_t qtype, void *rparam) {
   int32_t    code = 0;
   SVnodeObj *pVnode = (SVnodeObj *)vparam;
-  SWalHead * pHead = (SWalHead *)wparam;
   SVWriteMsg*pWrite = (SVWriteMsg*)rparam;
 
   SRspRet *pRspRet = NULL;
@@ -88,7 +87,7 @@ int32_t vnodeProcessWrite(void *vparam, void *wparam, int32_t qtype, void *rpara
 
   // forward to peers, even it is WAL/FWD, it shall be called to update version in sync
   int32_t syncCode = 0;
-  syncCode = syncForwardToPeer(pVnode->sync, pHead, pWrite, qtype);
+  syncCode = pVnode->sync->forwardToPeerImpl(pHead, pWrite, qtype);
   if (syncCode < 0) return syncCode;
 
   // write into WAL
@@ -277,8 +276,8 @@ static int32_t vnodeWriteToWQueueImp(SVWriteMsg *pWrite) {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t vnodeWriteToWQueue(SVnodeObj *vparam, void *wparam, int32_t qtype, void *rparam) {
-  SVWriteMsg *pWrite = vnodeBuildVWriteMsg(vparam, (SWalHead*)wparam, qtype, (SRpcMsg*)rparam);
+int32_t vnodeWriteToWQueue(SVnodeObj *vparam, SWalHead *pHead, int32_t qtype, void *rparam) {
+  SVWriteMsg *pWrite = vnodeBuildVWriteMsg(vparam, pHead, qtype, (SRpcMsg *)rparam);
   if (pWrite == NULL) {
     assert(terrno != 0);
     return terrno;

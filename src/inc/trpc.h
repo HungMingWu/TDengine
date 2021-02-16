@@ -180,7 +180,7 @@ void  rpcClose(void *);
 void *rpcMallocCont(int contLen);
 void  rpcFreeCont(void *pCont);
 void *rpcReallocCont(void *ptr, int contLen);
-void    rpcSendRequest(SRpcInfo *pRpc, const SRpcEpSet *pEpSet, SRpcMsg *pMsg, int64_t *rid);
+int64_t rpcSendRequest(SRpcInfo *pRpc, const SRpcEpSet *pEpSet, SRpcMsg *pMsg);
 void  rpcSendResponse(const SRpcMsg *pMsg);
 void  rpcSendRedirectRsp(void *pConn, const SRpcEpSet *pEpSet); 
 int   rpcGetConnInfo(void *thandle, SRpcConnInfo *pInfo);

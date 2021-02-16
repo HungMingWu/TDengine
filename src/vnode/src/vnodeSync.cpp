@@ -114,14 +114,14 @@ void vnodeConfirmForard(int32_t vgId, void *wparam, int32_t code) {
   pVnode->Release();
 }
 
-int32_t vnodeWriteToCache(int32_t vgId, void *wparam, int32_t qtype, void *rparam) {
+int32_t vnodeWriteToCache(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam) {
   SVnodeObj *pVnode = vnodeAcquire(vgId);
   if (pVnode == NULL) {
     vError("vgId:%d, vnode not found while write to cache", vgId);
     return TSDB_CODE_VND_INVALID_VGROUP_ID;
   }
 
-  int32_t code = vnodeWriteToWQueue(pVnode, wparam, qtype, rparam);
+  int32_t code = vnodeWriteToWQueue(pVnode, pHead, qtype, rparam);
 
   pVnode->Release();
   return code;

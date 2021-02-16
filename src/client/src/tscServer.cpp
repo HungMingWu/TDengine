@@ -264,7 +264,7 @@ int tscSendMsgToServer(SSqlObj *pSql) {
   rpcMsg.handle = NULL;
   rpcMsg.code = 0;
 
-  rpcSendRequest(pObj->pDnodeConn, &pSql->epSet, &rpcMsg, &pSql->rpcRid);
+  pSql->rpcRid = rpcSendRequest(pObj->pDnodeConn, &pSql->epSet, &rpcMsg);
   return TSDB_CODE_SUCCESS;
 }
 
