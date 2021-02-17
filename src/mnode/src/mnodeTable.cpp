@@ -80,7 +80,6 @@ static void    mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg);
 
 static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg);
 
 static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg);
 static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg);
@@ -606,8 +605,6 @@ int32_t mnodeInitTables() {
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_TABLE_RSP, mnodeProcessDropChildTableRsp);
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_STABLE_RSP, mnodeProcessDropSuperTableRsp);
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_ALTER_TABLE_RSP, mnodeProcessAlterTableRsp);
-
-  mnodeAddPeerMsgHandle(TSDB_MSG_TYPE_DM_CONFIG_TABLE, mnodeProcessTableCfgMsg);
 
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_TABLE, mnodeGetShowTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_TABLE, mnodeRetrieveShowTables);
@@ -2515,7 +2512,7 @@ static SCTableObj* mnodeGetTableByPos(int32_t vnode, int32_t tid) {
 }
 #endif
 
-static int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg) {
   return TSDB_CODE_COM_OPS_NOT_SUPPORT;
 #if 0
   SConfigTableMsg *pCfg = pMsg->rpcMsg.pCont;

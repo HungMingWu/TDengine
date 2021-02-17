@@ -34,12 +34,12 @@
 #include "mnodeTable.h"
 #include "mnodeVgroup.h"
 
-static int32_t (*tsMnodeProcessPeerMsgFp[TSDB_MSG_TYPE_MAX])(SMnodeMsg *);
 static void (*tsMnodeProcessPeerRspFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *);
 
-void mnodeAddPeerMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg)) {
-  tsMnodeProcessPeerMsgFp[msgType] = fp;
-}
+extern int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessAuthMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg);
 
 void mnodeAddPeerRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg)) {
   tsMnodeProcessPeerRspFp[msgType] = fp;
@@ -64,13 +64,21 @@ int32_t mnodeProcessPeerReq(SMnodeMsg *pMsg) {
     return TSDB_CODE_RPC_REDIRECT;
   }
 
-  if (tsMnodeProcessPeerMsgFp[pMsg->rpcMsg.msgType] == NULL) {
+  if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_DM_STATUS) {
+    return mnodeProcessDnodeStatusMsg(pMsg);
+  } else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_DM_CONFIG_TABLE) {
+    return mnodeProcessTableCfgMsg(pMsg);
+  } else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_DM_CONFIG_TABLE) {
+    return mnodeProcessAuthMsg(pMsg);
+  } else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_DM_CONFIG_VNODE) {
+    return mnodeProcessVnodeCfgMsg(pMsg);
+  } else {
     mError("msg:%p, ahandle:%p type:%s in mpeer queue, not processed", pMsg, pMsg->rpcMsg.ahandle,
            taosMsg[pMsg->rpcMsg.msgType]);
     return TSDB_CODE_MND_MSG_NOT_PROCESSED;
   }
 
-  return (*tsMnodeProcessPeerMsgFp[pMsg->rpcMsg.msgType])(pMsg);
+  
 }
 
 void mnodeProcessPeerRsp(SRpcMsg *pMsg) {

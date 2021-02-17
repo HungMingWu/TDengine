@@ -60,7 +60,6 @@ static int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, v
 static void    mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg);
 static void    mnodeProcessAlterVnodeRsp(SRpcMsg *rpcMsg);
 static void    mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg);
-static int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg) ;
 static void    mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle);
 
 static void mnodeDestroyVgroup(SVgObj *pVgroup) {
@@ -229,7 +228,6 @@ int32_t mnodeInitVgroups() {
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_CREATE_VNODE_RSP, mnodeProcessCreateVnodeRsp);
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_ALTER_VNODE_RSP, mnodeProcessAlterVnodeRsp);
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_VNODE_RSP, mnodeProcessDropVnodeRsp);
-  mnodeAddPeerMsgHandle(TSDB_MSG_TYPE_DM_CONFIG_VNODE, mnodeProcessVnodeCfgMsg);
 
   mDebug("table:vgroups is created");
   
@@ -1057,7 +1055,7 @@ static void mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg) {
   dnodeReprocessMWriteMsg(mnodeMsg);
 }
 
-static int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg) {
   SConfigVnodeMsg *pCfg = static_cast<SConfigVnodeMsg *>(pMsg->rpcMsg.pCont);
   pCfg->dnodeId = htonl(pCfg->dnodeId);
   pCfg->vgId    = htonl(pCfg->vgId);

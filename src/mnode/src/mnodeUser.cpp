@@ -40,7 +40,6 @@ static int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, voi
 static int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessAuthMsg(SMnodeMsg *pMsg);
 
 static int32_t mnodeUserActionDestroy(SSdbRow *pRow) {
   tfree(pRow->pObj);
@@ -176,8 +175,6 @@ int32_t mnodeInitUsers() {
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_USER, mnodeGetUserMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_USER, mnodeRetrieveUsers);
   mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_USER, mnodeCancelGetNextUser);
-
-  mnodeAddPeerMsgHandle(TSDB_MSG_TYPE_DM_AUTH, mnodeProcessAuthMsg);
    
   mDebug("table:%s, hash is created", desc.name);
   return 0;
@@ -600,7 +597,7 @@ int32_t mnodeRetriveAuth(char *user, char *spi, char *encrypt, char *secret, cha
   }
 }
 
-static int32_t mnodeProcessAuthMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessAuthMsg(SMnodeMsg *pMsg) {
   SAuthMsg *pAuthMsg = static_cast<SAuthMsg *>(pMsg->rpcMsg.pCont);
   SAuthRsp *pAuthRsp = static_cast<SAuthRsp *>(rpcMallocCont(sizeof(SAuthRsp)));
   

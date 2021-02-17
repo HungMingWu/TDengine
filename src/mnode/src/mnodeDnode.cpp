@@ -54,7 +54,6 @@ static int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg);
 static void    mnodeProcessCfgDnodeMsgRsp(SRpcMsg *rpcMsg) ;
-static int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg);
 static int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveModules(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
@@ -193,7 +192,6 @@ int32_t mnodeInitDnodes() {
   mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_DROP_DNODE, mnodeProcessDropDnodeMsg); 
   mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CONFIG_DNODE, mnodeProcessCfgDnodeMsg);
   mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_CONFIG_DNODE_RSP, mnodeProcessCfgDnodeMsgRsp);
-  mnodeAddPeerMsgHandle(TSDB_MSG_TYPE_DM_STATUS, mnodeProcessDnodeStatusMsg);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_MODULE, mnodeGetModuleMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_MODULE, mnodeRetrieveModules);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VARIABLES, mnodeGetConfigMeta);
@@ -487,7 +485,7 @@ static void mnodeUpdateDnodeEps() {
   pthread_mutex_unlock(&tsDnodeEpsMutex);
 }
 
-static int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
   SDnodeObj *pDnode     = NULL;
   SStatusMsg *pStatus = static_cast<SStatusMsg *>(pMsg->rpcMsg.pCont);
   pStatus->dnodeId      = htonl(pStatus->dnodeId);
