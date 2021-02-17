@@ -98,6 +98,8 @@ struct SRpcReqContext {
   tsem_t *         pSem;      // for synchronous API
   SRpcEpSet *      pSet;      // for synchronous API
   char             msg[0];    // RpcHead starts from here
+ public:
+  void processConnError(void *id);
 };
 
 struct SRpcConn {
@@ -135,6 +137,8 @@ struct SRpcConn {
   int8_t          connType;                 // connection type
   int64_t         lockedBy;                 // lock for connection
   SRpcReqContext *pContext;                 // request context
+ public:
+  void processRetryTimer(void *tmrId);
 };
 
 struct SHashObj;

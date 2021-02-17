@@ -125,8 +125,6 @@ static void  rpcSendReqHead(SRpcConn *pConn);
 
 static void *rpcProcessMsgFromPeer(SRecvInfo *pRecv);
 static void  rpcProcessIncomingMsg(SRpcConn *pConn, SRpcHead *pHead, SRpcReqContext *pContext);
-static void  rpcProcessConnError(SRpcReqContext *pContext, void *id);
-static void  rpcProcessRetryTimer(SRpcConn *, void *);
 static void  rpcProcessIdleTimer(SRpcConn *pConn, void *tmrId);
 static void  rpcProcessProgressTimer(SRpcConn *pConn, void *tmrId);
 
@@ -797,7 +795,7 @@ static int rpcProcessRspHead(SRpcConn *pConn, SRpcHead *pHead) {
     rpcSendMsgToPeer(pConn, pConn->pReqMsg, pConn->reqMsgLen);      
     if (pConn->connType != RPC_CONN_TCPC)
       pConn->pTimer =
-          taosTmrStart([pConn](void *tmrId) { rpcProcessRetryTimer(pConn, tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
+          taosTmrStart([pConn](void *tmrId) { pConn->processRetryTimer(tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
     return TSDB_CODE_RPC_ALREADY_PROCESSED;
   }
 
@@ -808,7 +806,7 @@ static int rpcProcessRspHead(SRpcConn *pConn, SRpcHead *pHead) {
     rpcSendMsgToPeer(pConn, pConn->pReqMsg, pConn->reqMsgLen);      
     if (pConn->connType != RPC_CONN_TCPC)
       pConn->pTimer =
-          taosTmrStart([pConn](void *tmrId) { rpcProcessRetryTimer(pConn, tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
+          taosTmrStart([pConn](void *tmrId) { pConn->processRetryTimer(tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
     return TSDB_CODE_RPC_ALREADY_PROCESSED;
   }
 
@@ -818,7 +816,8 @@ static int rpcProcessRspHead(SRpcConn *pConn, SRpcHead *pHead) {
       pConn->tretry++;
       rpcSendReqHead(pConn);
       if (pConn->connType != RPC_CONN_TCPC)
-        pConn->pTimer = taosTmrStart([pConn](void *tmrId) { rpcProcessRetryTimer(pConn, tmrId); }, tsRpcTimer,
+        pConn->pTimer =
+            taosTmrStart([pConn](void *tmrId) { pConn->processRetryTimer(tmrId); }, tsRpcTimer,
                                      pRpc->tmrCtrl);
       return TSDB_CODE_RPC_ALREADY_PROCESSED;
     } else {
@@ -957,7 +956,7 @@ static void rpcProcessBrokenLink(SRpcConn *pConn) {
     pContext->code = TSDB_CODE_RPC_NETWORK_UNAVAIL;
     pContext->pConn = NULL;
     pConn->pReqMsg = NULL;
-    taosTmrStart([pContext](void *tmrId) { rpcProcessConnError(pContext, tmrId); }, 0, pRpc->tmrCtrl);
+    taosTmrStart([pContext](void *tmrId) { pContext->processConnError(tmrId); }, 0, pRpc->tmrCtrl);
   }
 
   if (pConn->inType) rpcReportBrokenLinkToServer(pConn); 
@@ -1088,7 +1087,7 @@ static void rpcProcessIncomingMsg(SRpcConn *pConn, SRpcHead *pHead, SRpcReqConte
       rpcFreeCont(rpcMsg.pCont);
     } else if (pHead->code == TSDB_CODE_RPC_NOT_READY || pHead->code == TSDB_CODE_APP_NOT_READY) {
       pContext->code = pHead->code;
-      rpcProcessConnError(pContext, NULL);
+      pContext->processConnError(NULL);
       rpcFreeCont(rpcMsg.pCont);
     } else {
       rpcNotifyClient(pContext, &rpcMsg);
@@ -1189,7 +1188,7 @@ static void rpcSendReqToServer(SRpcInfo *pRpc, SRpcReqContext *pContext) {
   SRpcConn *pConn = rpcSetupConnToServer(pContext);
   if (pConn == NULL) {
     pContext->code = terrno;
-    taosTmrStart([pContext](void *tmrId) { rpcProcessConnError(pContext, tmrId); }, 0, pRpc->tmrCtrl);
+    taosTmrStart([pContext](void *tmrId) { pContext->processConnError(tmrId); }, 0, pRpc->tmrCtrl);
     return;
   }
 
@@ -1221,7 +1220,7 @@ static void rpcSendReqToServer(SRpcInfo *pRpc, SRpcReqContext *pContext) {
 
   rpcSendMsgToPeer(pConn, msg, msgLen);
   if (pConn->connType != RPC_CONN_TCPC)
-    taosTmrReset([pConn](void *tmrId) { rpcProcessRetryTimer(pConn, tmrId); }, tsRpcTimer, pRpc->tmrCtrl,
+    taosTmrReset([pConn](void *tmrId) { pConn->processRetryTimer(tmrId); }, tsRpcTimer, pRpc->tmrCtrl,
                  &pConn->pTimer);
 
   rpcUnlockConn(pConn);
@@ -1254,64 +1253,60 @@ static void rpcSendMsgToPeer(SRpcConn *pConn, void *msg, int msgLen) {
   tDump(msg, msgLen);
 }
 
-static void rpcProcessConnError(SRpcReqContext *pContext, void *id) {
-  SRpcInfo       *pRpc = pContext->pRpc;
+void SRpcReqContext::processConnError(void *id) {
   SRpcMsg         rpcMsg;
  
   if (pRpc == NULL) {
     return;
   }
   
-  tDebug("%s %p, connection error happens", pRpc->label, pContext->ahandle);
+  tDebug("%s %p, connection error happens", pRpc->label, ahandle);
 
-  if (pContext->numOfTry >= pContext->epSet.numOfEps) {
-    rpcMsg.msgType = pContext->msgType+1;
-    rpcMsg.ahandle = pContext->ahandle;
-    rpcMsg.code = pContext->code;
+  if (numOfTry >= epSet.numOfEps) {
+    rpcMsg.msgType = msgType+1;
+    rpcMsg.ahandle = ahandle;
+    rpcMsg.code = code;
     rpcMsg.pCont = NULL;
     rpcMsg.contLen = 0;
 
-    rpcNotifyClient(pContext, &rpcMsg);
+    rpcNotifyClient(this, &rpcMsg);
   } else {
     // move to next IP 
-    pContext->epSet.inUse++;
-    pContext->epSet.inUse = pContext->epSet.inUse % pContext->epSet.numOfEps;
-    rpcSendReqToServer(pRpc, pContext);
+    epSet.inUse++;
+    epSet.inUse = epSet.inUse % epSet.numOfEps;
+    rpcSendReqToServer(pRpc, this);
   }
 }
 
-static void rpcProcessRetryTimer(SRpcConn *pConn, void *tmrId) {
-  SRpcInfo *pRpc = pConn->pRpc;
+void SRpcConn::processRetryTimer(void *tmrId) {
+  rpcLockConn(this);
 
-  rpcLockConn(pConn);
+  if (outType && user[0]) {
+    tDebug("%s, expected %s is not received", info, taosMsg[(int)outType + 1]);
+    pTimer = NULL;
+    retry++;
 
-  if (pConn->outType && pConn->user[0]) {
-    tDebug("%s, expected %s is not received", pConn->info, taosMsg[(int)pConn->outType + 1]);
-    pConn->pTimer = NULL;
-    pConn->retry++;
-
-    if (pConn->retry < 4) {
-      tDebug("%s, re-send msg:%s to %s:%hu", pConn->info, taosMsg[pConn->outType], pConn->peerFqdn, pConn->peerPort);
-      rpcSendMsgToPeer(pConn, pConn->pReqMsg, pConn->reqMsgLen);      
-      pConn->pTimer =
-          taosTmrStart([pConn](void *tmrId) { rpcProcessRetryTimer(pConn, tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
+    if (retry < 4) {
+      tDebug("%s, re-send msg:%s to %s:%hu", info, taosMsg[outType], peerFqdn, peerPort);
+      rpcSendMsgToPeer(this, pReqMsg, reqMsgLen);      
+      pTimer = taosTmrStart([this](void *tmrId) { processRetryTimer(tmrId); }, tsRpcTimer, pRpc->tmrCtrl);
     } else {
       // close the connection
-      tDebug("%s, failed to send msg:%s to %s:%hu", pConn->info, taosMsg[pConn->outType], pConn->peerFqdn, pConn->peerPort);
-      if (pConn->pContext) {
-        pConn->pContext->code = TSDB_CODE_RPC_NETWORK_UNAVAIL;
-        pConn->pContext->pConn = NULL;
-        pConn->pReqMsg = NULL;
-        taosTmrStart([pConn](void *tmrId) { rpcProcessConnError(pConn->pContext, tmrId); }, 1,
+      tDebug("%s, failed to send msg:%s to %s:%hu", info, taosMsg[outType], peerFqdn, peerPort);
+      if (pContext) {
+        pContext->code = TSDB_CODE_RPC_NETWORK_UNAVAIL;
+        pContext->pConn = NULL;
+        pReqMsg = NULL;
+        taosTmrStart([this](void *tmrId) { pContext->processConnError(tmrId); }, 1,
                      pRpc->tmrCtrl);
-        rpcReleaseConn(pConn);
+        rpcReleaseConn(this);
       }
     }
   } else {
-    tDebug("%s, retry timer not processed", pConn->info);
+    tDebug("%s, retry timer not processed", info);
   }
 
-  rpcUnlockConn(pConn);
+  rpcUnlockConn(this);
 }
 
 static void rpcProcessIdleTimer(SRpcConn *pConn, void *tmrId) {
