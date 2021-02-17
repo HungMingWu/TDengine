@@ -1105,7 +1105,7 @@ static int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, v
       case TAOS_CFG_VTYPE_STRING:
       case TAOS_CFG_VTYPE_IPSTR:
       case TAOS_CFG_VTYPE_DIRECTORY:
-        STR_WITH_MAXSIZE_TO_VARSTR(pWrite, static_cast<char *>(cfg.ptr), TSDB_CFG_VALUE_LEN);
+        STR_WITH_MAXSIZE_TO_VARSTR(pWrite, static_cast<const char *>(cfg.ptr), TSDB_CFG_VALUE_LEN);
         numOfRows++;
         break;
       default:

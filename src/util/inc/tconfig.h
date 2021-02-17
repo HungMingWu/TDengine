@@ -59,7 +59,7 @@ enum {
 
 struct SGlobalCfg {
   char *   option;
-  void *   ptr;
+  const void *   ptr;
   float    minValue;
   float    maxValue;
   int8_t   cfgType;

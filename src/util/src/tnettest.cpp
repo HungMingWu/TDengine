@@ -27,8 +27,6 @@
 #define MAX_PKG_LEN (64 * 1000)
 #define BUFFER_SIZE (MAX_PKG_LEN + 1024)
 
-extern int32_t tsRpcMaxUdpSize;
-
 typedef struct {
   char *   hostFqdn;
   uint32_t hostIp;

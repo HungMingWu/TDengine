@@ -28,6 +28,8 @@
 
 extern int tsRpcHeadSize;
 
+static constexpr int32_t tsRpcMaxUdpSize = 15000;  // bytes
+
 typedef struct SRpcEpSet {
   int8_t    inUse; 
   int8_t    numOfEps;

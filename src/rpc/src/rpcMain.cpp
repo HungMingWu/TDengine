@@ -39,10 +39,9 @@
 #define rpcContLenFromMsg(msgLen) (msgLen - sizeof(SRpcHead))
 #define rpcIsReq(type) (type & 1U)
 
-int tsRpcMaxUdpSize = 15000;  // bytes
-int tsProgressTimer = 100;
+static constexpr int tsProgressTimer = tsRpcTimer / 2;
 // not configurable
-int tsRpcMaxRetry;
+static constexpr int tsRpcMaxRetry = tsRpcMaxTime * 1000 / tsProgressTimer;
 int tsRpcHeadSize;
 int tsRpcOverhead;
 
@@ -144,8 +143,6 @@ static void rpcFree(void *p) {
 }
 
 int32_t rpcInit(void) {
-  tsProgressTimer = tsRpcTimer/2; 
-  tsRpcMaxRetry = tsRpcMaxTime * 1000/tsProgressTimer;
   tsRpcHeadSize = RPC_MSG_OVERHEAD; 
   tsRpcOverhead = sizeof(SRpcReqContext);
 
@@ -1297,7 +1294,7 @@ void SRpcConn::processRetryTimer(void *tmrId) {
         pContext->code = TSDB_CODE_RPC_NETWORK_UNAVAIL;
         pContext->pConn = NULL;
         pReqMsg = NULL;
-        taosTmrStart([this](void *tmrId) { pContext->processConnError(tmrId); }, 1,
+        taosTmrStart([pContext = this->pContext](void *tmrId) { pContext->processConnError(tmrId); }, 1,
                      pRpc->tmrCtrl);
         rpcReleaseConn(this);
       }

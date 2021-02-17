@@ -35,8 +35,8 @@ extern char     tsArbitrator[];
 extern int8_t   tsArbOnline;
 
 // common
-extern int      tsRpcTimer;
-extern int      tsRpcMaxTime;
+static constexpr int tsRpcTimer = 1000;
+static constexpr int tsRpcMaxTime = 600;  // seconds;
 extern int32_t  tsMaxConnections;
 extern int32_t  tsMaxShellConns;
 extern int32_t  tsShellActivityTimer;
