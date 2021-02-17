@@ -57,9 +57,6 @@ static int32_t tsVgUpdateSize = 0;
 static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup);
 static int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static void    mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg);
-static void    mnodeProcessAlterVnodeRsp(SRpcMsg *rpcMsg);
-static void    mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg);
 static void    mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle);
 
 static void mnodeDestroyVgroup(SVgObj *pVgroup) {
@@ -225,9 +222,6 @@ int32_t mnodeInitVgroups() {
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VGROUP, mnodeGetVgroupMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_VGROUP, mnodeRetrieveVgroups);
   mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_VGROUP, mnodeCancelGetNextVgroup);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_CREATE_VNODE_RSP, mnodeProcessCreateVnodeRsp);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_ALTER_VNODE_RSP, mnodeProcessAlterVnodeRsp);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_VNODE_RSP, mnodeProcessDropVnodeRsp);
 
   mDebug("table:vgroups is created");
   
@@ -921,11 +915,11 @@ void mnodeSendCreateVgroupMsg(SVgObj *pVgroup, void *ahandle) {
   }
 }
 
-static void mnodeProcessAlterVnodeRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessAlterVnodeRsp(SRpcMsg *rpcMsg) {
   mDebug("alter vnode rsp received");
 }
 
-static void mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
   SMnodeMsg *mnodeMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
@@ -1025,7 +1019,7 @@ static void mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle) {
   }
 }
 
-static void mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg) {
   mDebug("drop vnode rsp is received, handle:%p", rpcMsg->ahandle);
   if (rpcMsg->ahandle == NULL) return;
 

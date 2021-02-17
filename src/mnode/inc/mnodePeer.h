@@ -18,7 +18,6 @@
 
 #include "mnodeDef.h"
 
-void    mnodeAddPeerRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg));
 int32_t mnodeProcessPeerReq(SMnodeMsg *pMsg);
 void    mnodeProcessPeerRsp(SRpcMsg *pMsg);
 

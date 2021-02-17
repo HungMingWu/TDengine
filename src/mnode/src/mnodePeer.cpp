@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "tsched.h"
@@ -34,16 +33,18 @@
 #include "mnodeTable.h"
 #include "mnodeVgroup.h"
 
-static void (*tsMnodeProcessPeerRspFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *);
-
 extern int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg);
 extern int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg);
 extern int32_t mnodeProcessAuthMsg(SMnodeMsg *pMsg);
 extern int32_t mnodeProcessVnodeCfgMsg(SMnodeMsg *pMsg);
-
-void mnodeAddPeerRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg)) {
-  tsMnodeProcessPeerRspFp[msgType] = fp;
-}
+extern void    mnodeProcessCfgDnodeMsgRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessDropSuperTableRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessAlterVnodeRsp(SRpcMsg *rpcMsg);
+extern void    mnodeProcessDropVnodeRsp(SRpcMsg *rpcMsg);
 
 int32_t mnodeProcessPeerReq(SMnodeMsg *pMsg) {
   if (pMsg->rpcMsg.pCont == NULL) {
@@ -88,8 +89,22 @@ void mnodeProcessPeerRsp(SRpcMsg *pMsg) {
     return;
   }
 
-  if (tsMnodeProcessPeerRspFp[pMsg->msgType]) {
-    (*tsMnodeProcessPeerRspFp[pMsg->msgType])(pMsg);
+  if (pMsg->msgType == TSDB_MSG_TYPE_MD_CONFIG_DNODE_RSP) {
+    mnodeProcessCfgDnodeMsgRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_TABLE_RSP) {
+    mnodeProcessCreateChildTableRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_TABLE_RSP) {
+    mnodeProcessDropChildTableRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_STABLE_RSP) {
+    mnodeProcessDropSuperTableRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_TABLE_RSP) {
+    mnodeProcessAlterTableRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_VNODE_RSP) {
+    mnodeProcessCreateVnodeRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_VNODE_RSP) {
+    mnodeProcessAlterVnodeRsp(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_VNODE_RSP) {
+    mnodeProcessDropVnodeRsp(pMsg);
   } else {
     mError("msg:%p, ahandle:%p type:%s is not processed", pMsg, pMsg->ahandle, taosMsg[pMsg->msgType]);
   }

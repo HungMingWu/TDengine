@@ -70,13 +70,10 @@ static int32_t mnodeRetrieveStreamTables(SShowObj *pShow, char *data, int32_t ro
 static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessCreateChildTableMsg(SMnodeMsg *pMsg);
-static void    mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg);
 
 static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg);
-static void    mnodeProcessDropSuperTableRsp(SRpcMsg *rpcMsg);
 static int32_t mnodeProcessDropChildTableMsg(SMnodeMsg *pMsg);
-static void    mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg);
 
 static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg);
@@ -87,7 +84,6 @@ static int32_t mnodeGetChildTableMeta(SMnodeMsg *pMsg);
 static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg);
 
 static int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg);
-static void    mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg);
 
 static int32_t mnodeFindSuperTableColumnIndex(SSTableObj *pStable, char *colName);
 
@@ -600,11 +596,6 @@ int32_t mnodeInitTables() {
   mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_ALTER_TABLE, mnodeProcessAlterTableMsg);
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_TABLE_META, mnodeProcessTableMetaMsg);
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_STABLE_VGROUP, mnodeProcessSuperTableVgroupMsg);
-
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_CREATE_TABLE_RSP, mnodeProcessCreateChildTableRsp);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_TABLE_RSP, mnodeProcessDropChildTableRsp);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_DROP_STABLE_RSP, mnodeProcessDropSuperTableRsp);
-  mnodeAddPeerRspHandle(TSDB_MSG_TYPE_MD_ALTER_TABLE_RSP, mnodeProcessAlterTableRsp);
 
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_TABLE, mnodeGetShowTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_TABLE, mnodeRetrieveShowTables);
@@ -1730,7 +1721,7 @@ static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static void mnodeProcessDropSuperTableRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessDropSuperTableRsp(SRpcMsg *rpcMsg) {
   mInfo("drop stable rsp received, result:%s", tstrerror(rpcMsg->code));
 }
 
@@ -2542,7 +2533,7 @@ int32_t mnodeProcessTableCfgMsg(SMnodeMsg *pMsg) {
 }
 
 // handle drop child response
-static void mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
   SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
@@ -2582,7 +2573,7 @@ static void mnodeProcessDropChildTableRsp(SRpcMsg *rpcMsg) {
  * handle create table response from dnode
  *   if failed, drop the table cached
  */
-static void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
   SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
@@ -2695,7 +2686,7 @@ static void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
   }
 }
 
-static void mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg) {
+void mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg) {
   if (rpcMsg->ahandle == NULL) return;
 
   SMnodeMsg *pMsg = static_cast<SMnodeMsg *>(rpcMsg->ahandle);
