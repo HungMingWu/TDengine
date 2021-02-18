@@ -29,9 +29,6 @@ static int32_t tsClusterUpdateSize;
 static char    tsClusterId[TSDB_CLUSTER_ID_LEN];
 static int32_t mnodeCreateCluster();
 
-static int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveClusters(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-
 static int32_t mnodeClusterActionDestroy(SSdbRow *pRow) {
   tfree(pRow->pObj);
   return TSDB_CODE_SUCCESS;
@@ -105,9 +102,6 @@ int32_t mnodeInitCluster() {
     return -1;
   }
 
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_CLUSTER, mnodeGetClusterMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_CLUSTER, mnodeRetrieveClusters);
-
   mDebug("table:%s, hash is created", desc.name);
   return TSDB_CODE_SUCCESS;
 }
@@ -170,7 +164,7 @@ void mnodeUpdateClusterId() {
   mnodeCancelGetNextCluster(pIter);
 }
 
-static int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   int32_t cols = 0;
   SSchema *pSchema = pMeta->schema;
 
@@ -201,7 +195,7 @@ static int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *
   return 0;
 }
 
-static int32_t mnodeRetrieveClusters(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveClusters(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t numOfRows = 0;
   int32_t cols = 0;
   char *  pWrite;

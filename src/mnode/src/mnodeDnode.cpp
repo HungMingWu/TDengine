@@ -49,14 +49,6 @@ static int32_t   tsDnodeEpsSize;
 static pthread_mutex_t tsDnodeEpsMutex;
 
 static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg);
-static int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveModules(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveVnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveDnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static void    mnodeUpdateDnodeEps();
 
 static const char* offlineReason[] = {
@@ -182,15 +174,6 @@ int32_t mnodeInitDnodes() {
     mError("failed to init dnodes data");
     return -1;
   }
-
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_MODULE, mnodeGetModuleMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_MODULE, mnodeRetrieveModules);
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VARIABLES, mnodeGetConfigMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_VARIABLES, mnodeRetrieveConfigs);
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VNODES, mnodeGetVnodeMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_VNODES, mnodeRetrieveVnodes);
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_DNODE, mnodeGetDnodeMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_DNODE, mnodeRetrieveDnodes);
  
   mDebug("table:dnodes table is created");
   return 0;
@@ -723,7 +706,7 @@ int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
   if (pUser == NULL) return 0;
 
@@ -804,7 +787,7 @@ static int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pC
   return 0;
 }
 
-static int32_t mnodeRetrieveDnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveDnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t    numOfRows = 0;
   int32_t    cols      = 0;
   SDnodeObj *pDnode    = NULL;
@@ -903,7 +886,7 @@ static bool mnodeCheckModuleInDnode(SDnodeObj *pDnode, int32_t moduleType) {
   return status > 0;
 }
 
-static int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   int32_t cols = 0;
 
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
@@ -1007,7 +990,7 @@ static bool mnodeCheckConfigShow(SGlobalCfg *cfg) {
   return true;
 }
 
-static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   int32_t cols = 0;
 
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
@@ -1052,7 +1035,7 @@ static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *p
   return 0;
 }
 
-static int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t numOfRows = 0;
 
   for (auto it = tsGlobalConfig.rbegin(); it != tsGlobalConfig.rend() && numOfRows < rows; it++) {
@@ -1106,7 +1089,7 @@ static int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, v
   return numOfRows;
 }
 
-static int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   int32_t cols = 0;
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
   if (pUser == NULL) return 0;
@@ -1156,7 +1139,7 @@ static int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pC
   return 0;
 }
 
-static int32_t mnodeRetrieveVnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveVnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t    numOfRows = 0;
   SDnodeObj *pDnode = NULL;
   char *     pWrite;

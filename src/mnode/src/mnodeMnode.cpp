@@ -38,8 +38,6 @@ static int32_t   tsMnodeUpdateSize = 0;
 static SRpcEpSet tsMEpForShell;
 static SRpcEpSet tsMEpForPeer;
 static SMInfos   tsMInfos;
-static int32_t   mnodeGetMnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t   mnodeRetrieveMnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 
 #if defined(LINUX)
   static pthread_rwlock_t         tsMnodeLock;
@@ -156,9 +154,6 @@ int32_t mnodeInitMnodes() {
     mError("failed to init mnodes data");
     return -1;
   }
-
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_MNODE, mnodeGetMnodeMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_MNODE, mnodeRetrieveMnodes);
 
   mDebug("table:mnodes table is created");
   return TSDB_CODE_SUCCESS;
@@ -459,7 +454,7 @@ int32_t mnodeDropMnode(int32_t dnodeId) {
   return code;
 }
 
-static int32_t mnodeGetMnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetMnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   sdbUpdateMnodeRoles();
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
   if (pUser == NULL) return 0;
@@ -512,7 +507,7 @@ static int32_t mnodeGetMnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pC
   return 0;
 }
 
-static int32_t mnodeRetrieveMnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveMnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t    numOfRows = 0;
   int32_t    cols      = 0;
   SMnodeObj *pMnode   = NULL;

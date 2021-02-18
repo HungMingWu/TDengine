@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosmsg.h"
 #include "taoserror.h"
@@ -47,10 +46,42 @@ static bool  mnodeCheckShowFinished(SShowObj *pShow);
 static void *mnodePutShowObj(SShowObj *pShow);
 static void  mnodeReleaseShowObj(SShowObj *pShow, bool forceRemove);
 
+extern int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetMnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetQueryMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetConnsMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetStreamMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetShowTableMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetShowSuperTableMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetStreamTableMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+extern int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
+
+extern int32_t mnodeRetrieveClusters(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveModules(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveConfigs(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveVnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveDnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveMnodes(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveQueries(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveConns(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveStreams(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveShowTables(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveShowSuperTables(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveStreamTables(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+extern int32_t bnRetrieveScores(SShowObj *pShow, char *data, int32_t rows, void *pConn);
+
 static void *tsMnodeShowCache = NULL;
 static int32_t tsShowObjIndex = 0;
-static SShowMetaFp     tsMnodeShowMetaFp[TSDB_MGMT_TABLE_MAX]     = {0};
-static SShowRetrieveFp tsMnodeShowRetrieveFp[TSDB_MGMT_TABLE_MAX] = {0};
 
 int32_t mnodeInitShow() {
   tsMnodeShowCache = taosCacheInit(TSDB_CACHE_PTR_KEY, 5, true, mnodeFreeShowObj, "show");
@@ -63,14 +94,6 @@ void mnodeCleanUpShow() {
     taosCacheCleanup(static_cast<SCacheObj *>(tsMnodeShowCache));
     tsMnodeShowCache = NULL;
   }
-}
-
-void mnodeAddShowMetaHandle(uint8_t showType, SShowMetaFp fp) {
-  tsMnodeShowMetaFp[showType] = fp;
-}
-
-void mnodeAddShowRetrieveHandle(uint8_t msgType, SShowRetrieveFp fp) {
-  tsMnodeShowRetrieveFp[msgType] = fp;
 }
 
 static char *mnodeGetShowType(int32_t showType) {
@@ -103,7 +126,23 @@ int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_INVALID_MSG_TYPE;
   }
 
-  if (!tsMnodeShowMetaFp[pShowMsg->type] || !tsMnodeShowRetrieveFp[pShowMsg->type]) {
+  if (pShowMsg->type != TSDB_MGMT_TABLE_CLUSTER ||
+      pShowMsg->type != TSDB_MGMT_TABLE_DB ||
+      pShowMsg->type != TSDB_MGMT_TABLE_MODULE ||
+      pShowMsg->type != TSDB_MGMT_TABLE_VARIABLES ||
+      pShowMsg->type != TSDB_MGMT_TABLE_VNODES ||
+      pShowMsg->type != TSDB_MGMT_TABLE_DNODE ||
+      pShowMsg->type != TSDB_MGMT_TABLE_MNODE ||
+      pShowMsg->type != TSDB_MGMT_TABLE_QUERIES ||
+      pShowMsg->type != TSDB_MGMT_TABLE_CONNS ||
+      pShowMsg->type != TSDB_MGMT_TABLE_STREAMS ||
+      pShowMsg->type != TSDB_MGMT_TABLE_TABLE ||
+      pShowMsg->type != TSDB_MGMT_TABLE_METRIC ||
+      pShowMsg->type != TSDB_MGMT_TABLE_STREAMTABLES ||
+      pShowMsg->type != TSDB_MGMT_TABLE_USER ||
+      pShowMsg->type != TSDB_MGMT_TABLE_VGROUP ||
+      pShowMsg->type != TSDB_MGMT_TABLE_SCORES
+      ) {
     mError("show type:%s is not support", mnodeGetShowType(pShowMsg->type));
     return TSDB_CODE_COM_OPS_NOT_SUPPORT;
   }
@@ -128,7 +167,41 @@ int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
   }
   pShowRsp->qhandle = htobe64((uint64_t) pShow);
 
-  int32_t code = (*tsMnodeShowMetaFp[pShowMsg->type])(&pShowRsp->tableMeta, pShow, pMsg->rpcMsg.handle);
+  int32_t code;
+  STableMetaMsg *pMeta = &pShowRsp->tableMeta;
+  void *         pConn = pMsg->rpcMsg.handle;
+  if (pShowMsg->type == TSDB_MGMT_TABLE_CLUSTER)
+    code = mnodeGetClusterMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_DB)
+    code = mnodeGetDbMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_MODULE)
+    code = mnodeGetModuleMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_VARIABLES)
+    code = mnodeGetConfigMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_VNODES)
+    code = mnodeGetVnodeMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_DNODE)
+    code = mnodeGetDnodeMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_MNODE)
+    code = mnodeGetMnodeMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_QUERIES)
+    code = mnodeGetQueryMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_CONNS)
+    code = mnodeGetConnsMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_STREAMS)
+    code = mnodeGetStreamMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_TABLE)
+    code = mnodeGetShowTableMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_METRIC)
+    code = mnodeGetShowSuperTableMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_STREAMTABLES)
+    code = mnodeGetStreamTableMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_USER)
+    code = mnodeGetUserMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_VGROUP)
+    code = mnodeGetVgroupMeta(pMeta, pShow, pConn);
+  else if (pShowMsg->type == TSDB_MGMT_TABLE_SCORES)
+    code = bnGetScoresMeta(pMeta, pShow, pConn);
   mDebug("%p, show type:%s index:%d, get meta finished, numOfRows:%d cols:%d result:%s", pShow,
          mnodeGetShowType(pShowMsg->type), pShow->index, pShow->numOfRows, pShow->numOfColumns, tstrerror(code));
 
@@ -153,6 +226,26 @@ int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
 
   SShowObj *pShow = (SShowObj *)pRetrieve->qhandle;
   
+  if (pShow->type != TSDB_MGMT_TABLE_CLUSTER ||
+      pShow->type != TSDB_MGMT_TABLE_DB ||
+      pShow->type != TSDB_MGMT_TABLE_MODULE ||
+      pShow->type != TSDB_MGMT_TABLE_VARIABLES ||
+      pShow->type != TSDB_MGMT_TABLE_VNODES ||
+      pShow->type != TSDB_MGMT_TABLE_DNODE ||
+      pShow->type != TSDB_MGMT_TABLE_MNODE ||
+      pShow->type != TSDB_MGMT_TABLE_QUERIES ||
+      pShow->type != TSDB_MGMT_TABLE_CONNS ||
+      pShow->type != TSDB_MGMT_TABLE_STREAMS ||
+      pShow->type != TSDB_MGMT_TABLE_TABLE ||
+      pShow->type != TSDB_MGMT_TABLE_METRIC ||
+      pShow->type != TSDB_MGMT_TABLE_STREAMTABLES ||
+      pShow->type != TSDB_MGMT_TABLE_USER ||
+      pShow->type != TSDB_MGMT_TABLE_VGROUP ||
+      pShow->type != TSDB_MGMT_TABLE_SCORES
+      ) {
+    mError("show type:%s is not support", mnodeGetShowType(pShow->type));
+    return TSDB_CODE_COM_OPS_NOT_SUPPORT;
+  }
   /*
    * in case of server restart, apps may hold qhandle created by server before
    * restart, which is actually invalid, therefore, signature check is required.
@@ -188,8 +281,42 @@ int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
   SRetrieveTableRsp *pRsp = static_cast<SRetrieveTableRsp *>(rpcMallocCont(size));
 
   // if free flag is set, client wants to clean the resources
-  if ((pRetrieve->free & TSDB_QUERY_TYPE_FREE_RESOURCE) != TSDB_QUERY_TYPE_FREE_RESOURCE)
-    rowsRead = (*tsMnodeShowRetrieveFp[pShow->type])(pShow, pRsp->data, rowsToRead, pMsg->rpcMsg.handle);
+  if ((pRetrieve->free & TSDB_QUERY_TYPE_FREE_RESOURCE) != TSDB_QUERY_TYPE_FREE_RESOURCE) {
+    void *pConn = pMsg->rpcMsg.handle;
+    char *data = pRsp->data;
+    if (pShow->type == TSDB_MGMT_TABLE_CLUSTER)
+      rowsRead = mnodeRetrieveClusters(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_DB)
+      rowsRead = mnodeRetrieveDbs(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_MODULE)
+      rowsRead = mnodeRetrieveModules(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_VARIABLES)
+      rowsRead = mnodeRetrieveConfigs(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_VNODES)
+      rowsRead = mnodeRetrieveVnodes(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_DNODE)
+      rowsRead = mnodeRetrieveDnodes(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_MNODE)
+      rowsRead = mnodeRetrieveMnodes(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_QUERIES)
+      rowsRead = mnodeRetrieveQueries(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_CONNS)
+      rowsRead = mnodeRetrieveConns(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_STREAMS)
+      rowsRead = mnodeRetrieveStreams(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_TABLE)
+      rowsRead = mnodeRetrieveShowTables(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_METRIC)
+      rowsRead = mnodeRetrieveShowSuperTables(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_STREAMTABLES)
+      rowsRead = mnodeRetrieveStreamTables(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_USER)
+      rowsRead = mnodeRetrieveUsers(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_VGROUP)
+      rowsRead = mnodeRetrieveVgroups(pShow, data, rowsToRead, pConn);
+    else if (pShow->type == TSDB_MGMT_TABLE_SCORES)
+      rowsRead = bnRetrieveScores(pShow, data, rowsToRead, pConn);
+  }
 
   mDebug("%p, show type:%s index:%d, stop retrieve data, rowsRead:%d rowsToRead:%d", pShow,
          mnodeGetShowType(pShow->type), pShow->index, rowsRead, rowsToRead);

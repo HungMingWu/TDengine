@@ -34,8 +34,6 @@
 
 static std::shared_ptr<SSdbTable> tsUserSdb;
 static int32_t tsUserUpdateSize = 0;
-static int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 
 static int32_t mnodeUserActionDestroy(SSdbRow *pRow) {
   tfree(pRow->pObj);
@@ -164,9 +162,6 @@ int32_t mnodeInitUsers() {
     mError("table:%s, failed to create hash", desc.name);
     return -1;
   }
-
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_USER, mnodeGetUserMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_USER, mnodeRetrieveUsers);
    
   mDebug("table:%s, hash is created", desc.name);
   return 0;
@@ -285,7 +280,7 @@ static int32_t mnodeDropUser(SUserObj *pUser, void *pMsg) {
   return code;
 }
 
-static int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
   if (pUser == NULL) {
     return TSDB_CODE_MND_NO_USER_FROM_CONN;
@@ -334,7 +329,7 @@ static int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pCo
   return 0;
 }
 
-static int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t  numOfRows = 0;
   SUserObj *pUser    = NULL;
   int32_t  cols      = 0;

@@ -43,8 +43,6 @@ static int32_t tsDbUpdateSize;
 static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *pMsg);
 static int32_t mnodeDropDb(SMnodeMsg *newMsg);
 static int32_t mnodeSetDbDropping(SDbObj *pDb);
-static int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 
 static void mnodeDestroyDb(SDbObj *pDb) {
   tfree(pDb->vgList);
@@ -158,9 +156,6 @@ int32_t mnodeInitDbs() {
     mError("failed to init db data");
     return -1;
   }
-
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_DB, mnodeGetDbMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_DB, mnodeRetrieveDbs);
   
   mDebug("table:dbs table is created");
   return 0;
@@ -490,7 +485,7 @@ void mnodeCleanupDbs() {
   tsDbSdb.reset();
 }
 
-static int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   int32_t cols = 0;
 
   SSchema *pSchema = pMeta->schema;
@@ -652,7 +647,7 @@ static char *mnodeGetDbStr(char *src) {
   return pos;
 }
 
-static int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t numOfRows = 0;
   SDbObj *pDb = NULL;
   char *  pWrite;

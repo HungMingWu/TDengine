@@ -54,8 +54,6 @@ static std::shared_ptr<SSdbTable> tsVgroupSdb;
 static int32_t tsVgUpdateSize = 0;
 
 static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup);
-static int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static void    mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle);
 
 static void mnodeDestroyVgroup(SVgObj *pVgroup) {
@@ -217,9 +215,6 @@ int32_t mnodeInitVgroups() {
     mError("failed to init vgroups data");
     return -1;
   }
-
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VGROUP, mnodeGetVgroupMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_VGROUP, mnodeRetrieveVgroups);
 
   mDebug("table:vgroups is created");
   
@@ -594,7 +589,7 @@ int64_t mnodeGetVgroupNum() {
   return tsVgroupSdb->getNumOfRows();
 }
 
-static int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   SDbObj *pDb = mnodeGetDb(pShow->db);
   if (pDb == NULL) {
     return TSDB_CODE_MND_DB_NOT_SELECTED;
@@ -683,7 +678,7 @@ static bool mnodeFilterVgroups(SVgObj *pVgroup, STableObj *pTable) {
   }
 }
 
-static int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t mnodeRetrieveVgroups(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t numOfRows = 0;
   SVgObj *pVgroup = NULL;
   int32_t cols = 0;

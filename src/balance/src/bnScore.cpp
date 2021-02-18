@@ -21,9 +21,6 @@
 
 SBnDnodes tsBnDnodes;
 
-static int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
-static int32_t bnRetrieveScores(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-
 static int32_t bnCalcCpuScore(SDnodeObj *pDnode) {
   if (pDnode->cpuAvgUsage < 80)
     return 0;
@@ -97,9 +94,6 @@ float bnTryCalcDnodeScore(SDnodeObj *pDnode, int32_t extra) {
 }
 
 void bnInitDnodes() {
-  mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_SCORES, bnGetScoresMeta);
-  mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_SCORES, bnRetrieveScores);
-
   tsBnDnodes.reserve(16);
 }
 
@@ -150,7 +144,7 @@ void bnReleaseDnodes() {
   }
 }
 
-static int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
+int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   SUserObj *pUser = mnodeGetUserFromConn(pConn);
   if (pUser == NULL) return 0;
 
@@ -233,7 +227,7 @@ static int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pCon
   return 0;
 }
 
-static int32_t bnRetrieveScores(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
+int32_t bnRetrieveScores(SShowObj *pShow, char *data, int32_t rows, void *pConn) {
   int32_t    numOfRows = 0;
   SDnodeObj *pDnode = NULL;
   char *     pWrite;
