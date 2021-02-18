@@ -72,10 +72,6 @@ static int32_t mnodeProcessCreateChildTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropChildTableMsg(SMnodeMsg *pMsg);
 
-static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg);
-
-static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg);
 static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg);
 static int32_t mnodeGetChildTableMeta(SMnodeMsg *pMsg);
 static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg);
@@ -585,10 +581,6 @@ int32_t mnodeInitTables() {
     return code;
   }
 
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_TABLES_META, mnodeProcessMultiTableMetaMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_TABLE_META, mnodeProcessTableMetaMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_STABLE_VGROUP, mnodeProcessSuperTableVgroupMsg);
-
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_TABLE, mnodeGetShowTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_TABLE, mnodeRetrieveShowTables);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_METRIC, mnodeGetShowSuperTableMeta);
@@ -907,7 +899,7 @@ int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg) {
   STableInfoMsg *pInfo = static_cast<STableInfoMsg *>(pMsg->rpcMsg.pCont);
   pInfo->createFlag = htons(pInfo->createFlag);
   mDebug("msg:%p, app:%p table:%s, table meta msg is received from thandle:%p, createFlag:%d", pMsg, pMsg->rpcMsg.ahandle,
@@ -1614,7 +1606,7 @@ static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg) {
   SSTableVgroupMsg *pInfo = static_cast<SSTableVgroupMsg *>(pMsg->rpcMsg.pCont);
   int32_t numOfTable = htonl(pInfo->numOfTables);
 
@@ -2704,7 +2696,7 @@ void mnodeProcessAlterTableRsp(SRpcMsg *rpcMsg) {
   }
 }
 
-static int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg) {
   SMultiTableInfoMsg *pInfo = static_cast<SMultiTableInfoMsg *>(pMsg->rpcMsg.pCont);
   pInfo->numOfTables = htonl(pInfo->numOfTables);
 

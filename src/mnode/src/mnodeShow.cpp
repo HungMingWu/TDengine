@@ -41,12 +41,6 @@
 #include "mnodeRead.h"
 #include "defer.h"
 
-static int32_t mnodeProcessShowMsg(SMnodeMsg *mnodeMsg);
-static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *mnodeMsg);
-static int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *mnodeMsg);
-static int32_t mnodeProcessConnectMsg(SMnodeMsg *mnodeMsg);
-static int32_t mnodeProcessUseMsg(SMnodeMsg *mnodeMsg);
-
 static void  mnodeFreeShowObj(void *data);
 static bool  mnodeAccquireShowObj(SShowObj *pShow);
 static bool  mnodeCheckShowFinished(SShowObj *pShow);
@@ -59,12 +53,6 @@ static SShowMetaFp     tsMnodeShowMetaFp[TSDB_MGMT_TABLE_MAX]     = {0};
 static SShowRetrieveFp tsMnodeShowRetrieveFp[TSDB_MGMT_TABLE_MAX] = {0};
 
 int32_t mnodeInitShow() {
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_SHOW, mnodeProcessShowMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_RETRIEVE, mnodeProcessRetrieveMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_HEARTBEAT, mnodeProcessHeartBeatMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_CONNECT, mnodeProcessConnectMsg);
-  mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_USE_DB, mnodeProcessUseMsg);
-  
   tsMnodeShowCache = taosCacheInit(TSDB_CACHE_PTR_KEY, 5, true, mnodeFreeShowObj, "show");
   return 0;
 }
@@ -109,7 +97,7 @@ static char *mnodeGetShowType(int32_t showType) {
   }
 }
 
-static int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
   SShowMsg *pShowMsg = static_cast<SShowMsg *>(pMsg->rpcMsg.pCont);
   if (pShowMsg->type >= TSDB_MGMT_TABLE_MAX) {
     return TSDB_CODE_MND_INVALID_MSG_TYPE;
@@ -156,7 +144,7 @@ static int32_t mnodeProcessShowMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
   int32_t rowsToRead = 0;
   int32_t size = 0;
   int32_t rowsRead = 0;
@@ -231,7 +219,7 @@ static int32_t mnodeProcessRetrieveMsg(SMnodeMsg *pMsg) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *pMsg) {
   SHeartBeatRsp *pRsp = (SHeartBeatRsp *)rpcMallocCont(sizeof(SHeartBeatRsp));
   if (pRsp == NULL) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
@@ -287,7 +275,7 @@ static int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *pMsg) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
   SConnectMsg *pConnectMsg = static_cast<SConnectMsg *>(pMsg->rpcMsg.pCont);
   SConnectRsp *pConnectRsp = NULL;
   int32_t code = TSDB_CODE_SUCCESS;
@@ -361,7 +349,7 @@ static int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
   return code;
 }
 
-static int32_t mnodeProcessUseMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessUseMsg(SMnodeMsg *pMsg) {
   SUseDbMsg *pUseDbMsg = static_cast<SUseDbMsg *>(pMsg->rpcMsg.pCont);
 
   int32_t code = TSDB_CODE_SUCCESS;

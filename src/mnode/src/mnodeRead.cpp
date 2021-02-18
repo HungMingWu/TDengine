@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosdef.h"
 #include "tsched.h"
@@ -35,11 +34,14 @@
 #include "mnodeTable.h"
 #include "mnodeShow.h"
 
-static int32_t (*tsMnodeProcessReadMsgFp[TSDB_MSG_TYPE_MAX])(SMnodeMsg *);
-
-void mnodeAddReadMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *pMsg)) {
-  tsMnodeProcessReadMsgFp[msgType] = fp;
-}
+extern int32_t mnodeProcessShowMsg(SMnodeMsg *mnodeMsg);
+extern int32_t mnodeProcessRetrieveMsg(SMnodeMsg *mnodeMsg);
+extern int32_t mnodeProcessHeartBeatMsg(SMnodeMsg *mnodeMsg);
+extern int32_t mnodeProcessConnectMsg(SMnodeMsg *mnodeMsg);
+extern int32_t mnodeProcessUseMsg(SMnodeMsg *mnodeMsg);
+extern int32_t mnodeProcessMultiTableMetaMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessSuperTableVgroupMsg(SMnodeMsg *pMsg);
 
 int32_t mnodeProcessRead(SMnodeMsg *pMsg) {
   if (pMsg->rpcMsg.pCont == NULL) {
@@ -60,7 +62,15 @@ int32_t mnodeProcessRead(SMnodeMsg *pMsg) {
     return TSDB_CODE_RPC_REDIRECT;
   }
 
-  if (tsMnodeProcessReadMsgFp[pMsg->rpcMsg.msgType] == NULL) {
+  if (pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_SHOW ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_RETRIEVE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_HEARTBEAT ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CONNECT ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_USE_DB ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_TABLES_META ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_TABLE_META ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_STABLE_VGROUP
+      ) {
     mError("msg:%p, app:%p type:%s in mread queue, not processed", pMsg, pMsg->rpcMsg.ahandle,
            taosMsg[pMsg->rpcMsg.msgType]);
     return TSDB_CODE_MND_MSG_NOT_PROCESSED;
@@ -73,5 +83,13 @@ int32_t mnodeProcessRead(SMnodeMsg *pMsg) {
     return code;
   }
 
-  return (*tsMnodeProcessReadMsgFp[pMsg->rpcMsg.msgType])(pMsg);
+  if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_SHOW) return mnodeProcessShowMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_RETRIEVE) return mnodeProcessRetrieveMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_HEARTBEAT) return mnodeProcessHeartBeatMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CONNECT) return mnodeProcessConnectMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_USE_DB) return mnodeProcessUseMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_TABLES_META) return mnodeProcessMultiTableMetaMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_TABLE_META) return mnodeProcessTableMetaMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_STABLE_VGROUP) return mnodeProcessSuperTableVgroupMsg(pMsg);
+  return -1;
 }
