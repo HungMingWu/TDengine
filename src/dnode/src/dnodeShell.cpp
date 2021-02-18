@@ -24,7 +24,6 @@
 #include "dnodeShell.h"
 #include "dnodeStep.h"
 
-static void  (*dnodeProcessShellMsgFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *);
 static void    dnodeProcessMsgFromShell(SRpcMsg *pMsg, SRpcEpSet *);
 static int     dnodeRetrieveUserAuthInfo(char *user, char *spi, char *encrypt, char *secret, char *ckey);
 static void  * tsShellRpc = NULL;
@@ -32,44 +31,6 @@ static std::atomic<int32_t> tsQueryReqNum{0};
 static std::atomic<int32_t> tsSubmitReqNum{0};
 
 int32_t dnodeInitShell() {
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_SUBMIT]         = dnodeDispatchToVWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_QUERY]          = dnodeDispatchToVReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_FETCH]          = dnodeDispatchToVReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_UPDATE_TAG_VAL] = dnodeDispatchToVWriteQueue;
-  
-  // the following message shall be treated as mnode write
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CREATE_ACCT] = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_ALTER_ACCT]  = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_DROP_ACCT]   = dnodeDispatchToMWriteQueue; 
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CREATE_USER] = dnodeDispatchToMWriteQueue; 
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_ALTER_USER]  = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_DROP_USER]   = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CREATE_DNODE]= dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_DROP_DNODE]  = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CREATE_DB]   = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_DROP_DB]     = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_ALTER_DB]    = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CREATE_TABLE]= dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_DROP_TABLE]  = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_ALTER_TABLE] = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_ALTER_STREAM]= dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_KILL_QUERY]  = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_KILL_STREAM] = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_KILL_CONN]   = dnodeDispatchToMWriteQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CONFIG_DNODE]= dnodeDispatchToMWriteQueue;
-  
-  // the following message shall be treated as mnode query 
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_HEARTBEAT]   = dnodeDispatchToMReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_CONNECT]     = dnodeDispatchToMReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_USE_DB]      = dnodeDispatchToMReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_TABLE_META]  = dnodeDispatchToMReadQueue; 
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_STABLE_VGROUP]= dnodeDispatchToMReadQueue;   
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_TABLES_META] = dnodeDispatchToMReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_SHOW]        = dnodeDispatchToMReadQueue;
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_CM_RETRIEVE]    = dnodeDispatchToMReadQueue;
-
-  dnodeProcessShellMsgFp[TSDB_MSG_TYPE_NETWORK_TEST]   = dnodeSendStartupStep;
-
   int32_t numOfThreads = (tsNumOfCores * tsNumOfThreadsPerCore) / 2.0;
   if (numOfThreads < 1) {
     numOfThreads = 1;
@@ -125,8 +86,42 @@ static void dnodeProcessMsgFromShell(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
     tsSubmitReqNum++;
   } else {}
 
-  if ( dnodeProcessShellMsgFp[pMsg->msgType] ) {
-    (*dnodeProcessShellMsgFp[pMsg->msgType])(pMsg);
+  if (pMsg->msgType == TSDB_MSG_TYPE_SUBMIT || pMsg->msgType  == TSDB_MSG_TYPE_UPDATE_TAG_VAL) {
+    dnodeDispatchToVWriteQueue(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_QUERY || pMsg->msgType == TSDB_MSG_TYPE_FETCH) {
+    dnodeDispatchToVReadQueue(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_NETWORK_TEST) {
+    dnodeSendStartupStep(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_CM_CREATE_ACCT ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_ALTER_ACCT ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_DROP_ACCT ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_CREATE_USER ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_ALTER_USER ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_DROP_USER ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_CREATE_DNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_DROP_DNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_CREATE_DB ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_DROP_DB ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_ALTER_DB ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_CREATE_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_DROP_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_ALTER_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_ALTER_STREAM ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_KILL_QUERY ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_KILL_STREAM ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_KILL_CONN ||
+      pMsg->msgType == TSDB_MSG_TYPE_CM_CONFIG_DNODE) {
+    dnodeDispatchToMWriteQueue(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_CM_HEARTBEAT ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_CONNECT ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_USE_DB ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_TABLE_META ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_STABLE_VGROUP ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_TABLES_META ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_SHOW ||
+             pMsg->msgType == TSDB_MSG_TYPE_CM_RETRIEVE
+      ) {
+    dnodeDispatchToMReadQueue(pMsg);
   } else {
     dError("RPC %p, shell msg:%s is not processed", pMsg->handle, taosMsg[pMsg->msgType]);
     rpcMsg.code = TSDB_CODE_DND_MSG_NOT_PROCESSED;

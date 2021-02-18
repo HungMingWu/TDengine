@@ -18,7 +18,6 @@
 
 #include "mnodeDef.h"
 
-void    mnodeAddWriteMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg));
 int32_t mnodeProcessRead(SMnodeMsg *pMsg);
 
 #endif

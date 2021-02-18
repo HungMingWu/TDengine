@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosmsg.h"
 #include "tutil.h"
@@ -67,11 +66,9 @@ static int32_t mnodeRetrieveShowSuperTables(SShowObj *pShow, char *data, int32_t
 static int32_t mnodeGetStreamTableMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveStreamTables(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 
-static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessCreateChildTableMsg(SMnodeMsg *pMsg);
 
-static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg);
 static int32_t mnodeProcessDropChildTableMsg(SMnodeMsg *pMsg);
 
@@ -82,8 +79,6 @@ static int32_t mnodeProcessTableMetaMsg(SMnodeMsg *pMsg);
 static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg);
 static int32_t mnodeGetChildTableMeta(SMnodeMsg *pMsg);
 static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg);
-
-static int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg);
 
 static int32_t mnodeFindSuperTableColumnIndex(SSTableObj *pStable, char *colName);
 
@@ -591,21 +586,15 @@ int32_t mnodeInitTables() {
   }
 
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_TABLES_META, mnodeProcessMultiTableMetaMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CREATE_TABLE, mnodeProcessCreateTableMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_DROP_TABLE, mnodeProcessDropTableMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_ALTER_TABLE, mnodeProcessAlterTableMsg);
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_TABLE_META, mnodeProcessTableMetaMsg);
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_STABLE_VGROUP, mnodeProcessSuperTableVgroupMsg);
 
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_TABLE, mnodeGetShowTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_TABLE, mnodeRetrieveShowTables);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_TABLE, mnodeCancelGetNextChildTable);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_METRIC, mnodeGetShowSuperTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_METRIC, mnodeRetrieveShowSuperTables);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_METRIC, mnodeCancelGetNextSuperTable);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_STREAMTABLES, mnodeGetStreamTableMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_STREAMTABLES, mnodeRetrieveStreamTables);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_STREAMTABLES, mnodeCancelGetNextChildTable);
 
   return TSDB_CODE_SUCCESS;
 }
@@ -823,7 +812,7 @@ static int32_t mnodeProcessBatchCreateTableMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
   SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg * >(pMsg->rpcMsg.pCont);
 
   int32_t numOfTables = htonl(pCreate->numOfTables);
@@ -874,7 +863,7 @@ static int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg) {
   SCMDropTableMsg *pDrop = static_cast<SCMDropTableMsg *>(pMsg->rpcMsg.pCont);
   if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDbByTableId(pDrop->tableFname);
   if (pMsg->pDb == NULL) {
@@ -2949,7 +2938,7 @@ static int32_t mnodeRetrieveShowTables(SShowObj *pShow, char *data, int32_t rows
   return numOfRows;
 }
 
-static int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg) {
   SAlterTableMsg *pAlter = static_cast<SAlterTableMsg * >(pMsg->rpcMsg.pCont);
   mDebug("msg:%p, app:%p table:%s, alter table msg is received from thandle:%p", pMsg, pMsg->rpcMsg.ahandle,
          pAlter->tableFname, pMsg->rpcMsg.handle);

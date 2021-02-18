@@ -37,16 +37,8 @@ static int32_t dnodeProcessDropVnodeMsg(SRpcMsg *pMsg);
 static int32_t dnodeProcessAlterStreamMsg(SRpcMsg *pMsg);
 static int32_t dnodeProcessConfigDnodeMsg(SRpcMsg *pMsg);
 static int32_t dnodeProcessCreateMnodeMsg(SRpcMsg *pMsg);
-static int32_t (*dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *pMsg);
 
 int32_t dnodeInitVMgmt() {
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_CREATE_VNODE] = dnodeProcessCreateVnodeMsg;
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_ALTER_VNODE]  = dnodeProcessAlterVnodeMsg;
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_DROP_VNODE]   = dnodeProcessDropVnodeMsg;
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_ALTER_STREAM] = dnodeProcessAlterStreamMsg;
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_CONFIG_DNODE] = dnodeProcessConfigDnodeMsg;
-  dnodeProcessMgmtMsgFp[TSDB_MSG_TYPE_MD_CREATE_MNODE] = dnodeProcessCreateMnodeMsg;
-
   int32_t code = vnodeInitMgmt();
   if (code != TSDB_CODE_SUCCESS) return -1;
 
@@ -111,8 +103,18 @@ static void *dnodeProcessMgmtQueue(void *wparam) {
 
     pMsg = &pMgmt->rpcMsg;
     dTrace("msg:%p, ahandle:%p type:%s will be processed", pMgmt, pMsg->ahandle, taosMsg[pMsg->msgType]);
-    if (dnodeProcessMgmtMsgFp[pMsg->msgType]) {
-      rsp.code = (*dnodeProcessMgmtMsgFp[pMsg->msgType])(pMsg);
+    if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_VNODE) {
+      rsp.code = dnodeProcessCreateVnodeMsg(pMsg);
+    } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_VNODE) {
+      rsp.code = dnodeProcessAlterVnodeMsg(pMsg);
+    } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_VNODE) {
+      rsp.code = dnodeProcessDropVnodeMsg(pMsg);
+    } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_STREAM) {
+      rsp.code = dnodeProcessAlterStreamMsg(pMsg);
+    } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_CONFIG_DNODE) {
+      rsp.code = dnodeProcessConfigDnodeMsg(pMsg);
+    } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_MNODE) {
+      rsp.code = dnodeProcessCreateMnodeMsg(pMsg);
     } else {
       rsp.code = TSDB_CODE_DND_MSG_NOT_PROCESSED;
     }

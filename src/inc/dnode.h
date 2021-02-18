@@ -41,7 +41,6 @@ void    dnodeUpdateEp(int32_t dnodeId, char *ep, char *fqdn, uint16_t *port);
 bool    dnodeCheckEpChanged(int32_t dnodeId, char *epstr);
 int32_t dnodeStartMnode(SMInfos *pMinfos);
 
-void  dnodeAddClientRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg));
 void  dnodeSendMsgToDnode(SRpcEpSet *epSet, SRpcMsg *rpcMsg);
 void  dnodeSendMsgToMnodeRecv(SRpcMsg *rpcMsg, SRpcMsg *rpcRsp);
 void  dnodeSendMsgToDnodeRecv(SRpcMsg *rpcMsg, SRpcMsg *rpcRsp, SRpcEpSet *epSet);

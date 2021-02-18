@@ -19,7 +19,6 @@
  * to dnode. All theses messages are handled from here
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "mnode.h"
 #include "dnodeVMgmt.h"
@@ -28,32 +27,14 @@
 #include "dnodeMInfos.h"
 #include "dnodeStep.h"
 
-static void (*dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *);
 static void dnodeProcessReqMsgFromDnode(SRpcMsg *pMsg, SRpcEpSet *);
-static void (*dnodeProcessRspMsgFp[TSDB_MSG_TYPE_MAX])(SRpcMsg *rpcMsg);
 static void dnodeProcessRspFromDnode(SRpcMsg *pMsg, SRpcEpSet *pEpSet);
 static void *tsServerRpc = NULL;
 static SRpcInfo *tsClientRpc = NULL;
 
+extern void dnodeProcessStatusRsp(SRpcMsg *pMsg);
+
 int32_t dnodeInitServer() {
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_CREATE_TABLE] = dnodeDispatchToVWriteQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_DROP_TABLE]   = dnodeDispatchToVWriteQueue; 
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_ALTER_TABLE]  = dnodeDispatchToVWriteQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_DROP_STABLE]  = dnodeDispatchToVWriteQueue;
-
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_CREATE_VNODE] = dnodeDispatchToVMgmtQueue; 
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_ALTER_VNODE]  = dnodeDispatchToVMgmtQueue; 
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_DROP_VNODE]   = dnodeDispatchToVMgmtQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_ALTER_STREAM] = dnodeDispatchToVMgmtQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_CONFIG_DNODE] = dnodeDispatchToVMgmtQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_MD_CREATE_MNODE] = dnodeDispatchToVMgmtQueue;
-
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_DM_CONFIG_TABLE] = dnodeDispatchToMPeerQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_DM_CONFIG_VNODE] = dnodeDispatchToMPeerQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_DM_AUTH]         = dnodeDispatchToMPeerQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_DM_GRANT]        = dnodeDispatchToMPeerQueue;
-  dnodeProcessReqMsgFp[TSDB_MSG_TYPE_DM_STATUS]       = dnodeDispatchToMPeerQueue;
-
   SRpcInit rpcInit;
   memset(&rpcInit, 0, sizeof(rpcInit));
   rpcInit.localPort    = tsDnodeDnodePort;
@@ -104,9 +85,24 @@ static void dnodeProcessReqMsgFromDnode(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
     rpcSendResponse(&rspMsg);
     return;
   }
-
-  if (dnodeProcessReqMsgFp[pMsg->msgType]) {
-    (*dnodeProcessReqMsgFp[pMsg->msgType])(pMsg);
+  if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_STABLE) {
+    dnodeDispatchToVWriteQueue(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_VNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_VNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_DROP_VNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_ALTER_STREAM ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_CONFIG_DNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_MD_CREATE_MNODE) {
+    dnodeDispatchToVMgmtQueue(pMsg);
+  } else if (pMsg->msgType == TSDB_MSG_TYPE_DM_CONFIG_TABLE ||
+      pMsg->msgType == TSDB_MSG_TYPE_DM_CONFIG_VNODE ||
+      pMsg->msgType == TSDB_MSG_TYPE_DM_AUTH ||
+      pMsg->msgType == TSDB_MSG_TYPE_DM_GRANT ||
+      pMsg->msgType == TSDB_MSG_TYPE_DM_STATUS) {
+    dnodeDispatchToMPeerQueue(pMsg);
   } else {
     dDebug("RPC %p, message:%s not processed", pMsg->handle, taosMsg[pMsg->msgType]);
     rspMsg.code = TSDB_CODE_DND_MSG_NOT_PROCESSED;
@@ -159,17 +155,12 @@ static void dnodeProcessRspFromDnode(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
     dnodeUpdateEpSetForPeer(pEpSet);
   }
 
-  if (dnodeProcessRspMsgFp[pMsg->msgType]) {    
-    (*dnodeProcessRspMsgFp[pMsg->msgType])(pMsg);
+  if (pMsg->msgType == TSDB_MSG_TYPE_DM_STATUS_RSP) {    
+    dnodeProcessStatusRsp(pMsg);
   } else {
     mnodeProcessPeerRsp(pMsg);
   }
-
   rpcFreeCont(pMsg->pCont);
-}
-
-void dnodeAddClientRspHandle(uint8_t msgType, void (*fp)(SRpcMsg *rpcMsg)) {
-  dnodeProcessRspMsgFp[msgType] = fp;
 }
 
 void dnodeSendMsgToDnode(SRpcEpSet *epSet, SRpcMsg *rpcMsg) {

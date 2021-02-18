@@ -57,7 +57,6 @@ static void *tsMnodeShowCache = NULL;
 static int32_t tsShowObjIndex = 0;
 static SShowMetaFp     tsMnodeShowMetaFp[TSDB_MGMT_TABLE_MAX]     = {0};
 static SShowRetrieveFp tsMnodeShowRetrieveFp[TSDB_MGMT_TABLE_MAX] = {0};
-static SShowFreeIterFp tsMnodeShowFreeIterFp[TSDB_MGMT_TABLE_MAX] = {0};
 
 int32_t mnodeInitShow() {
   mnodeAddReadMsgHandle(TSDB_MSG_TYPE_CM_SHOW, mnodeProcessShowMsg);
@@ -84,10 +83,6 @@ void mnodeAddShowMetaHandle(uint8_t showType, SShowMetaFp fp) {
 
 void mnodeAddShowRetrieveHandle(uint8_t msgType, SShowRetrieveFp fp) {
   tsMnodeShowRetrieveFp[msgType] = fp;
-}
-
-void mnodeAddShowFreeIterHandle(uint8_t msgType, SShowFreeIterFp fp) {
-  tsMnodeShowFreeIterFp[msgType] = fp;
 }
 
 static char *mnodeGetShowType(int32_t showType) {
@@ -416,10 +411,36 @@ static void* mnodePutShowObj(SShowObj *pShow) {
   return NULL;
 }
 
+extern void mnodeCancelGetNextCluster(void *pIter);
+extern void mnodeCancelGetNextDnode(void *pIter);
+extern void mnodeCancelGetNextConn(void *pIter);
+
 static void mnodeFreeShowObj(void *data) {
   SShowObj *pShow = *(SShowObj **)data;
-  if (tsMnodeShowFreeIterFp[pShow->type] != NULL && pShow->pIter != NULL) {
-    (*tsMnodeShowFreeIterFp[pShow->type])(pShow->pIter);
+  if (pShow->pIter != nullptr) {
+    if (pShow->type == TSDB_MGMT_TABLE_USER) {
+      mnodeCancelGetNextUser(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_CLUSTER) {
+      mnodeCancelGetNextCluster(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_DB) {
+      mnodeCancelGetNextDb(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_DNODE) {
+      mnodeCancelGetNextDnode(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_MNODE) {
+      mnodeCancelGetNextMnode(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_METRIC) {
+      mnodeCancelGetNextSuperTable(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_VGROUP) {
+      mnodeCancelGetNextVgroup(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_SCORES) {
+      mnodeCancelGetNextDnode(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_TABLE ||
+               pShow->type == TSDB_MGMT_TABLE_STREAMTABLES) {
+      mnodeCancelGetNextChildTable(pShow->pIter);
+    } else if (pShow->type == TSDB_MGMT_TABLE_QUERIES || pShow->type == TSDB_MGMT_TABLE_CONNS ||
+               pShow->type == TSDB_MGMT_TABLE_STREAMS) {
+      mnodeCancelGetNextConn(pShow->pIter);
+    }
   }
 
   mDebug("%p, show is destroyed, data:%p index:%d", pShow, data, pShow->index);

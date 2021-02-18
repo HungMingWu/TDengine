@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "trpc.h"
 #include "tutil.h"
@@ -37,9 +36,6 @@ static std::shared_ptr<SSdbTable> tsUserSdb;
 static int32_t tsUserUpdateSize = 0;
 static int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg);
 
 static int32_t mnodeUserActionDestroy(SSdbRow *pRow) {
   tfree(pRow->pObj);
@@ -169,12 +165,8 @@ int32_t mnodeInitUsers() {
     return -1;
   }
 
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CREATE_USER, mnodeProcessCreateUserMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_ALTER_USER, mnodeProcessAlterUserMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_DROP_USER, mnodeProcessDropUserMsg);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_USER, mnodeGetUserMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_USER, mnodeRetrieveUsers);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_USER, mnodeCancelGetNextUser);
    
   mDebug("table:%s, hash is created", desc.name);
   return 0;
@@ -407,7 +399,7 @@ char *mnodeGetUserFromMsg(void *pMsg) {
   }
 }
 
-static int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg) {
   SUserObj *pOperUser = pMsg->pUser;
   
   if (pOperUser->superAuth) {
@@ -419,7 +411,7 @@ static int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg) {
   int32_t code;
   SUserObj *pOperUser = pMsg->pUser;
   
@@ -507,7 +499,7 @@ static int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg) {
   return code;
 }
 
-static int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg) {
   int32_t code;
   SUserObj *pOperUser = pMsg->pUser;
 

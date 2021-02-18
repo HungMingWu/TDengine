@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tgrant.h"
 #include "tbn.h"
@@ -50,9 +49,6 @@ static int32_t   tsDnodeEpsSize;
 static pthread_mutex_t tsDnodeEpsMutex;
 
 static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg);
-static int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg);
 static int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveModules(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
@@ -187,9 +183,6 @@ int32_t mnodeInitDnodes() {
     return -1;
   }
 
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CREATE_DNODE, mnodeProcessCreateDnodeMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_DROP_DNODE, mnodeProcessDropDnodeMsg); 
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CONFIG_DNODE, mnodeProcessCfgDnodeMsg);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_MODULE, mnodeGetModuleMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_MODULE, mnodeRetrieveModules);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_VARIABLES, mnodeGetConfigMeta);
@@ -198,7 +191,6 @@ int32_t mnodeInitDnodes() {
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_VNODES, mnodeRetrieveVnodes);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_DNODE, mnodeGetDnodeMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_DNODE, mnodeRetrieveDnodes);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_DNODE, mnodeCancelGetNextDnode);
  
   mDebug("table:dnodes table is created");
   return 0;
@@ -299,7 +291,7 @@ void SDnodeObj::update(int status) {
   }
 }
 
-static int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg) {
   if (strcmp(pMsg->pUser->user, TSDB_DEFAULT_USER) != 0) {
     mError("failed to cfg dnode, no rights");
     return TSDB_CODE_MND_NO_RIGHTS;
@@ -711,7 +703,7 @@ static int32_t mnodeDropDnodeByEp(char *ep, SMnodeMsg *pMsg) {
   return code;
 }
 
-static int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg) {
   SCreateDnodeMsg *pCreate = static_cast<SCreateDnodeMsg * >(pMsg->rpcMsg.pCont);
 
   if (strcmp(pMsg->pUser->user, TSDB_DEFAULT_USER) != 0) {
@@ -721,7 +713,7 @@ static int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg) {
   SDropDnodeMsg *pDrop = static_cast<SDropDnodeMsg *>(pMsg->rpcMsg.pCont);
 
   if (strcmp(pMsg->pUser->user, TSDB_DEFAULT_USER) != 0) {

@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "tutil.h"
@@ -46,9 +45,6 @@ static int32_t mnodeDropDb(SMnodeMsg *newMsg);
 static int32_t mnodeSetDbDropping(SDbObj *pDb);
 static int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static int32_t mnodeProcessCreateDbMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg);
 
 static void mnodeDestroyDb(SDbObj *pDb) {
   tfree(pDb->vgList);
@@ -163,12 +159,8 @@ int32_t mnodeInitDbs() {
     return -1;
   }
 
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_CREATE_DB, mnodeProcessCreateDbMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_ALTER_DB, mnodeProcessAlterDbMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_DROP_DB, mnodeProcessDropDbMsg);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_DB, mnodeGetDbMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_DB, mnodeRetrieveDbs);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_DB, mnodeCancelGetNextDb);
   
   mDebug("table:dbs table is created");
   return 0;
@@ -817,7 +809,7 @@ static int32_t mnodeSetDbDropping(SDbObj *pDb) {
   return code;
 }
 
-static int32_t mnodeProcessCreateDbMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessCreateDbMsg(SMnodeMsg *pMsg) {
   SCreateDbMsg *pCreate = static_cast<SCreateDbMsg *>(pMsg->rpcMsg.pCont);  
   pCreate->maxTables       = htonl(pCreate->maxTables);
   pCreate->cacheBlockSize  = htonl(pCreate->cacheBlockSize);
@@ -1036,7 +1028,7 @@ static int32_t mnodeAlterDb(SDbObj *pDb, SAlterDbMsg *pAlter, void *pMsg) {
   return code;
 }
 
-static int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg) {
   SAlterDbMsg *pAlter = static_cast<SAlterDbMsg *>(pMsg->rpcMsg.pCont);
   mDebug("db:%s, alter db msg is received from thandle:%p", pAlter->db, pMsg->rpcMsg.handle);
 
@@ -1086,7 +1078,7 @@ static int32_t mnodeDropDb(SMnodeMsg *pMsg) {
   return code;
 }
 
-static int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg) {
   SDropDbMsg *pDrop = static_cast<SDropDbMsg *>(pMsg->rpcMsg.pCont);
   mDebug("db:%s, drop db msg is received from thandle:%p", pDrop->db, pMsg->rpcMsg.handle);
 

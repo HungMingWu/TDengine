@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tglobal.h"
 #include "mnodeShow.h"
@@ -100,7 +99,6 @@ float bnTryCalcDnodeScore(SDnodeObj *pDnode, int32_t extra) {
 void bnInitDnodes() {
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_SCORES, bnGetScoresMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_SCORES, bnRetrieveScores);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_SCORES, mnodeCancelGetNextDnode);
 
   tsBnDnodes.reserve(16);
 }

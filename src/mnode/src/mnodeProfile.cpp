@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosmsg.h"
 #include "taoserror.h"
@@ -41,28 +40,17 @@ static int32_t mnodeGetQueryMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pC
 static int32_t mnodeRetrieveQueries(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static int32_t mnodeGetConnsMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveConns(SShowObj *pShow, char *data, int32_t rows, void *pConn);
-static void    mnodeCancelGetNextConn(void *pIter);
 static int32_t mnodeGetStreamMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn);
 static int32_t mnodeRetrieveStreams(SShowObj *pShow, char *data, int32_t rows, void *pConn);
 static void    mnodeFreeConn(void *data);
-static int32_t mnodeProcessKillQueryMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessKillStreamMsg(SMnodeMsg *pMsg);
-static int32_t mnodeProcessKillConnectionMsg(SMnodeMsg *pMsg);
 
 int32_t mnodeInitProfile() {
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_QUERIES, mnodeGetQueryMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_QUERIES, mnodeRetrieveQueries);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_QUERIES, mnodeCancelGetNextConn);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_CONNS, mnodeGetConnsMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_CONNS, mnodeRetrieveConns);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_CONNS, mnodeCancelGetNextConn);
   mnodeAddShowMetaHandle(TSDB_MGMT_TABLE_STREAMS, mnodeGetStreamMeta);
   mnodeAddShowRetrieveHandle(TSDB_MGMT_TABLE_STREAMS, mnodeRetrieveStreams);
-  mnodeAddShowFreeIterHandle(TSDB_MGMT_TABLE_STREAMS, mnodeCancelGetNextConn);
-
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_KILL_QUERY, mnodeProcessKillQueryMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_KILL_STREAM, mnodeProcessKillStreamMsg);
-  mnodeAddWriteMsgHandle(TSDB_MSG_TYPE_CM_KILL_CONN, mnodeProcessKillConnectionMsg);
 
   tsMnodeConnCache = taosCacheInit(TSDB_DATA_TYPE_INT, CONN_CHECK_TIME, true, mnodeFreeConn, "conn");
   return 0;
@@ -156,7 +144,7 @@ static void *mnodeGetNextConn(void *pIter, SConnObj **pConn) {
   return pIter;
 }
 
-static void mnodeCancelGetNextConn(void *pIter) {
+void mnodeCancelGetNextConn(void *pIter) {
   taosHashCancelIterate(tsMnodeConnCache->pHashTable, pIter);
 }
 
@@ -575,7 +563,7 @@ static int32_t mnodeRetrieveStreams(SShowObj *pShow, char *data, int32_t rows, v
   return numOfRows;
 }
 
-static int32_t mnodeProcessKillQueryMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessKillQueryMsg(SMnodeMsg *pMsg) {
   SUserObj *pUser = pMsg->pUser;
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0) return TSDB_CODE_MND_NO_RIGHTS;
 
@@ -606,7 +594,7 @@ static int32_t mnodeProcessKillQueryMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessKillStreamMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessKillStreamMsg(SMnodeMsg *pMsg) {
   SUserObj *pUser = pMsg->pUser;
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0) return TSDB_CODE_MND_NO_RIGHTS;
 
@@ -637,7 +625,7 @@ static int32_t mnodeProcessKillStreamMsg(SMnodeMsg *pMsg) {
   }
 }
 
-static int32_t mnodeProcessKillConnectionMsg(SMnodeMsg *pMsg) {
+int32_t mnodeProcessKillConnectionMsg(SMnodeMsg *pMsg) {
   SUserObj *pUser = pMsg->pUser;
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0) return TSDB_CODE_MND_NO_RIGHTS;
 

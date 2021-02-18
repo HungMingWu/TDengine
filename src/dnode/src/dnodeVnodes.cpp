@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <atomic>
 #include "os.h"
 #include "ttimer.h"
@@ -38,11 +37,8 @@ static std::atomic<int32_t>  tsOpenVnodes;
 static int32_t  tsTotalVnodes = 0;
 
 static void dnodeSendStatusMsg(void *tmrId);
-static void dnodeProcessStatusRsp(SRpcMsg *pMsg);
 
 int32_t dnodeInitStatusTimer() {
-  dnodeAddClientRspHandle(TSDB_MSG_TYPE_DM_STATUS_RSP, dnodeProcessStatusRsp);
-
   tsRebootTime = taosGetTimestampSec();
   taosTmrReset(dnodeSendStatusMsg, 500, tsDnodeTmr, &tsStatusTimer);
 
@@ -196,7 +192,7 @@ void dnodeCleanupVnodes() {
   dInfo("total vnodes:%d are all closed", numOfVnodes);
 }
 
-static void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
+void dnodeProcessStatusRsp(SRpcMsg *pMsg) {
   if (pMsg->code != TSDB_CODE_SUCCESS) {
     dError("status rsp is received, error:%s", tstrerror(pMsg->code));
     taosTmrReset(dnodeSendStatusMsg, tsStatusInterval * 1000, tsDnodeTmr, &tsStatusTimer);

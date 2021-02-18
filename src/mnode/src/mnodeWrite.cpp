@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosdef.h"
 #include "tsched.h"
@@ -35,11 +34,21 @@
 #include "mnodeTable.h"
 #include "mnodeShow.h"
 
-static int32_t (*tsMnodeProcessWriteMsgFp[TSDB_MSG_TYPE_MAX])(SMnodeMsg *);
-
-void mnodeAddWriteMsgHandle(uint8_t msgType, int32_t (*fp)(SMnodeMsg *mnodeMsg)) {
-  tsMnodeProcessWriteMsgFp[msgType] = fp;
-}
+extern int32_t mnodeProcessKillQueryMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessKillStreamMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessKillConnectionMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessCreateDbMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessAlterDbMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessCreateDnodeMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessDropDnodeMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessCreateTableMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessDropTableMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessAlterTableMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg);
+extern int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg);
 
 int32_t mnodeProcessWrite(SMnodeMsg *pMsg) {
   if (pMsg->rpcMsg.pCont == NULL) {
@@ -60,7 +69,22 @@ int32_t mnodeProcessWrite(SMnodeMsg *pMsg) {
     return TSDB_CODE_RPC_REDIRECT;
   }
 
-  if (tsMnodeProcessWriteMsgFp[pMsg->rpcMsg.msgType] == NULL) {
+  if (pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_KILL_QUERY ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_KILL_STREAM ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_KILL_CONN ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CREATE_DB ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_ALTER_DB ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_DROP_DB ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CREATE_DNODE || 
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_DROP_DNODE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CONFIG_DNODE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CREATE_TABLE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_DROP_TABLE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_ALTER_TABLE ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_CREATE_USER ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_ALTER_USER ||
+      pMsg->rpcMsg.msgType != TSDB_MSG_TYPE_CM_DROP_USER
+      ) {
     mError("msg:%p, app:%p type:%s not processed", pMsg, pMsg->rpcMsg.ahandle, taosMsg[pMsg->rpcMsg.msgType]);
     return TSDB_CODE_MND_MSG_NOT_PROCESSED;
   }
@@ -78,5 +102,20 @@ int32_t mnodeProcessWrite(SMnodeMsg *pMsg) {
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
-  return (*tsMnodeProcessWriteMsgFp[pMsg->rpcMsg.msgType])(pMsg);
+  if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_KILL_QUERY) return mnodeProcessKillQueryMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_KILL_STREAM) return mnodeProcessKillStreamMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_KILL_CONN) return mnodeProcessKillConnectionMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CREATE_DB) return mnodeProcessCreateDbMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_ALTER_DB) return mnodeProcessAlterDbMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_DROP_DB) return mnodeProcessDropDbMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CREATE_DNODE) return mnodeProcessCreateDnodeMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_DROP_DNODE) return mnodeProcessDropDnodeMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CONFIG_DNODE) return mnodeProcessCfgDnodeMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CREATE_TABLE) return mnodeProcessCreateTableMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_DROP_TABLE) return mnodeProcessDropTableMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_ALTER_TABLE) return mnodeProcessAlterTableMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_CREATE_USER) return mnodeProcessCreateUserMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_ALTER_USER) return mnodeProcessAlterUserMsg(pMsg);
+  else if (pMsg->rpcMsg.msgType == TSDB_MSG_TYPE_CM_DROP_USER) return mnodeProcessDropUserMsg(pMsg);
+  return -1;
 }
