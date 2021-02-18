@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include "os.h"
 #include "tqueue.h"
@@ -155,7 +154,7 @@ void dnodeSendRpcVWriteRsp(void *pVnode, void *wparam, int32_t code) {
   SVWriteMsg *pWrite = static_cast<SVWriteMsg *>(wparam);
 
   if (code < 0) pWrite->code = code;
-  int32_t count = atomic_add_fetch_32(&pWrite->processedCount, 1);
+  int32_t count = pWrite->processedCount++;
 
   if (count <= 1) return;
 

@@ -308,14 +308,14 @@ static void vnodeFlowCtrlMsgToWQueue(SVWriteMsg *pWrite, void *tmrId) {
   pWrite->processedCount++;
   if (pWrite->processedCount >= 100) {
     vError("vgId:%d, msg:%p, failed to process since %s, retry:%d", pVnode->vgId, pWrite, tstrerror(code),
-           pWrite->processedCount);
+           pWrite->processedCount.load());
     pWrite->processedCount = 1;
     dnodeSendRpcVWriteRsp(pWrite->pVnode, pWrite, code);
   } else {
     code = vnodePerformFlowCtrl(pWrite);
     if (code == 0) {
       vDebug("vgId:%d, msg:%p, write into vwqueue after flowctrl, retry:%d", pVnode->vgId, pWrite,
-             pWrite->processedCount);
+             pWrite->processedCount.load());
       pWrite->processedCount = 0;
       code = vnodeWriteToWQueueImp(pWrite);
       if (code != 0) {
@@ -341,7 +341,7 @@ static int32_t vnodePerformFlowCtrl(SVWriteMsg *pWrite) {
     taosTmrReset([pWrite](void *tmrId) { vnodeFlowCtrlMsgToWQueue(pWrite, tmrId); }, 100, tsDnodeTmr, &unUsed);
 
     vTrace("vgId:%d, msg:%p, app:%p, perform flowctrl, retry:%d", pVnode->vgId, pWrite, pWrite->rpcMsg.ahandle,
-           pWrite->processedCount);
+           pWrite->processedCount.load());
     return TSDB_CODE_VND_ACTION_IN_PROGRESS;
   }
 }

@@ -16,6 +16,7 @@
 #ifndef TDENGINE_VNODE_H
 #define TDENGINE_VNODE_H
 
+#include <atomic>
 #include "trpc.h"
 #include "walInt.h"
 
@@ -38,16 +39,16 @@ typedef struct {
   char    pCont[];
 } SVReadMsg;
 
-typedef struct {
+struct SVWriteMsg {
   int32_t  code;
-  int32_t  processedCount;
+  std::atomic<int32_t> processedCount;
   int32_t  qtype;
   void *   pVnode;
   SRpcMsg  rpcMsg;
   SRspRet  rspRet;
   char     reserveForSync[24];
   SWalHead pHead;
-} SVWriteMsg;
+};
 
 // vnodeStatus
 extern char *vnodeStatus[];
