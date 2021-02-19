@@ -20,6 +20,8 @@
 #include "dnodeCfg.h"
 #include "dnodeMInfos.h"
 #include "dnodeVnodes.h"
+#include "vnodeMgmt.h"
+#include "vnodeMain.h"
 
 typedef struct {
   pthread_t thread;
@@ -176,14 +178,8 @@ int32_t dnodeInitVnodes() {
 void dnodeCleanupVnodes() {
   int32_t vnodeList[TSDB_MAX_VNODES]= {0};
   int32_t numOfVnodes = 0;
-  int32_t status;
 
-  status = vnodeGetVnodeList(vnodeList, &numOfVnodes);
-
-  if (status != TSDB_CODE_SUCCESS) {
-    dInfo("get dnode list failed");
-    return;
-  }
+  vnodeGetVnodeList(vnodeList, &numOfVnodes);
 
   for (int32_t i = 0; i < numOfVnodes; ++i) {
     vnodeClose(vnodeList[i]);

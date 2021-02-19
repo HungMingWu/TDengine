@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include "os.h"
 #include "taoserror.h"
@@ -44,7 +43,7 @@ typedef struct {
 } SVMWorkerPool;
 
 static SVMWorkerPool tsVMWorkerPool;
-static taos_qset     tsVMWorkerQset;
+static std::unique_ptr<STaosQset>    tsVMWorkerQset;
 static std::unique_ptr<STaosQueue>   tsVMWorkerQueue;
 
 static void *vnodeMWorkerFunc(void *param);
@@ -52,7 +51,7 @@ static void *vnodeMWorkerFunc(void *param);
 static int32_t vnodeStartMWorker() {
   tsVMWorkerQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsVMWorkerQset, tsVMWorkerQueue.get(), NULL);
+  tsVMWorkerQset->addIntoQset(tsVMWorkerQueue.get(), NULL);
 
   for (int32_t i = tsVMWorkerPool.curNum; i < tsVMWorkerPool.maxNum; ++i) {
     SVMWorker *pWorker = tsVMWorkerPool.worker + i;
@@ -77,7 +76,7 @@ static int32_t vnodeStartMWorker() {
 }
 
 int32_t vnodeInitMWorker() {
-  tsVMWorkerQset = taosOpenQset();
+  tsVMWorkerQset.reset(new STaosQset());
 
   tsVMWorkerPool.maxNum = 1;
   tsVMWorkerPool.curNum = 0;
@@ -90,7 +89,7 @@ int32_t vnodeInitMWorker() {
     vDebug("vmworker:%d is created", i);
   }
 
-  vDebug("vmworker is initialized, num:%d qset:%p", tsVMWorkerPool.maxNum, tsVMWorkerQset);
+  vDebug("vmworker is initialized, num:%d qset:%p", tsVMWorkerPool.maxNum, tsVMWorkerQset.get());
 
   return vnodeStartMWorker();
 }
@@ -104,7 +103,7 @@ void vnodeCleanupMWorker() {
   for (int32_t i = 0; i < tsVMWorkerPool.maxNum; ++i) {
     SVMWorker *pWorker = tsVMWorkerPool.worker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(tsVMWorkerQset);
+      tsVMWorkerQset->threadResume();
     }
     vDebug("vmworker:%d is closed", i);
   }
@@ -118,10 +117,9 @@ void vnodeCleanupMWorker() {
     vDebug("vmworker:%d join success", i);
   }
 
-  vDebug("vmworker is closed, qset:%p", tsVMWorkerQset);
+  vDebug("vmworker is closed, qset:%p", tsVMWorkerQset.get());
 
-  taosCloseQset(tsVMWorkerQset);
-  tsVMWorkerQset = NULL;
+  tsVMWorkerQset.reset();
   tfree(tsVMWorkerPool.worker);
 
   vnodeStopMWorker();
@@ -182,8 +180,8 @@ static void vnodeProcessMWorkerMsg(SVMWorkerMsg *pMsg) {
 static void *vnodeMWorkerFunc(void *param) {
   while (1) {
     SVMWorkerMsg *pMsg = NULL;
-    if (taosReadQitemFromQset(tsVMWorkerQset, NULL, (void **)&pMsg, NULL) == 0) {
-      vDebug("qset:%p, vmworker got no message from qset, exiting", tsVMWorkerQset);
+    if (tsVMWorkerQset->readQitem(NULL, (void **)&pMsg, NULL) == 0) {
+      vDebug("qset:%p, vmworker got no message from qset, exiting", tsVMWorkerQset.get());
       break;
     }
 

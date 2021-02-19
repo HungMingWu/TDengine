@@ -50,31 +50,4 @@ struct SVWriteMsg {
   SWalHead pHead;
 };
 
-// vnodeStatus
-extern char *vnodeStatus[];
-
-// vnodeMain
-int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg);
-int32_t vnodeDrop(int32_t vgId);
-int32_t vnodeOpen(int32_t vgId);
-int32_t vnodeClose(int32_t vgId);
-
-// vnodeMgmt
-int32_t vnodeInitMgmt();
-void    vnodeCleanupMgmt();
-SWal*   vnodeGetWal(void *pVnode);
-int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
-void    vnodeBuildStatusMsg(void *pStatus);
-void    vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes);
-
-// vnodeWrite
-void    vnodeFreeFromWQueue(void *pVnode, SVWriteMsg *pWrite);
-
-// vnodeSync
-void    vnodeConfirmForward(void *pVnode, uint64_t version, int32_t code);
-
-// vnodeRead
-int32_t vnodeWriteToRQueue(void *pVnode, void *pCont, int32_t contLen, int8_t qtype, void *rparam);
-int32_t vnodeProcessRead(void *pVnode, SVReadMsg *pRead);
-
 #endif

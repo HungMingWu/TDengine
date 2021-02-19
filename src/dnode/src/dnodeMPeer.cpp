@@ -33,13 +33,13 @@ typedef struct {
 } SMPeerWorkerPool;
 
 static SMPeerWorkerPool tsMPeerWP;
-static taos_qset        tsMPeerQset;
+static std::unique_ptr<STaosQset> tsMPeerQset;
 static std::unique_ptr<STaosQueue> tsMPeerQueue;
 
 static void *dnodeProcessMPeerQueue(void *param);
 
 int32_t dnodeInitMPeer() {
-  tsMPeerQset = taosOpenQset();
+  tsMPeerQset.reset(new STaosQset());
   
   tsMPeerWP.maxNum = 1;
   tsMPeerWP.curNum = 0;
@@ -52,7 +52,7 @@ int32_t dnodeInitMPeer() {
     dDebug("dnode mpeer worker:%d is created", i);
   }
 
-  dDebug("dnode mpeer is initialized, workers:%d qset:%p", tsMPeerWP.maxNum, tsMPeerQset);
+  dDebug("dnode mpeer is initialized, workers:%d qset:%p", tsMPeerWP.maxNum, tsMPeerQset.get());
   return 0;
 }
 
@@ -60,7 +60,7 @@ void dnodeCleanupMPeer() {
   for (int32_t i = 0; i < tsMPeerWP.maxNum; ++i) {
     SMPeerWorker *pWorker = tsMPeerWP.worker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(tsMPeerQset);
+      tsMPeerQset->threadResume();
     }
     dDebug("dnode mpeer worker:%d is closed", i);
   }
@@ -74,16 +74,15 @@ void dnodeCleanupMPeer() {
     dDebug("dnode mpeer worker:%d join success", i);
   }
 
-  dDebug("dnode mpeer is closed, qset:%p", tsMPeerQset);
+  dDebug("dnode mpeer is closed, qset:%p", tsMPeerQset.get());
 
-  taosCloseQset(tsMPeerQset);
-  tsMPeerQset = NULL;
+  tsMPeerQset.reset();
   tfree(tsMPeerWP.worker);
 }
 
 int32_t dnodeAllocateMPeerQueue() {
   tsMPeerQueue.reset(new STaosQueue);
-  taosAddIntoQset(tsMPeerQset, tsMPeerQueue.get(), NULL);
+  tsMPeerQset->addIntoQset(tsMPeerQueue.get(), NULL);
 
   for (int32_t i = tsMPeerWP.curNum; i < tsMPeerWP.maxNum; ++i) {
     SMPeerWorker *pWorker = tsMPeerWP.worker + i;
@@ -147,8 +146,8 @@ static void *dnodeProcessMPeerQueue(void *param) {
   void *     unUsed;
   
   while (1) {
-    if (taosReadQitemFromQset(tsMPeerQset, &type, (void **)&pPeerMsg, &unUsed) == 0) {
-      dDebug("qset:%p, mnode peer got no message from qset, exiting", tsMPeerQset);
+    if (tsMPeerQset->readQitem(&type, (void **)&pPeerMsg, &unUsed) == 0) {
+      dDebug("qset:%p, mnode peer got no message from qset, exiting", tsMPeerQset.get());
       break;
     }
 

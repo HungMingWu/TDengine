@@ -35,15 +35,44 @@ shall be used to set up the protection.
 
 */
 
-typedef void* taos_queue;
-typedef void* taos_qset;
-typedef void* taos_qall;
+struct STaosQueue;
+struct STaosQall;
+
+struct STaosQset {
+  STaosQueue *head;
+  STaosQueue *current;
+  std::mutex  mutex;
+  int32_t     numOfQueues;
+  int32_t     numOfItems;
+  tsem_t      sem;
+
+ public:
+  STaosQset();
+  ~STaosQset();
+  void threadResume();
+  int  getQueueNumber() { return numOfQueues; }
+  int  addIntoQset(STaosQueue *, void *ahandle);
+  void removeFromQset(STaosQueue *);
+  int  readQitem(int *type, void **pitem, void **handle);
+  int  readAllQitems(STaosQall *qall, void **handle);
+};
 
 typedef struct STaosQnode {
   int                type;
   struct STaosQnode *next;
   char               item[];
 } STaosQnode;
+
+struct STaosQall {
+  STaosQnode *current;
+  STaosQnode *start;
+  int32_t     itemSize;
+  int32_t     numOfItems;
+
+ public:
+  int getQitem(int *type, void **pitem);
+  void resetQitems();
+};
 
 struct STaosQueue {
   int32_t            itemSize;
@@ -59,29 +88,12 @@ struct STaosQueue {
   ~STaosQueue();
   int writeQitem(int type, void *item);
   int readQitem(int *type, void **pitem);
+  int readAllQitems(STaosQall *);
+  int getQueueItemsNumber() const { return numOfItems; };
 };
 
-void      *taosAllocateQitem(int size);
-void       taosFreeQitem(void *item);
-
-taos_qall  taosAllocateQall();
-void       taosFreeQall(taos_qall);
-int        taosReadAllQitems(taos_queue, taos_qall);
-int        taosGetQitem(taos_qall, int *type, void **pitem);
-void       taosResetQitems(taos_qall);
-
-taos_qset  taosOpenQset();
-void       taosCloseQset(taos_qset qset);
-void       taosQsetThreadResume(taos_qset param);
-int        taosAddIntoQset(taos_qset, taos_queue, void *ahandle);
-void       taosRemoveFromQset(taos_qset, taos_queue);
-int        taosGetQueueNumber(taos_qset);
-
-int        taosReadQitemFromQset(taos_qset, int *type, void **pitem, void **handle);
-int        taosReadAllQitemsFromQset(taos_qset, taos_qall, void **handle);
-
-int        taosGetQueueItemsNumber(taos_queue param);
-int        taosGetQsetItemsNumber(taos_qset param);
+void *taosAllocateQitem(int size);
+void  taosFreeQitem(void *item);
 
 #endif
 

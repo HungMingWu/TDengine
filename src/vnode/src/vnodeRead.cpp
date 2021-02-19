@@ -13,13 +13,13 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taosmsg.h"
 #include "tqueue.h"
 #include "tglobal.h"
 #include "query.h"
 #include "vnodeStatus.h"
+extern char *vnodeStatus[];
 
 static int32_t (*vnodeProcessReadMsgFp[TSDB_MSG_TYPE_MAX])(SVnodeObj *pVnode, SVReadMsg *pRead);
 static int32_t  vnodeProcessQueryMsg(SVnodeObj *pVnode, SVReadMsg *pRead);

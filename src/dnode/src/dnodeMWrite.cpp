@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include "os.h"
 #include "ttimer.h"
@@ -34,14 +33,14 @@ typedef struct {
 } SMWriteWorkerPool;
 
 static SMWriteWorkerPool tsMWriteWP;
-static taos_qset         tsMWriteQset;
+static std::unique_ptr<STaosQset>         tsMWriteQset;
 static std::unique_ptr<STaosQueue>        tsMWriteQueue;
 extern void *            tsDnodeTmr;
 
 static void *dnodeProcessMWriteQueue(void *param);
 
 int32_t dnodeInitMWrite() {
-  tsMWriteQset = taosOpenQset();
+  tsMWriteQset.reset(new STaosQset());
 
   tsMWriteWP.maxNum = 1;
   tsMWriteWP.curNum = 0;
@@ -54,7 +53,7 @@ int32_t dnodeInitMWrite() {
     dDebug("dnode mwrite worker:%d is created", i);
   }
 
-  dDebug("dnode mwrite is initialized, workers:%d qset:%p", tsMWriteWP.maxNum, tsMWriteQset);
+  dDebug("dnode mwrite is initialized, workers:%d qset:%p", tsMWriteWP.maxNum, tsMWriteQset.get());
   return 0;
 }
 
@@ -62,7 +61,7 @@ void dnodeCleanupMWrite() {
   for (int32_t i = 0; i < tsMWriteWP.maxNum; ++i) {
     SMWriteWorker *pWorker = tsMWriteWP.worker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(tsMWriteQset);
+      tsMWriteQset->threadResume();
     }
     dDebug("dnode mwrite worker:%d is closed", i);
   }
@@ -76,17 +75,16 @@ void dnodeCleanupMWrite() {
     dDebug("dnode mwrite worker:%d join success", i);
   }
 
-  dDebug("dnode mwrite is closed, qset:%p", tsMWriteQset);
+  dDebug("dnode mwrite is closed, qset:%p", tsMWriteQset.get());
 
-  taosCloseQset(tsMWriteQset);
-  tsMWriteQset = NULL;
+  tsMWriteQset.reset();
   tfree(tsMWriteWP.worker);
 }
 
 int32_t dnodeAllocMWritequeue() {
   tsMWriteQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsMWriteQset, tsMWriteQueue.get(), NULL);
+  tsMWriteQset->addIntoQset(tsMWriteQueue.get(), NULL);
 
   for (int32_t i = tsMWriteWP.curNum; i < tsMWriteWP.maxNum; ++i) {
     SMWriteWorker *pWorker = tsMWriteWP.worker + i;
@@ -160,8 +158,8 @@ static void *dnodeProcessMWriteQueue(void *param) {
   void *     unUsed;
   
   while (1) {
-    if (taosReadQitemFromQset(tsMWriteQset, &type, (void **)&pWrite, &unUsed) == 0) {
-      dDebug("qset:%p, mnode write got no message from qset, exiting", tsMWriteQset);
+    if (tsMWriteQset->readQitem(&type, (void **)&pWrite, &unUsed) == 0) {
+      dDebug("qset:%p, mnode write got no message from qset, exiting", tsMWriteQset.get());
       break;
     }
 

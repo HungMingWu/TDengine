@@ -84,8 +84,8 @@ typedef struct {
 extern void *     tsMnodeTmr;
 static void *     tsSdbTmr;
 static SSdbMgmt   tsSdbMgmt = {static_cast<ESyncRole>(0)};
-static taos_qset  tsSdbWQset;
-static taos_qall  tsSdbWQall;
+static std::unique_ptr<STaosQset> tsSdbWQset;
+static std::unique_ptr<STaosQall> tsSdbWQall;
 static std::unique_ptr<STaosQueue>     tsSdbWQueue;
 static SSdbWorkerPool tsSdbPool;
 
@@ -869,7 +869,7 @@ static int32_t sdbInitWorker() {
 static void sdbCleanupWorker() {
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
     SSdbWorker *pWorker = tsSdbPool.worker + i;
-    taosQsetThreadResume(tsSdbWQset);
+    tsSdbWQset->threadResume();
   }
 
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
@@ -885,20 +885,10 @@ static void sdbCleanupWorker() {
 
 static int32_t sdbAllocQueue() {
   tsSdbWQueue.reset(new STaosQueue());
+  tsSdbWQset.reset(new STaosQset());
+  tsSdbWQset->addIntoQset(tsSdbWQueue.get(), NULL);
 
-  tsSdbWQset = taosOpenQset();
-  if (tsSdbWQset == NULL) {
-    tsSdbWQueue.reset();
-    return TSDB_CODE_MND_OUT_OF_MEMORY;
-  }
-  taosAddIntoQset(tsSdbWQset, tsSdbWQueue.get(), NULL);
-
-  tsSdbWQall = taosAllocateQall();
-  if (tsSdbWQall == NULL) {
-    taosCloseQset(tsSdbWQset);
-    tsSdbWQueue.reset();
-    return TSDB_CODE_MND_OUT_OF_MEMORY;
-  }
+  tsSdbWQall.reset(new STaosQall());
   
   for (int32_t i = 0; i < tsSdbPool.num; ++i) {
     SSdbWorker *pWorker = tsSdbPool.worker + i;
@@ -913,10 +903,8 @@ static int32_t sdbAllocQueue() {
 
 static void sdbFreeQueue() {
   tsSdbWQueue.reset();
-  taosFreeQall(tsSdbWQall);
-  taosCloseQset(tsSdbWQset);
-  tsSdbWQall = NULL;
-  tsSdbWQset = NULL;
+  tsSdbWQall.reset();
+  tsSdbWQset.reset();
 }
 
 static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
@@ -1000,14 +988,14 @@ static void sdbWorkerFp(SSdbWorker *pWorker) {
   taosBlockSIGPIPE();
 
   while (1) {
-    int32_t numOfMsgs = taosReadAllQitemsFromQset(tsSdbWQset, tsSdbWQall, &unUsed);
+    int32_t numOfMsgs = tsSdbWQset->readAllQitems(tsSdbWQall.get(), &unUsed);
     if (numOfMsgs == 0) {
-      sdbDebug("qset:%p, sdb got no message from qset, exiting", tsSdbWQset);
+      sdbDebug("qset:%p, sdb got no message from qset, exiting", tsSdbWQset.get());
       break;
     }
 
     for (int32_t i = 0; i < numOfMsgs; ++i) {
-      taosGetQitem(tsSdbWQall, &qtype, (void **)&pRow);
+      tsSdbWQall->getQitem(&qtype, (void **)&pRow);
       sdbTrace("vgId:1, msg:%p, row:%p hver:%" PRIu64 ", will be processed in sdb queue", pRow->pMsg, pRow->pObj,
                pRow->pHead.version);
 
@@ -1020,9 +1008,9 @@ static void sdbWorkerFp(SSdbWorker *pWorker) {
     tsSdbMgmt.wal->fsync(true);
 
     // browse all items, and process them one by one
-    taosResetQitems(tsSdbWQall);
+    tsSdbWQall->resetQitems();
     for (int32_t i = 0; i < numOfMsgs; ++i) {
-      taosGetQitem(tsSdbWQall, &qtype, (void **)&pRow);
+      tsSdbWQall->getQitem(&qtype, (void **)&pRow);
 
       if (qtype == TAOS_QTYPE_RPC) {
         sdbConfirmForward(1, pRow, pRow->code);

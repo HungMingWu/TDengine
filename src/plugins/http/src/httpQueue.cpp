@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tqueue.h"
 #include "tnote.h"
@@ -46,7 +45,7 @@ typedef struct {
 } SHttpResult;
 
 static SHttpWorkerPool tsHttpPool;
-static taos_qset tsHttpQset;
+static std::unique_ptr<STaosQset>  tsHttpQset;
 static std::unique_ptr<STaosQueue> tsHttpQueue;
 
 void httpDispatchToResultQueue(void *param, TAOS_RES *result, int32_t code, int32_t rows, FHttpResultFp fp) {
@@ -69,8 +68,8 @@ static void *httpProcessResultQueue(void *param) {
   void *       unUsed;
 
   while (1) {
-    if (taosReadQitemFromQset(tsHttpQset, &type, (void **)&pMsg, &unUsed) == 0) {
-      httpDebug("qset:%p, http queue got no message from qset, exiting", tsHttpQset);
+    if (tsHttpQset->readQitem(&type, (void **)&pMsg, &unUsed) == 0) {
+      httpDebug("qset:%p, http queue got no message from qset, exiting", tsHttpQset.get());
       break;
     }
 
@@ -86,7 +85,7 @@ static void *httpProcessResultQueue(void *param) {
 static bool httpAllocateResultQueue() {
   tsHttpQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsHttpQset, tsHttpQueue.get(), NULL);
+  tsHttpQset->addIntoQset(tsHttpQueue.get(), NULL);
 
   for (int32_t i = 0; i < tsHttpPool.num; ++i) {
     SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
@@ -113,7 +112,7 @@ static void httpFreeResultQueue() {
 }
 
 bool httpInitResultQueue() {
-  tsHttpQset = taosOpenQset();
+  tsHttpQset.reset(new STaosQset());
 
   tsHttpPool.num = tsHttpMaxThreads;
   tsHttpPool.httpWorker = (SHttpWorker *)calloc(sizeof(SHttpWorker), tsHttpPool.num);
@@ -133,7 +132,7 @@ void httpCleanupResultQueue() {
   for (int32_t i = 0; i < tsHttpPool.num; ++i) {
     SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(tsHttpQset);
+      tsHttpQset->threadResume();
     }
   }
 
@@ -144,7 +143,7 @@ void httpCleanupResultQueue() {
     }
   }
 
-  taosCloseQset(tsHttpQset);
+  tsHttpQset.reset();
   free(tsHttpPool.httpWorker);
 
   httpInfo("http result queue is closed");

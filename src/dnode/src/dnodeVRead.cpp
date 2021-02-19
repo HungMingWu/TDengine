@@ -115,8 +115,8 @@ static void *dnodeProcessReadQueue(void *wparam) {
   SVnodeObj *  pVnode;
 
   while (1) {
-    if (taosReadQitemFromQset(pPool->qset, &qtype, (void **)&pRead, (void**)&pVnode) == 0) {
-      dDebug("dnode vquery got no message from qset:%p, exiting", pPool->qset);
+    if (pPool->qset->readQitem(&qtype, (void **)&pRead, (void**)&pVnode) == 0) {
+      dDebug("dnode vquery got no message from qset:%p, exiting", pPool->qset.get());
       break;
     }
 

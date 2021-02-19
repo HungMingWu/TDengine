@@ -144,7 +144,7 @@ static void vnodeBuildVloadMsg(SVnodeObj *pVnode, SStatusMsg *pStatus) {
   pLoad->replica = pVnode->syncCfg.replica;  
 }
 
-int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
+void vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
   void *pIter = taosHashIterate(tsVnodesHash, NULL);
   while (pIter) {
     SVnodeObj **pVnode = (SVnodeObj**)pIter;
@@ -162,7 +162,6 @@ int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes) {
 
     pIter = taosHashIterate(tsVnodesHash, pIter);    
   }
-  return TSDB_CODE_SUCCESS;
 }
 
 void vnodeBuildStatusMsg(void *param) {

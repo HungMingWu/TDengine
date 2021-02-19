@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <memory>
 #include "os.h"
 #include "tqueue.h"
@@ -33,13 +32,13 @@ typedef struct {
 } SMReadWorkerPool;
 
 static SMReadWorkerPool tsMReadWP;
-static taos_qset        tsMReadQset;
+static std::unique_ptr<STaosQset>        tsMReadQset;
 static std::unique_ptr<STaosQueue>       tsMReadQueue;
 
 static void *dnodeProcessMReadQueue(void *param);
 
 int32_t dnodeInitMRead() {
-  tsMReadQset = taosOpenQset();
+  tsMReadQset.reset(new STaosQset());
 
   tsMReadWP.maxNum = tsNumOfCores * tsNumOfThreadsPerCore / 2;
   tsMReadWP.maxNum = MAX(2, tsMReadWP.maxNum);
@@ -54,7 +53,7 @@ int32_t dnodeInitMRead() {
     dDebug("dnode mread worker:%d is created", i);
   }
 
-  dDebug("dnode mread is initialized, workers:%d qset:%p", tsMReadWP.maxNum, tsMReadQset);
+  dDebug("dnode mread is initialized, workers:%d qset:%p", tsMReadWP.maxNum, tsMReadQset.get());
   return 0;
 }
 
@@ -62,7 +61,7 @@ void dnodeCleanupMRead() {
   for (int32_t i = 0; i < tsMReadWP.maxNum; ++i) {
     SMReadWorker *pWorker = tsMReadWP.worker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(tsMReadQset);
+      tsMReadQset->threadResume();
     }
     dDebug("dnode mread worker:%d is closed", i);
   }
@@ -76,17 +75,16 @@ void dnodeCleanupMRead() {
     dDebug("dnode mread worker:%d start to join", i);
   }
 
-  dDebug("dnode mread is closed, qset:%p", tsMReadQset);
+  dDebug("dnode mread is closed, qset:%p", tsMReadQset.get());
 
-  taosCloseQset(tsMReadQset);
-  tsMReadQset = NULL;
+  tsMReadQset.reset();
   free(tsMReadWP.worker);
 }
 
 int32_t dnodeAllocMReadQueue() {
   tsMReadQueue.reset(new STaosQueue);
 
-  taosAddIntoQset(tsMReadQset, tsMReadQueue.get(), NULL);
+  tsMReadQset->addIntoQset(tsMReadQueue.get(), NULL);
 
   for (int32_t i = tsMReadWP.curNum; i < tsMReadWP.maxNum; ++i) {
     SMReadWorker *pWorker = tsMReadWP.worker + i;
@@ -154,8 +152,8 @@ static void *dnodeProcessMReadQueue(void *param) {
   void *     unUsed;
 
   while (1) {
-    if (taosReadQitemFromQset(tsMReadQset, &type, (void **)&pRead, &unUsed) == 0) {
-      dDebug("qset:%p, mnode read got no message from qset, exiting", tsMReadQset);
+    if (tsMReadQset->readQitem(&type, (void **)&pRead, &unUsed) == 0) {
+      dDebug("qset:%p, mnode read got no message from qset, exiting", tsMReadQset.get());
       break;
     }
 

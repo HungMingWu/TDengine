@@ -13,7 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#define _DEFAULT_SOURCE
+#include <memory>
 #include "os.h"
 #include "tglobal.h"
 #include "rpcLog.h"
@@ -24,24 +24,22 @@ int msgSize = 128;
 int commit = 0;
 int dataFd = -1;
 STaosQueue *qhandle = nullptr;
-void *qset = NULL;
+STaosQset * qset = NULL;
 
 void processShellMsg() {
   static int num = 0;
-  taos_qall  qall;
+  STaosQall qall;
   SRpcMsg   *pRpcMsg, rpcMsg;
   int        type;
   void      *pvnode;
  
-  qall = taosAllocateQall();
-
   while (1) {
-    int numOfMsgs = taosReadAllQitemsFromQset(qset, qall, &pvnode);
+    int numOfMsgs = qset->readAllQitems(&qall, &pvnode);
     tDebug("%d shell msgs are received", numOfMsgs);
     if (numOfMsgs <= 0) break;
 
     for (int i=0; i<numOfMsgs; ++i) {
-      taosGetQitem(qall, &type, (void **)&pRpcMsg);
+      qall.getQitem(&type, (void **)&pRpcMsg);
  
       if (dataFd >=0) {
         if ( write(dataFd, pRpcMsg->pCont, pRpcMsg->contLen) <0 ) {
@@ -61,10 +59,10 @@ void processShellMsg() {
       }
     }
   
-    taosResetQitems(qall);
+    qall.resetQitems();
     for (int i=0; i<numOfMsgs; ++i) {
 
-      taosGetQitem(qall, &type, (void **)&pRpcMsg);
+      qall.getQitem(&type, (void **)&pRpcMsg);
       rpcFreeCont(pRpcMsg->pCont);
 
       memset(&rpcMsg, 0, sizeof(rpcMsg));
@@ -78,8 +76,6 @@ void processShellMsg() {
     }
 
   }
-
-  taosFreeQall(qall);
 
 }
 
@@ -178,8 +174,8 @@ int main(int argc, char *argv[]) {
   }
 
   qhandle = new STaosQueue;
-  qset = taosOpenQset();
-  taosAddIntoQset(qset, qhandle, NULL);
+  qset = new STaosQset();
+  qset->addIntoQset(qhandle, NULL);
 
   processShellMsg();
 

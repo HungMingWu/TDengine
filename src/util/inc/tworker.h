@@ -16,7 +16,9 @@
 #ifndef TDENGINE_TWORKER_H
 #define TDENGINE_TWORKER_H
 
+#include <memory>
 #include <mutex>
+
 typedef void *(*FWorkerThread)(void *pWorker);
 struct SWorkerPool;
 
@@ -30,7 +32,7 @@ struct SWorkerPool {
   int32_t  max;  // max number of workers
   int32_t  min;  // min number of workers
   int32_t  num;  // current number of workers
-  void *   qset;
+  std::unique_ptr<STaosQset>     qset;
   char *   name;
   SWorker *worker;
   FWorkerThread   workerFp;

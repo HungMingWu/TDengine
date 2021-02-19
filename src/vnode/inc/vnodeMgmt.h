@@ -24,7 +24,7 @@ void    vnodeCleanupMgmt();
 SVnodeObj *vnodeAcquire(int32_t vgId);
 SWal*     vnodeGetWal(void *pVnode);
 
-int32_t vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
+void    vnodeGetVnodeList(int32_t vnodeList[], int32_t *numOfVnodes);
 void    vnodeBuildStatusMsg(void *pStatus);
 void    vnodeSetAccess(SVgroupAccess *pAccess, int32_t numOfVnodes);
 #endif

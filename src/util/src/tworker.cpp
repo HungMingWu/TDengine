@@ -13,14 +13,13 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "tulog.h"
 #include "tqueue.h"
 #include "tworker.h"
 
 int32_t tWorkerInit(SWorkerPool *pPool) {
-  pPool->qset = taosOpenQset();
+  pPool->qset.reset(new STaosQset());
   pPool->worker = (SWorker*)calloc(sizeof(SWorker), pPool->max);
   for (int i = 0; i < pPool->max; ++i) {
     SWorker *pWorker = pPool->worker + i;
@@ -36,7 +35,7 @@ void tWorkerCleanup(SWorkerPool *pPool) {
   for (int i = 0; i < pPool->max; ++i) {
     SWorker *pWorker = pPool->worker + i;
     if(taosCheckPthreadValid(pWorker->thread)) {
-      taosQsetThreadResume(pPool->qset);
+      pPool->qset->threadResume();
     }
   }
 
@@ -48,7 +47,7 @@ void tWorkerCleanup(SWorkerPool *pPool) {
   }
 
   free(pPool->worker);
-  taosCloseQset(pPool->qset);
+  pPool->qset.reset();
 
   uInfo("worker:%s is closed", pPool->name);
 }
@@ -57,7 +56,7 @@ STaosQueue *tWorkerAllocQueue(SWorkerPool *pPool, void *ahandle) {
   std::lock_guard<std::mutex> lock(pPool->mutex);
   auto pQueue = new STaosQueue;
 
-  taosAddIntoQset(pPool->qset, pQueue, ahandle);
+  pPool->qset->addIntoQset(pQueue, ahandle);
 
   // spawn a thread to process queue
   if (pPool->num < pPool->max) {

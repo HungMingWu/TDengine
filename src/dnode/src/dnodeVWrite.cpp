@@ -19,13 +19,14 @@
 #include "dnodeVWrite.h"
 #include "vnodeMgmt.h"
 #include "vnodeWrite.h"
+#include "vnodeSync.h"
 
-typedef struct {
-  taos_qall qall;
-  taos_qset qset;      // queue set
+struct SVWriteWorker {
+  std::unique_ptr<STaosQall> qall;
+  std::unique_ptr<STaosQset> qset;      // queue set
   int32_t   workerId;  // worker ID
   pthread_t thread;    // thread
-} SVWriteWorker;
+};
 
 typedef struct {
   int32_t max;     // max number of workers
@@ -54,7 +55,7 @@ void dnodeCleanupVWrite() {
   for (int32_t i = 0; i < tsVWriteWP.max; ++i) {
     SVWriteWorker *pWorker = tsVWriteWP.worker + i;
     if (pWorker->thread) {
-      taosQsetThreadResume(pWorker->qset);
+      pWorker->qset->threadResume();
     }
   }
 
@@ -62,8 +63,8 @@ void dnodeCleanupVWrite() {
     SVWriteWorker *pWorker = tsVWriteWP.worker + i;
     if (pWorker->thread) {
       pthread_join(pWorker->thread, NULL);
-      taosFreeQall(pWorker->qall);
-      taosCloseQset(pWorker->qset);
+      pWorker->qall.reset();
+      pWorker->qset.reset();
     }
   }
 
@@ -113,25 +114,17 @@ std::unique_ptr<STaosQueue> dnodeAllocVWriteQueue(void *pVnode) {
   std::unique_ptr<STaosQueue> queue(new STaosQueue);
 
   if (pWorker->qset == NULL) {
-    pWorker->qset = taosOpenQset();
-    if (pWorker->qset == NULL) {
-      return NULL;
-    }
-
-    taosAddIntoQset(pWorker->qset, queue.get(), pVnode);
-    pWorker->qall = taosAllocateQall();
-    if (pWorker->qall == NULL) {
-      taosCloseQset(pWorker->qset);
-      return NULL;
-    }
+    pWorker->qset.reset(new STaosQset());
+    pWorker->qset->addIntoQset(queue.get(), pVnode);
+    pWorker->qall.reset(new STaosQall());
     pthread_attr_t thAttr;
     pthread_attr_init(&thAttr);
     pthread_attr_setdetachstate(&thAttr, PTHREAD_CREATE_JOINABLE);
 
     if (pthread_create(&pWorker->thread, &thAttr, dnodeProcessVWriteQueue, pWorker) != 0) {
       dError("failed to create thread to process vwrite queue since %s", strerror(errno));
-      taosFreeQall(pWorker->qall);
-      taosCloseQset(pWorker->qset);
+      pWorker->qall.reset();
+      pWorker->qset.reset();
       queue.reset();
     } else {
       dDebug("dnode vwrite worker:%d is launched", pWorker->workerId);
@@ -140,7 +133,7 @@ std::unique_ptr<STaosQueue> dnodeAllocVWriteQueue(void *pVnode) {
 
     pthread_attr_destroy(&thAttr);
   } else {
-    taosAddIntoQset(pWorker->qset, queue.get(), pVnode);
+    pWorker->qset->addIntoQset(queue.get(), pVnode);
     tsVWriteWP.nextId = (tsVWriteWP.nextId + 1) % tsVWriteWP.max;
   }
 
@@ -179,15 +172,15 @@ static void *dnodeProcessVWriteQueue(void *wparam) {
   dDebug("dnode vwrite worker:%d is running", pWorker->workerId);
 
   while (1) {
-    numOfMsgs = taosReadAllQitemsFromQset(pWorker->qset, pWorker->qall, &pVnode);
+    numOfMsgs = pWorker->qset->readAllQitems(pWorker->qall.get(), &pVnode);
     if (numOfMsgs == 0) {
-      dDebug("qset:%p, dnode vwrite got no message from qset, exiting", pWorker->qset);
+      dDebug("qset:%p, dnode vwrite got no message from qset, exiting", pWorker->qset.get());
       break;
     }
 
     bool forceFsync = false;
     for (int32_t i = 0; i < numOfMsgs; ++i) {
-      taosGetQitem(pWorker->qall, &qtype, (void **)&pWrite);
+      pWorker->qall->getQitem(&qtype, (void **)&pWrite);
       dTrace("msg:%p, app:%p type:%s will be processed in vwrite queue, qtype:%s hver:%" PRIu64, pWrite,
              pWrite->rpcMsg.ahandle, taosMsg[pWrite->pHead.msgType], qtypeStr[qtype], pWrite->pHead.version);
 
@@ -202,9 +195,9 @@ static void *dnodeProcessVWriteQueue(void *wparam) {
     vnodeGetWal(pVnode)->fsync(forceFsync);
 
     // browse all items, and process them one by one
-    taosResetQitems(pWorker->qall);
+    pWorker->qall->resetQitems();
     for (int32_t i = 0; i < numOfMsgs; ++i) {
-      taosGetQitem(pWorker->qall, &qtype, (void **)&pWrite);
+      pWorker->qall->getQitem(&qtype, (void **)&pWrite);
       if (qtype == TAOS_QTYPE_RPC) {
         dnodeSendRpcVWriteRsp(pVnode, pWrite, pWrite->code);
       } else {
