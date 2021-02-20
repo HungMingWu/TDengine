@@ -31,66 +31,49 @@
 #include "mnodeUser.h"
 #include "mnodeWrite.h"
 #include "mnodePeer.h"
+#include "SdbMgmt.h"
 
 static std::shared_ptr<SSdbTable> tsUserSdb;
 static int32_t tsUserUpdateSize = 0;
 
-static int32_t mnodeUserActionDestroy(SSdbRow *pRow) {
-  tfree(pRow->pObj);
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeUserActionInsert(SSdbRow *pRow) {
-  SUserObj *pUser = static_cast<SUserObj *>(pRow->pObj);
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pUser->acct));
+int32_t SUserObj::insert() {
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
 
   if (pAcct != NULL) {
-    mnodeAddUserToAcct(pAcct, pUser);
+    mnodeAddUserToAcct(pAcct, this);
     mnodeDecAcctRef(pAcct);
   } else {
-    mError("user:%s, acct:%s info not exist in sdb", pUser->user, pUser->acct);
+    mError("user:%s, acct:%s info not exist in sdb", user, acct);
     return TSDB_CODE_MND_INVALID_ACCT;
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeUserActionDelete(SSdbRow *pRow) {
-  SUserObj *pUser = static_cast<SUserObj *>(pRow->pObj);
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pUser->acct));
+int32_t SUserObj::remove() {
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
 
   if (pAcct != NULL) {
-    mnodeDropUserFromAcct(pAcct, pUser);
+    mnodeDropUserFromAcct(pAcct, this);
     mnodeDecAcctRef(pAcct);
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeUserActionUpdate(SSdbRow *pRow) {
-  SUserObj *pUser = static_cast<SUserObj *>(pRow->pObj);
-  SUserObj *pSaved = static_cast<SUserObj *>(mnodeGetUser(pUser->user));
-  if (pUser != pSaved) {
-    memcpy(pSaved, pUser, tsUserUpdateSize);
-    free(pUser);
+int32_t SUserObj::update() {
+  SUserObj *pSaved = static_cast<SUserObj *>(mnodeGetUser(user));
+  if (this != pSaved) {
+    memcpy(pSaved, this, tsUserUpdateSize);
+    delete this;
   }
   mnodeDecUserRef(pSaved);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeUserActionEncode(SSdbRow *pRow) {
-  SUserObj *pUser = static_cast<SUserObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pUser, tsUserUpdateSize);
+int32_t SUserObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsUserUpdateSize);
   pRow->rowSize = tsUserUpdateSize;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeUserActionDecode(SSdbRow *pRow) {
-  SUserObj *pUser = (SUserObj *)calloc(1, sizeof(SUserObj));
-  if (pUser == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-  memcpy(pUser, pRow->rowData, tsUserUpdateSize);
-  pRow->pObj = pUser;
   return TSDB_CODE_SUCCESS;
 }
 
@@ -119,24 +102,36 @@ static void mnodePrintUserAuth() {
   fclose(fp);
 }
 
-static int32_t mnodeUserActionRestored() {
-  int32_t numOfRows = tsUserSdb->getNumOfRows();
-  if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
-    mInfo("dnode first deploy, create root user");
-    SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(TSDB_DEFAULT_USER));
-    mnodeCreateUser(pAcct, TSDB_DEFAULT_USER, TSDB_DEFAULT_PASS, NULL);
-    mnodeCreateUser(pAcct, "monitor", tsInternalPass, NULL);
-    mnodeCreateUser(pAcct, "_"TSDB_DEFAULT_USER, tsInternalPass, NULL);
-    mnodeDecAcctRef(pAcct);
-  }
+class UserTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pUser = new SUserObj;
+    if (pUser == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  if (tsPrintAuth != 0) {
-    mInfo("print user auth, for -A parameter is set");
-    mnodePrintUserAuth();
+    memcpy(pUser, pRow->rowData, tsUserUpdateSize);
+    pRow->pObj = pUser;
+    return TSDB_CODE_SUCCESS;
   }
+  int32_t restore() override {
+    int32_t numOfRows = getNumOfRows();
+    if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
+      mInfo("dnode first deploy, create root user");
+      SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(TSDB_DEFAULT_USER));
+      mnodeCreateUser(pAcct, TSDB_DEFAULT_USER, TSDB_DEFAULT_PASS, NULL);
+      mnodeCreateUser(pAcct, "monitor", tsInternalPass, NULL);
+      mnodeCreateUser(pAcct, "_" TSDB_DEFAULT_USER, tsInternalPass, NULL);
+      mnodeDecAcctRef(pAcct);
+    }
 
-  return TSDB_CODE_SUCCESS;
-}
+    if (tsPrintAuth != 0) {
+      mInfo("print user auth, for -A parameter is set");
+      mnodePrintUserAuth();
+    }
+
+    return TSDB_CODE_SUCCESS;
+  }
+};
 
 int32_t mnodeInitUsers() {
   SUserObj tObj;
@@ -147,17 +142,9 @@ int32_t mnodeInitUsers() {
   desc.name = "users";
   desc.hashSessions = TSDB_DEFAULT_USERS_HASH_SIZE;
   desc.maxRowSize = tsUserUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_STRING;
-  desc.fpInsert = mnodeUserActionInsert;
-  desc.fpDelete = mnodeUserActionDelete;
-  desc.fpUpdate = mnodeUserActionUpdate;
-  desc.fpEncode = mnodeUserActionEncode;
-  desc.fpDecode = mnodeUserActionDecode;
-  desc.fpDestroy = mnodeUserActionDestroy;
-  desc.fpRestored = mnodeUserActionRestored;
 
-  tsUserSdb = sdbOpenTable(desc);
+  tsUserSdb = SSdbMgmt::instance().openTable<UserTable>(desc);
   if (tsUserSdb == NULL) {
     mError("table:%s, failed to create hash", desc.name);
     return -1;

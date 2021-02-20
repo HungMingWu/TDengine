@@ -37,6 +37,7 @@
 #include "mnodePeer.h"
 #include "mnodeCluster.h"
 #include "dnodeEps.h"
+#include "SdbMgmt.h"
 
 int32_t tsAccessSquence = 0;
 static std::shared_ptr<SSdbTable> tsDnodeSdb;
@@ -73,43 +74,33 @@ static const char* offlineReason[] = {
   "unknown",
 };
 
-static int32_t mnodeDnodeActionDestroy(SSdbRow *pRow) {
-  tfree(pRow->pObj);
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeDnodeActionInsert(SSdbRow *pRow) {
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(pRow->pObj);
-  if (pDnode->status != TAOS_DN_STATUS_DROPPING) {
-    pDnode->status = TAOS_DN_STATUS_OFFLINE;
-    pDnode->lastAccess = tsAccessSquence;
-    pDnode->offlineReason = TAOS_DN_OFF_STATUS_NOT_RECEIVED;
+int32_t SDnodeObj::insert() {
+  if (status != TAOS_DN_STATUS_DROPPING) {
+    status = TAOS_DN_STATUS_OFFLINE;
+    lastAccess = tsAccessSquence;
+    offlineReason = TAOS_DN_OFF_STATUS_NOT_RECEIVED;
   }
 
-  dnodeUpdateEp(pDnode->dnodeId, pDnode->dnodeEp, pDnode->dnodeFqdn, &pDnode->dnodePort);
+  dnodeUpdateEp(dnodeId, dnodeEp, dnodeFqdn, &dnodePort);
   mnodeUpdateDnodeEps();
 
-  mInfo("dnode:%d, fqdn:%s ep:%s port:%d is created", pDnode->dnodeId, pDnode->dnodeFqdn, pDnode->dnodeEp, pDnode->dnodePort);
+  mInfo("dnode:%d, fqdn:%s ep:%s port:%d is created", dnodeId, dnodeFqdn, dnodeEp, dnodePort);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDnodeActionDelete(SSdbRow *pRow) {
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(pRow->pObj);
- 
-  mnodeDropMnodeLocal(pDnode->dnodeId);
+int32_t SDnodeObj::remove() {
+  mnodeDropMnodeLocal(dnodeId);
   bnNotify();
   mnodeUpdateDnodeEps();
-
-  mDebug("dnode:%d, all vgroups is dropped from sdb", pDnode->dnodeId);
+  mDebug("dnode:%d, all vgroups is dropped from sdb", dnodeId);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDnodeActionUpdate(SSdbRow *pRow) {
-  SDnodeObj *pNew = static_cast<SDnodeObj *>(pRow->pObj);
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pNew->dnodeId));
-  if (pDnode != NULL && pNew != pDnode) {
-    memcpy(pDnode, pNew, pRow->rowSize);
-    free(pNew);
+int32_t SDnodeObj::update() {
+  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(dnodeId));
+  if (pDnode != NULL && this != pDnode) {
+    memcpy(pDnode, this, sizeof(SDnodeObj));
+    delete this;
   }
   mnodeDecDnodeRef(pDnode);
 
@@ -117,37 +108,39 @@ static int32_t mnodeDnodeActionUpdate(SSdbRow *pRow) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDnodeActionEncode(SSdbRow *pRow) {
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pDnode, tsDnodeUpdateSize);
+int32_t SDnodeObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsDnodeUpdateSize);
   pRow->rowSize = tsDnodeUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDnodeActionDecode(SSdbRow *pRow) {
-  SDnodeObj *pDnode = (SDnodeObj *) calloc(1, sizeof(SDnodeObj));
-  if (pDnode == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+class DnodeTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pDnode = new SDnodeObj;
+    if (pDnode == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  memcpy(pDnode, pRow->rowData, tsDnodeUpdateSize);
-  pRow->pObj = pDnode;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeDnodeActionRestored() {
-  int32_t numOfRows = tsDnodeSdb->getNumOfRows();
-  if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
-    mInfo("dnode first deploy, create dnode:%s", tsLocalEp);
-    mnodeCreateDnode(tsLocalEp, NULL);
-    SDnodeObj *pDnode = mnodeGetDnodeByEp(tsLocalEp);
-    if (pDnode != NULL) {
-      mnodeCreateMnode(pDnode->dnodeId, pDnode->dnodeEp, false);
-      mnodeDecDnodeRef(pDnode);
-    }
+    memcpy(pDnode, pRow->rowData, tsDnodeUpdateSize);
+    pRow->pObj = pDnode;
+    return TSDB_CODE_SUCCESS;
   }
+  int32_t restore() override {
+    int32_t numOfRows = getNumOfRows();
+    if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
+      mInfo("dnode first deploy, create dnode:%s", tsLocalEp);
+      mnodeCreateDnode(tsLocalEp, NULL);
+      SDnodeObj *pDnode = mnodeGetDnodeByEp(tsLocalEp);
+      if (pDnode != NULL) {
+        mnodeCreateMnode(pDnode->dnodeId, pDnode->dnodeEp, false);
+        mnodeDecDnodeRef(pDnode);
+      }
+    }
 
-  mnodeUpdateDnodeEps();
-  return TSDB_CODE_SUCCESS;
-}
+    mnodeUpdateDnodeEps();
+    return TSDB_CODE_SUCCESS;
+  }
+};
 
 int32_t mnodeInitDnodes() {
   SDnodeObj tObj;
@@ -159,17 +152,9 @@ int32_t mnodeInitDnodes() {
   desc.name = "dnodes";
   desc.hashSessions = TSDB_DEFAULT_DNODES_HASH_SIZE;
   desc.maxRowSize = tsDnodeUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_AUTO;
-  desc.fpInsert = mnodeDnodeActionInsert;
-  desc.fpDelete = mnodeDnodeActionDelete;
-  desc.fpUpdate = mnodeDnodeActionUpdate;
-  desc.fpEncode = mnodeDnodeActionEncode;
-  desc.fpDecode = mnodeDnodeActionDecode;
-  desc.fpDestroy = mnodeDnodeActionDestroy;
-  desc.fpRestored = mnodeDnodeActionRestored;
 
-  tsDnodeSdb = sdbOpenTable(desc);
+  tsDnodeSdb = SSdbMgmt::instance().openTable<DnodeTable>(desc);
   if (tsDnodeSdb == NULL) {
     mError("failed to init dnodes data");
     return -1;

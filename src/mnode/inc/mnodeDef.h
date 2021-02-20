@@ -22,6 +22,7 @@
 #include "taosdef.h"
 #include "taosmsg.h"
 #include "tidpool.h"
+#include "object.h"
 
 struct SVgObj;
 struct SDbObj;
@@ -36,15 +37,19 @@ struct define notes:
 3. The fields behind the updataEnd field can be changed;
 */
 
-typedef struct SClusterObj {
+struct SClusterObj : public objectBase {
   char    uid[TSDB_CLUSTER_ID_LEN];
   int64_t createdTime;
   int8_t  reserved[12];
-  int8_t  updateEnd[4];
-  int32_t refCount;
-} SClusterObj;
+ public:
+  ~SClusterObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+};
 
-struct SDnodeObj {
+struct SDnodeObj : public objectBase {
   int32_t    dnodeId;
   std::atomic<int32_t>    openVnodes;
   int64_t    createdTime;
@@ -59,8 +64,7 @@ struct SDnodeObj {
   int8_t     status;           // set in balance function
   int8_t     isMgmt;
   int8_t     reserve1[11];  
-  int8_t     updateEnd[4];
-  int32_t    refCount;
+  // Serialization above
   uint32_t   moduleStatus;
   uint32_t   lastReboot;       // time stamp for last reboot
   float      score;            // calc in balance function
@@ -75,28 +79,43 @@ struct SDnodeObj {
  private:
   int32_t drop(void *pMsg);
  public:
+  ~SDnodeObj() override = default;
   bool monitorDropping();
   void update(int status);
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
 };
 
-typedef struct SMnodeObj {
+struct SMnodeObj : public objectBase {
   int32_t    mnodeId;
   int8_t     reserved0[4];
   int64_t    createdTime;
   int8_t     reserved1[4];
-  int8_t     updateEnd[4];
-  int32_t    refCount;
+  // Serialization above
   int8_t     role;
   int8_t     reserved2[3];
-} SMnodeObj;
 
-typedef struct STableObj {
-  char  *tableId;
-  int8_t type;
-} STableObj;
+ public:
+  ~SMnodeObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+};
 
-typedef struct SSTableObj {
-  STableObj  info; 
+struct STableObj : public objectBase {
+  struct {
+    char * tableId;
+    int8_t type;
+  } info;
+
+ public:
+  ~STableObj() { tfree(info.tableId); }
+};
+
+struct SSTableObj : public STableObj {
   int8_t     reserved0[9]; // for fill struct STableObj to 4byte align
   int16_t    nextColId;
   int32_t    sversion;
@@ -105,15 +124,20 @@ typedef struct SSTableObj {
   int32_t    tversion;
   int32_t    numOfColumns;
   int32_t    numOfTags;
-  int8_t     updateEnd[4];
-  int32_t    refCount;
+  // Serialization above
   int32_t    numOfTables;
   SSchema *  schema;
   void *     vgHash;
-} SSTableObj;
 
-typedef struct {
-  STableObj  info;  
+ public:
+  ~SSTableObj() override;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+};
+
+ struct SCTableObj : public STableObj {
   int8_t     reserved0[9]; // for fill struct STableObj to 4byte align
   int16_t    nextColId;    //used by normal table
   int32_t    sversion;     //used by normal table  
@@ -124,12 +148,18 @@ typedef struct {
   int32_t    tid;
   int32_t    vgId;
   int32_t    sqlLen;
-  int8_t     updateEnd[4];
-  int32_t    refCount;
+  // Serialization above
   char*      sql;          //used by normal table
   SSchema*   schema;       //used by normal table
   SSTableObj*superTable;
-} SCTableObj;
+
+ public:
+  ~SCTableObj() override;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+ };
 
 typedef struct {
   int32_t    dnodeId;
@@ -138,7 +168,7 @@ typedef struct {
   SDnodeObj *pDnode;
 } SVnodeGid;
 
-struct SVgObj {
+struct SVgObj : public objectBase {
   uint32_t       vgId;
   int32_t        numOfVnodes;
   int64_t        createdTime;
@@ -152,14 +182,20 @@ struct SVgObj {
   SVnodeGid      vnodeGid[TSDB_MAX_REPLICA];
   int32_t        vgCfgVersion;
   int8_t         reserved1[8];
-  int8_t         updateEnd[4];
-  int32_t        refCount;
+  // Serialization above
   int32_t        numOfTables;
   int64_t        totalStorage;
   int64_t        compStorage;
   int64_t        pointsWritten;
   struct SDbObj *pDb;
   std::unique_ptr<id_pool_t> idPool;
+
+ public:
+  ~SVgObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
 };
 
 typedef struct {
@@ -184,7 +220,7 @@ typedef struct {
   int8_t  reserved[10];
 } SDbCfg;
 
-struct SDbObj {
+struct SDbObj : public objectBase {
   char    name[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   int8_t  reserved0[4];
   char    acct[TSDB_USER_LEN];
@@ -193,8 +229,7 @@ struct SDbObj {
   SDbCfg  cfg;
   int8_t  status;
   int8_t  reserved1[11];
-  int8_t  updateEnd[4];
-  int32_t refCount;
+  // Serialization above
   int32_t numOfVgroups;
   std::atomic<int32_t> numOfTables;
   std::atomic<int32_t> numOfSuperTables;
@@ -203,9 +238,16 @@ struct SDbObj {
   SVgObj **vgList;
   struct SAcctObj *pAcct;
   std::mutex  mutex;
+
+ public:
+  ~SDbObj() override;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
 };
 
-typedef struct SUserObj {
+struct SUserObj : public objectBase {
   char              user[TSDB_USER_LEN];
   char              pass[TSDB_KEY_LEN];
   char              acct[TSDB_USER_LEN];
@@ -213,10 +255,16 @@ typedef struct SUserObj {
   int8_t            superAuth;
   int8_t            writeAuth;
   int8_t            reserved[10];
-  int8_t            updateEnd[4];
-  int32_t           refCount;
+  // Serialization above
   struct SAcctObj * pAcct;
-} SUserObj;
+
+ public:
+  ~SUserObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+};
 
 typedef struct {
   int64_t totalStorage;  // Total storage wrtten from this account
@@ -237,7 +285,7 @@ typedef struct {
   int8_t  reserved[3];
 } SAcctInfo;
 
-struct SAcctObj {
+struct SAcctObj : public objectBase {
   char      user[TSDB_USER_LEN];
   char      pass[TSDB_KEY_LEN];
   SAcctCfg  cfg;
@@ -245,11 +293,17 @@ struct SAcctObj {
   int32_t   acctId;
   int8_t    status;
   int8_t    reserved0[7];
-  int8_t    updateEnd[4];
-  int32_t   refCount;
+  // Serialization above
   int8_t    reserved1[4];
   SAcctInfo acctInfo;
   std::mutex  mutex;
+
+ public:
+  ~SAcctObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
 };
 
 typedef struct {

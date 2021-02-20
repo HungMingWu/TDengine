@@ -70,7 +70,7 @@ struct SSyncFwds {
   SSyncFwds(size_t infos) : fwdInfo(infos) {}
 };
 
-struct SConnObj;
+struct STCPConnObj;
 struct SSyncNode;
 
 struct SSyncPeer : public std::enable_shared_from_this<SSyncPeer> {
@@ -91,7 +91,7 @@ struct SSyncPeer : public std::enable_shared_from_this<SSyncPeer> {
   int32_t  fileChanged;     // a flag to indicate file is changed during retrieving process
   int8_t   isArb;
   void *   timer;
-  SConnObj*        pConn;
+  STCPConnObj *            pConn;
   std::weak_ptr<SSyncNode> pSyncNode;
 
  public:
@@ -167,7 +167,7 @@ typedef struct SPoolObj {
   int32_t      acceptFd;  // FD for accept new connection
 } SPoolObj;
 
-struct SConnObj {
+struct STCPConnObj {
   SThreadObj *                   pThread;
   int32_t                        fd;
   int32_t                        closedByApp;

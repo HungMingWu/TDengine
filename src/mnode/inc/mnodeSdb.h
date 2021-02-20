@@ -20,6 +20,7 @@
 #include <mutex>
 #include "mnode.h"
 #include "walInt.h"
+#include "object.h"
 
 typedef enum {
   SDB_TABLE_CLUSTER = 0,
@@ -53,7 +54,7 @@ struct SSdbRow {
   int32_t    code;            // for callback in sdb queue
   int32_t    rowSize;
   void *     rowData;
-  void *     pObj;
+  objectBase* pObj;
   SSdbTable *pTable;
   SMnodeMsg *pMsg;
   int32_t  (*fpReq)(SMnodeMsg *pMsg) = nullptr;
@@ -67,21 +68,13 @@ struct SSdbRow {
   int32_t Update();
 };
 
-typedef struct {
+struct SSdbTableDesc {
   char *    name;
   int32_t   hashSessions;
   int32_t   maxRowSize;
-  int32_t   refCountPos;
   ESdbTable id;
   ESdbKey   keyType;
-  int32_t (*fpInsert)(SSdbRow *pRow);
-  int32_t (*fpDelete)(SSdbRow *pRow);
-  int32_t (*fpUpdate)(SSdbRow *pRow);
-  int32_t (*fpEncode)(SSdbRow *pRow);
-  int32_t (*fpDecode)(SSdbRow *pRow);  
-  int32_t (*fpDestroy)(SSdbRow *pRow);
-  int32_t (*fpRestored)();
-} SSdbTableDesc;
+};
 
 #define SDB_TABLE_LEN 12
 
@@ -91,42 +84,35 @@ struct SSdbTable {
   ESdbKey   keyType;
   int32_t   hashSessions;
   int32_t   maxRowSize;
-  int32_t   refCountPos;
   int32_t   autoIndex;
   int64_t   numOfRows;
   void *    iHandle;
-  int32_t (*fpInsert)(SSdbRow *pRow);
-  int32_t (*fpDelete)(SSdbRow *pRow);
-  int32_t (*fpUpdate)(SSdbRow *pRow);
-  int32_t (*fpDecode)(SSdbRow *pRow);
-  int32_t (*fpEncode)(SSdbRow *pRow);
-  int32_t (*fpDestroy)(SSdbRow *pRow);
-  int32_t (*fpRestored)();
   std::mutex mutex;
 
  public:
   SSdbTable(const SSdbTableDesc &desc);
-  ~SSdbTable();
+  virtual ~SSdbTable();
   void *getRow(void *key);
   void *fetchRow(void *pIter, void **ppRow);
   int64_t getNumOfRows() const;
   void    freeIter(void *pIter);
-  void    incRef(void *pRow);
-  void    decRef(void *pRow);
+  void    incRef(objectBase *pRow);
+  void    decRef(objectBase *pRow);
   int32_t Id() const { return autoIndex; }
   void *  getRowMetaFromObj(void *key);
-  void *  getRowMeta(void *key);
+  objectBase *getRowMeta(void *key);
   char *  getRowStr(void *key);
   int32_t insertHash(SSdbRow *pRow);
   int32_t updateHash(SSdbRow *pRow);
   int32_t deleteHash(SSdbRow *pRow);
   void *  getRowFromObj(void *key);
   void *  getObjKey(void *key);
+  virtual int32_t decode(SSdbRow *pRow) = 0;
+  virtual int32_t restore() = 0;
 };
 
 int32_t sdbInit();
 void    sdbCleanUp();
-std::shared_ptr<SSdbTable> sdbOpenTable(const SSdbTableDesc &desc);
 bool    sdbIsMaster();
 bool    sdbIsServing();
 void    sdbUpdateMnodeRoles();
@@ -135,6 +121,6 @@ int32_t sdbGetReplicaNum();
 int32_t sdbInsertRowToQueue(SSdbRow *pRow);
 
 uint64_t sdbGetVersion();
-bool     sdbCheckRowDeleted(void *pTable, void *pRow);
+bool     sdbCheckRowDeleted(objectBase *pRow);
 
 #endif

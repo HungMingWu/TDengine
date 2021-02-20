@@ -87,11 +87,11 @@ void syncCloseTcpThreadPool(void *param) {
   tfree(pPool);
 }
 
-SConnObj *syncAllocateTcpConn(void *param, int32_t connFd) {
+STCPConnObj *syncAllocateTcpConn(void *param, int32_t connFd) {
   struct epoll_event event;
   SPoolObj *pPool = (SPoolObj*)param;
 
-  SConnObj *pConn = (SConnObj*)calloc(sizeof(SConnObj), 1);
+  STCPConnObj *pConn = (STCPConnObj *)calloc(sizeof(STCPConnObj), 1);
   if (pConn == NULL) {
     terrno = TAOS_SYSTEM_ERROR(errno);
     return NULL;
@@ -124,7 +124,7 @@ SConnObj *syncAllocateTcpConn(void *param, int32_t connFd) {
 }
 
 void syncFreeTcpConn(void *param) {
-  SConnObj *  pConn = (SConnObj*)param;
+  STCPConnObj *pConn = (STCPConnObj *)param;
   SThreadObj *pThread = pConn->pThread;
 
   sDebug("%p TCP connection will be closed, fd:%d", pThread, pConn->fd);
@@ -132,7 +132,7 @@ void syncFreeTcpConn(void *param) {
   shutdown(pConn->fd, SHUT_WR);
 }
 
-static void taosProcessBrokenLink(SConnObj *pConn) {
+static void taosProcessBrokenLink(STCPConnObj *pConn) {
   SThreadObj *pThread = pConn->pThread;
   SPoolObj *  pPool = pThread->pPool;
   SPoolInfo * pInfo = &pPool->info;
@@ -153,7 +153,7 @@ static void *syncProcessTcpData(void *param) {
   SThreadObj *pThread = (SThreadObj *)param;
   SPoolObj *  pPool = pThread->pPool;
   SPoolInfo * pInfo = &pPool->info;
-  SConnObj *  pConn = NULL;
+  STCPConnObj *      pConn = NULL;
   struct epoll_event events[maxEvents];
 
   void *buffer = malloc(pInfo->bufferSize);
@@ -173,7 +173,7 @@ static void *syncProcessTcpData(void *param) {
     }
 
     for (int32_t i = 0; i < fdNum; ++i) {
-      pConn = (SConnObj*)events[i].data.ptr;
+      pConn = (STCPConnObj *)events[i].data.ptr;
       assert(pConn);
 
       if (events[i].events & EPOLLERR) {

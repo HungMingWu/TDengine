@@ -20,7 +20,7 @@
 
 void *    syncOpenTcpThreadPool(SPoolInfo *pInfo);
 void  syncCloseTcpThreadPool(void *);
-SConnObj *syncAllocateTcpConn(void *, int32_t connFd);
+STCPConnObj *syncAllocateTcpConn(void *, int32_t connFd);
 void  syncFreeTcpConn(void *);
 
 #endif  // TDENGINE_TCP_POOL_H

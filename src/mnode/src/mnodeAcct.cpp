@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "tglobal.h"
@@ -25,72 +24,66 @@
 #include "mnodeSdb.h"
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
+#include "SdbMgmt.h"
 
 std::shared_ptr<SSdbTable> tsAcctSdb;
 
 static int32_t tsAcctUpdateSize;
 static int32_t mnodeCreateRootAcct();
 
-static int32_t mnodeAcctActionDestroy(SSdbRow *pRow) {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  tfree(pRow->pObj);
+int32_t SAcctObj::insert() {
+  acctInfo.accessState = TSDB_VN_ALL_ACCCESS;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeAcctActionInsert(SSdbRow *pRow) {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  pAcct->acctInfo.accessState = TSDB_VN_ALL_ACCCESS;
+int32_t SAcctObj::remove() {
+  mnodeDropAllUsers(this);
+  mnodeDropAllDbs(this);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeAcctActionDelete(SSdbRow *pRow) {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  mnodeDropAllUsers(pAcct);
-  mnodeDropAllDbs(pAcct);
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeAcctActionUpdate(SSdbRow *pRow) {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  SAcctObj *pSaved = static_cast<SAcctObj *>(mnodeGetAcct(pAcct->user));
-  if (pAcct != pSaved) {
-    memcpy(pSaved, pAcct, tsAcctUpdateSize);
-    free(pAcct);
+int32_t SAcctObj::update() {
+  SAcctObj *pSaved = static_cast<SAcctObj *>(mnodeGetAcct(user));
+  if (this != pSaved) {
+    memcpy(pSaved, this, tsAcctUpdateSize);
+    delete this;
   }
   mnodeDecAcctRef(pSaved);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeAcctActionEncode(SSdbRow *pRow) {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pAcct, tsAcctUpdateSize);
+int32_t SAcctObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsAcctUpdateSize);
   pRow->rowSize = tsAcctUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeAcctActionDecode(SSdbRow *pRow) {
-  SAcctObj *pAcct = (SAcctObj *) calloc(1, sizeof(SAcctObj));
-  if (pAcct == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+class AcctTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pAcct = new SAcctObj;
+    if (pAcct == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  memcpy(pAcct, pRow->rowData, tsAcctUpdateSize);
-  pRow->pObj = pAcct;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeAcctActionRestored() {
-  int32_t numOfRows = tsAcctSdb->getNumOfRows();
-  if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
-    mInfo("dnode first deploy, create root acct");
-    int32_t code = mnodeCreateRootAcct();
-    if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
-      mError("failed to create root account, reason:%s", tstrerror(code));
-      return code;
-    }
+    memcpy(pAcct, pRow->rowData, tsAcctUpdateSize);
+    pRow->pObj = pAcct;
+    return TSDB_CODE_SUCCESS;
   }
+  int32_t restore() override {
+    int32_t numOfRows = getNumOfRows();
+    if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
+      mInfo("dnode first deploy, create root acct");
+      int32_t code = mnodeCreateRootAcct();
+      if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
+        mError("failed to create root account, reason:%s", tstrerror(code));
+        return code;
+      }
+    }
 
-  acctInit();
-  return TSDB_CODE_SUCCESS;
-}
+    acctInit();
+    return TSDB_CODE_SUCCESS;
+  }
+};
 
 int32_t mnodeInitAccts() {
   SAcctObj tObj;
@@ -101,17 +94,9 @@ int32_t mnodeInitAccts() {
   desc.name = "accounts";
   desc.hashSessions = TSDB_DEFAULT_ACCOUNTS_HASH_SIZE;
   desc.maxRowSize = tsAcctUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_STRING;
-  desc.fpInsert = mnodeAcctActionInsert;
-  desc.fpDelete = mnodeAcctActionDelete;
-  desc.fpUpdate = mnodeAcctActionUpdate;
-  desc.fpEncode = mnodeAcctActionEncode;
-  desc.fpDecode = mnodeAcctActionDecode;
-  desc.fpDestroy = mnodeAcctActionDestroy;
-  desc.fpRestored = mnodeAcctActionRestored;
 
-  tsAcctSdb = sdbOpenTable(desc);
+  tsAcctSdb = SSdbMgmt::instance().openTable<AcctTable>(desc);
   if (tsAcctSdb == NULL) {
     mError("table:%s, failed to create hash", desc.name);
     return -1;

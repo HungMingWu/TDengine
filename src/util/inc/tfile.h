@@ -16,6 +16,7 @@
 #ifndef TDENGINE_TFILE_H
 #define TDENGINE_TFILE_H
 
+#include <unistd.h>
 #include <memory>
 class FileOp {
   int fd;

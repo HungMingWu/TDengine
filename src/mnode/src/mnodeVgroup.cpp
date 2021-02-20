@@ -35,6 +35,7 @@
 #include "mnodeTable.h"
 #include "mnodeVgroup.h"
 #include "mnodePeer.h"
+#include "SdbMgmt.h"
 
 typedef enum {
   TAOS_VG_STATUS_READY,
@@ -56,66 +57,53 @@ static int32_t tsVgUpdateSize = 0;
 static int32_t mnodeAllocVgroupIdPool(SVgObj *pInputVgroup);
 static void    mnodeSendDropVgroupMsg(SVgObj *pVgroup, void *ahandle);
 
-static void mnodeDestroyVgroup(SVgObj *pVgroup) {
-  delete pVgroup;
-}
-
-static int32_t mnodeVgroupActionDestroy(SSdbRow *pRow) {
-  mnodeDestroyVgroup(static_cast<SVgObj *>(pRow->pObj));
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeVgroupActionInsert(SSdbRow *pRow) {
-  SVgObj *pVgroup = static_cast<SVgObj * >(pRow->pObj);
-
+int32_t SVgObj::insert() {
   // refer to db
-  SDbObj *pDb = mnodeGetDb(pVgroup->dbName);
+  SDbObj *pDb = mnodeGetDb(dbName);
   if (pDb == NULL) {
-    mError("vgId:%d, db:%s is not exist while insert into hash", pVgroup->vgId, pVgroup->dbName);
+    mError("vgId:%d, db:%s is not exist while insert into hash", vgId, dbName);
     return TSDB_CODE_MND_INVALID_DB;
   }
   
   if (pDb->status != TSDB_DB_STATUS_READY) {
-    mError("vgId:%d, db:%s status:%d, in dropping", pVgroup->vgId, pDb->name, pDb->status);
+    mError("vgId:%d, db:%s status:%d, in dropping", vgId, pDb->name, pDb->status);
     mnodeDecDbRef(pDb);
     return TSDB_CODE_MND_DB_IN_DROPPING;
   }
 
-  pVgroup->pDb = pDb;
-  pVgroup->status = TAOS_VG_STATUS_CREATING;
-  pVgroup->accessState = TSDB_VN_ALL_ACCCESS;
-  if (mnodeAllocVgroupIdPool(pVgroup) < 0) {
-    mError("vgId:%d, failed to init idpool for vgroups", pVgroup->vgId);
+  this->pDb = pDb;
+  status = TAOS_VG_STATUS_CREATING;
+  accessState = TSDB_VN_ALL_ACCCESS;
+  if (mnodeAllocVgroupIdPool(this) < 0) {
+    mError("vgId:%d, failed to init idpool for vgroups", vgId);
     return -1;
   }
 
-  for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
-    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
+  for (int32_t i = 0; i < numOfVnodes; ++i) {
+    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(vnodeGid[i].dnodeId));
     if (pDnode != NULL) {
-      pVgroup->vnodeGid[i].pDnode = pDnode;
+      vnodeGid[i].pDnode = pDnode;
       pDnode->openVnodes++;
       mnodeDecDnodeRef(pDnode);
     }
   }
 
-  mnodeAddVgroupIntoDb(pVgroup);
+  mnodeAddVgroupIntoDb(this);
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeVgroupActionDelete(SSdbRow *pRow) {
-  SVgObj *pVgroup = static_cast<SVgObj *>(pRow->pObj);
-
-  if (pVgroup->pDb == NULL) {
-    mError("vgId:%d, db:%s is not exist while insert into hash", pVgroup->vgId, pVgroup->dbName);
+int32_t SVgObj::remove() {
+  if (pDb == NULL) {
+    mError("vgId:%d, db:%s is not exist while insert into hash", vgId, dbName);
     return TSDB_CODE_MND_VGROUP_NOT_EXIST;
   }
 
-  mnodeRemoveVgroupFromDb(pVgroup);
-  mnodeDecDbRef(pVgroup->pDb);
+  mnodeRemoveVgroupFromDb(this);
+  mnodeDecDbRef(pDb);
 
-  for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
-    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
+  for (int32_t i = 0; i < numOfVnodes; ++i) {
+    SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(vnodeGid[i].dnodeId));
     if (pDnode != NULL) {
       pDnode->openVnodes--;
     }
@@ -125,11 +113,10 @@ static int32_t mnodeVgroupActionDelete(SSdbRow *pRow) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
-  SVgObj *pNew = static_cast<SVgObj *>(pRow->pObj);
-  SVgObj *pVgroup = mnodeGetVgroup(pNew->vgId);
+int32_t SVgObj::update() {
+  SVgObj *pVgroup = mnodeGetVgroup(vgId);
 
-  if (pVgroup != pNew) {
+  if (pVgroup != this) {
     for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
       SDnodeObj *pDnode = pVgroup->vnodeGid[i].pDnode;
       if (pDnode != NULL) {
@@ -137,7 +124,7 @@ static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
       }
     }
 
-    memcpy(pVgroup, pNew, tsVgUpdateSize);
+    memcpy(pVgroup, this, tsVgUpdateSize);
 
     for (int32_t i = 0; i < pVgroup->numOfVnodes; ++i) {
       SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVgroup->vnodeGid[i].dnodeId));
@@ -148,7 +135,7 @@ static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
       mnodeDecDnodeRef(pDnode);
     }
 
-    free(pNew);
+    delete this;
   }
 
 
@@ -164,9 +151,8 @@ static int32_t mnodeVgroupActionUpdate(SSdbRow *pRow) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeVgroupActionEncode(SSdbRow *pRow) {
-  SVgObj *pVgroup = static_cast<SVgObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pVgroup, tsVgUpdateSize);
+int32_t SVgObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsVgUpdateSize);
   SVgObj *pTmpVgroup = static_cast<SVgObj *>(pRow->rowData);
   for (int32_t i = 0; i < TSDB_MAX_REPLICA; ++i) {
     pTmpVgroup->vnodeGid[i].pDnode = NULL;
@@ -178,18 +164,19 @@ static int32_t mnodeVgroupActionEncode(SSdbRow *pRow) {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeVgroupActionDecode(SSdbRow *pRow) {
-  SVgObj *pVgroup = (SVgObj *) calloc(1, sizeof(SVgObj));
-  if (pVgroup == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+class VgroupTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pVgroup = new SVgObj;
+    if (pVgroup == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  memcpy(pVgroup, pRow->rowData, tsVgUpdateSize);
-  pRow->pObj = pVgroup;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeVgroupActionRestored() {
-  return 0;
-}
+    memcpy(pVgroup, pRow->rowData, tsVgUpdateSize);
+    pRow->pObj = pVgroup;
+    return TSDB_CODE_SUCCESS;
+  }
+  int32_t restore() override { return 0; }
+};
 
 int32_t mnodeInitVgroups() {
   SVgObj tObj;
@@ -200,17 +187,9 @@ int32_t mnodeInitVgroups() {
   desc.name = "vgroups";
   desc.hashSessions = TSDB_DEFAULT_VGROUPS_HASH_SIZE;
   desc.maxRowSize = tsVgUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_AUTO;
-  desc.fpInsert = mnodeVgroupActionInsert;
-  desc.fpDelete = mnodeVgroupActionDelete;
-  desc.fpUpdate = mnodeVgroupActionUpdate;
-  desc.fpEncode = mnodeVgroupActionEncode;
-  desc.fpDecode = mnodeVgroupActionDecode;
-  desc.fpDestroy = mnodeVgroupActionDestroy;
-  desc.fpRestored = mnodeVgroupActionRestored;
 
-  tsVgroupSdb = sdbOpenTable(desc);
+  tsVgroupSdb = SSdbMgmt::instance().openTable<VgroupTable>(desc);
   if (tsVgroupSdb == NULL) {
     mError("failed to init vgroups data");
     return -1;
@@ -561,7 +540,7 @@ int32_t mnodeCreateVgroup(SMnodeMsg *pMsg) {
   code = row.Insert();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     pMsg->pVgroup = NULL;
-    mnodeDestroyVgroup(pVgroup);
+    delete pVgroup;
   }
 
   return code;
@@ -666,7 +645,7 @@ int32_t mnodeGetVgroupMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
 }
 
 static bool mnodeFilterVgroups(SVgObj *pVgroup, STableObj *pTable) {
-  if (NULL == pTable || pTable->type == TSDB_SUPER_TABLE) {
+  if (NULL == pTable || pTable->info.type == TSDB_SUPER_TABLE) {
     return true;
   }
 
@@ -944,7 +923,7 @@ void mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg) {
     int32_t code = sdbInsertRowToQueue(&row);
     if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
       mnodeMsg->pVgroup = NULL;
-      mnodeDestroyVgroup(pVgroup);
+      delete pVgroup;
 
       if (mnodeMsg->pBatchMasterMsg) {
         ++mnodeMsg->pBatchMasterMsg->received;

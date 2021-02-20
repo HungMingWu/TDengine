@@ -16,6 +16,8 @@
 #ifndef TDENGINE_SYNC_H
 #define TDENGINE_SYNC_H
 
+#include "taosdef.h"
+
 #define TAOS_SYNC_MAX_REPLICA 5
 #define TAOS_SYNC_MAX_INDEX   0x7FFFFFFF
 

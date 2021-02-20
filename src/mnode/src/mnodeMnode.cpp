@@ -32,6 +32,7 @@
 #include "mnodeShow.h"
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
+#include "SdbMgmt.h"
 
 static std::shared_ptr<SSdbTable> tsMnodeSdb;
 static int32_t   tsMnodeUpdateSize = 0;
@@ -55,78 +56,71 @@ static SMInfos   tsMInfos;
   #define mnodeMnodeDestroyLock() pthread_mutex_destroy(&tsMnodeLock)
 #endif
 
-static int32_t mnodeMnodeActionDestroy(SSdbRow *pRow) {
-  tfree(pRow->pObj);
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeMnodeActionInsert(SSdbRow *pRow) {
-  SMnodeObj *pMnode = static_cast<SMnodeObj *>(pRow->pObj);
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pMnode->mnodeId));
+int32_t SMnodeObj::insert() {
+  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(mnodeId));
   if (pDnode == NULL) return TSDB_CODE_MND_DNODE_NOT_EXIST;
 
   pDnode->isMgmt = true;
   mnodeDecDnodeRef(pDnode);
 
-  mInfo("mnode:%d, fqdn:%s ep:%s port:%u is created", pMnode->mnodeId, pDnode->dnodeFqdn, pDnode->dnodeEp,
+  mInfo("mnode:%d, fqdn:%s ep:%s port:%u is created", mnodeId, pDnode->dnodeFqdn, pDnode->dnodeEp,
         pDnode->dnodePort);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeMnodeActionDelete(SSdbRow *pRow) {
-  SMnodeObj *pMnode = static_cast<SMnodeObj * >(pRow->pObj);
-
-  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pMnode->mnodeId));
+int32_t SMnodeObj::remove() {
+  SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(mnodeId));
   if (pDnode == NULL) return TSDB_CODE_MND_DNODE_NOT_EXIST;
   pDnode->isMgmt = false;
   mnodeDecDnodeRef(pDnode);
 
-  mDebug("mnode:%d, is dropped from sdb", pMnode->mnodeId);
+  mDebug("mnode:%d, is dropped from sdb", mnodeId);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeMnodeActionUpdate(SSdbRow *pRow) {
-  SMnodeObj *pMnode = static_cast<SMnodeObj *>(pRow->pObj);
-  SMnodeObj *pSaved = static_cast<SMnodeObj *>(mnodeGetMnode(pMnode->mnodeId));
-  if (pMnode != pSaved) {
-    memcpy(pSaved, pMnode, pRow->rowSize);
-    free(pMnode);
+int32_t SMnodeObj::update() {
+  SMnodeObj *pSaved = static_cast<SMnodeObj *>(mnodeGetMnode(mnodeId));
+  if (this != pSaved) {
+    memcpy(pSaved, this, sizeof(SMnodeObj));
+    delete this;
   }
   mnodeDecMnodeRef(pSaved);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeMnodeActionEncode(SSdbRow *pRow) {
-  SMnodeObj *pMnode = static_cast<SMnodeObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pMnode, tsMnodeUpdateSize);
+int32_t SMnodeObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsMnodeUpdateSize);
   pRow->rowSize = tsMnodeUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeMnodeActionDecode(SSdbRow *pRow) {
-  SMnodeObj *pMnode = static_cast<SMnodeObj *>(calloc(1, sizeof(SMnodeObj)));
-  if (pMnode == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+class MnodeTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pMnode = new SMnodeObj;
+    if (pMnode == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  memcpy(pMnode, pRow->rowData, tsMnodeUpdateSize);
-  pRow->pObj = pMnode;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeMnodeActionRestored() {
-  if (mnodeGetMnodesNum() == 1) {
-    SMnodeObj *pMnode = NULL;
-    void *pIter = mnodeGetNextMnode(NULL, &pMnode);
-    if (pMnode != NULL) {
-      pMnode->role = TAOS_SYNC_ROLE_MASTER;
-      mnodeDecMnodeRef(pMnode);
-    }
-    mnodeCancelGetNextMnode(pIter);
+    memcpy(pMnode, pRow->rowData, tsMnodeUpdateSize);
+    pRow->pObj = pMnode;
+    return TSDB_CODE_SUCCESS;
   }
+  int32_t restore() override {
+    if (mnodeGetMnodesNum() == 1) {
+      SMnodeObj *pMnode = NULL;
+      void *     pIter = mnodeGetNextMnode(NULL, &pMnode);
+      if (pMnode != NULL) {
+        pMnode->role = TAOS_SYNC_ROLE_MASTER;
+        mnodeDecMnodeRef(pMnode);
+      }
+      mnodeCancelGetNextMnode(pIter);
+    }
 
-  mnodeUpdateMnodeEpSet(NULL);
+    mnodeUpdateMnodeEpSet(NULL);
 
-  return TSDB_CODE_SUCCESS;
-}
+    return TSDB_CODE_SUCCESS;
+  }
+};
 
 int32_t mnodeInitMnodes() {
   mnodeMnodeInitLock();
@@ -139,17 +133,9 @@ int32_t mnodeInitMnodes() {
   desc.name = "mnodes";
   desc.hashSessions = TSDB_DEFAULT_MNODES_HASH_SIZE;
   desc.maxRowSize = tsMnodeUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_INT;
-  desc.fpInsert = mnodeMnodeActionInsert;
-  desc.fpDelete = mnodeMnodeActionDelete;
-  desc.fpUpdate = mnodeMnodeActionUpdate;
-  desc.fpEncode = mnodeMnodeActionEncode;
-  desc.fpDecode = mnodeMnodeActionDecode;
-  desc.fpDestroy = mnodeMnodeActionDestroy;
-  desc.fpRestored = mnodeMnodeActionRestored;
 
-  tsMnodeSdb = sdbOpenTable(desc);
+  tsMnodeSdb = SSdbMgmt::instance().openTable<MnodeTable>(desc);
   if (tsMnodeSdb == NULL) {
     mError("failed to init mnodes data");
     return -1;

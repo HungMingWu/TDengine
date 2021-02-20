@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "dnode.h"
@@ -23,59 +22,57 @@
 #include "mnodeSdb.h"
 #include "mnodeShow.h"
 #include "tglobal.h"
+#include "SdbMgmt.h"
 
 static std::shared_ptr<SSdbTable> tsClusterSdb;
 static int32_t tsClusterUpdateSize;
 static char    tsClusterId[TSDB_CLUSTER_ID_LEN];
 static int32_t mnodeCreateCluster();
 
-static int32_t mnodeClusterActionDestroy(SSdbRow *pRow) {
-  tfree(pRow->pObj);
+int32_t SClusterObj::insert() {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeClusterActionInsert(SSdbRow *pRow) {
+int32_t SClusterObj::remove() {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeClusterActionDelete(SSdbRow *pRow) {
+int32_t SClusterObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeClusterActionUpdate(SSdbRow *pRow) {
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeClusterActionEncode(SSdbRow *pRow) {
-  SClusterObj *pCluster = static_cast<SClusterObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pCluster, tsClusterUpdateSize);
+int32_t SClusterObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsClusterUpdateSize);
   pRow->rowSize = tsClusterUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeClusterActionDecode(SSdbRow *pRow) {
-  SClusterObj *pCluster = (SClusterObj *) calloc(1, sizeof(SClusterObj));
-  if (pCluster == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
+class ClusterTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto *pCluster = new SClusterObj;
+    if (pCluster == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-  memcpy(pCluster, pRow->rowData, tsClusterUpdateSize);
-  pRow->pObj = pCluster;
-  return TSDB_CODE_SUCCESS;
-}
-
-static int32_t mnodeClusterActionRestored() {
-  int32_t numOfRows = tsClusterSdb->getNumOfRows();
-  if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
-    mInfo("dnode first deploy, create cluster");
-    int32_t code = mnodeCreateCluster();
-    if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
-      mError("failed to create cluster, reason:%s", tstrerror(code));
-      return code;
-    }
+    memcpy(pCluster, pRow->rowData, tsClusterUpdateSize);
+    pRow->pObj = pCluster;
+    return TSDB_CODE_SUCCESS;
   }
+  int32_t restore() override { 
+    int32_t numOfRows = getNumOfRows();
+    if (numOfRows <= 0 && dnodeIsFirstDeploy()) {
+      mInfo("dnode first deploy, create cluster");
+      int32_t code = mnodeCreateCluster();
+      if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
+        mError("failed to create cluster, reason:%s", tstrerror(code));
+        return code;
+      }
+    }
 
-  mnodeUpdateClusterId();
-  return TSDB_CODE_SUCCESS;
-}
+    mnodeUpdateClusterId();
+    return TSDB_CODE_SUCCESS;
+  }
+};
 
 int32_t mnodeInitCluster() {
   SClusterObj tObj;
@@ -86,17 +83,9 @@ int32_t mnodeInitCluster() {
   desc.name = "cluster";
   desc.hashSessions = TSDB_DEFAULT_CLUSTER_HASH_SIZE;
   desc.maxRowSize = tsClusterUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_STRING;
-  desc.fpInsert = mnodeClusterActionInsert;
-  desc.fpDelete = mnodeClusterActionDelete;
-  desc.fpUpdate = mnodeClusterActionUpdate;
-  desc.fpEncode = mnodeClusterActionEncode;
-  desc.fpDecode = mnodeClusterActionDecode;
-  desc.fpDestroy = mnodeClusterActionDestroy;
-  desc.fpRestored = mnodeClusterActionRestored;
 
-  tsClusterSdb = sdbOpenTable(desc);
+  tsClusterSdb = SSdbMgmt::instance().openTable<ClusterTable>(desc);
   if (tsClusterSdb == NULL) {
     mError("table:%s failed to create hash", desc.name);
     return -1;

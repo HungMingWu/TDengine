@@ -28,7 +28,7 @@
 typedef struct {
   char      id[TSDB_EP_LEN + 24];
   int32_t   nodeFd;
-  SConnObj *pConn;
+  STCPConnObj *pConn;
 } SNodeConn;
 
 static void    arbSignalHandler(int32_t signum, siginfo_t *sigInfo, void *context);

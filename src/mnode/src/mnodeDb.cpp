@@ -35,6 +35,7 @@
 #include "mnodeTable.h"
 #include "mnodeUser.h"
 #include "mnodeVgroup.h"
+#include "SdbMgmt.h"
 
 #define VG_LIST_SIZE 8
 static std::shared_ptr<SSdbTable> tsDbSdb;
@@ -44,93 +45,83 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
 static int32_t mnodeDropDb(SMnodeMsg *newMsg);
 static int32_t mnodeSetDbDropping(SDbObj *pDb);
 
-static void mnodeDestroyDb(SDbObj *pDb) {
-  tfree(pDb->vgList);
-  delete pDb;
-}
-
-static int32_t mnodeDbActionDestroy(SSdbRow *pRow) {
-  mnodeDestroyDb(static_cast<SDbObj *>(pRow->pObj));
-  return TSDB_CODE_SUCCESS;
+SDbObj::~SDbObj() {
+  tfree(vgList);
 }
 
 int64_t mnodeGetDbNum() {
   return tsDbSdb->getNumOfRows();
 }
 
-static int32_t mnodeDbActionInsert(SSdbRow *pRow) {
-  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
+int32_t SDbObj::insert() {
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
 
-  pDb->mutex.lock();
-  pDb->vgListSize = VG_LIST_SIZE;
-  pDb->vgList = static_cast<SVgObj **>(calloc(pDb->vgListSize, sizeof(SVgObj *)));
-  pDb->numOfVgroups = 0;
-  pDb->mutex.unlock();
+  mutex.lock();
+  vgListSize = VG_LIST_SIZE;
+  vgList = static_cast<SVgObj **>(calloc(vgListSize, sizeof(SVgObj *)));
+  numOfVgroups = 0;
+  mutex.unlock();
 
-  pDb->numOfTables = 0;
-  pDb->numOfSuperTables = 0;
+  numOfTables = 0;
+  numOfSuperTables = 0;
 
   if (pAcct != NULL) {
-    mnodeAddDbToAcct(pAcct, pDb);
+    mnodeAddDbToAcct(pAcct, this);
     mnodeDecAcctRef(pAcct);
   }
   else {
-    mError("db:%s, acct:%s info not exist in sdb", pDb->name, pDb->acct);
+    mError("db:%s, acct:%s info not exist in sdb", name, acct);
     return TSDB_CODE_MND_INVALID_ACCT;
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDbActionDelete(SSdbRow *pRow) {
-  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
+int32_t SDbObj::remove() {
+  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
 
-  mnodeDropAllChildTables(pDb);
-  mnodeDropAllSuperTables(pDb);
-  mnodeDropAllDbVgroups(pDb);
+  mnodeDropAllChildTables(this);
+  mnodeDropAllSuperTables(this);
+  mnodeDropAllDbVgroups(this);
 
   if (pAcct) {
-    mnodeDropDbFromAcct(pAcct, pDb);
+    mnodeDropDbFromAcct(pAcct, this);
     mnodeDecAcctRef(pAcct);
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDbActionUpdate(SSdbRow *pRow) {
-  SDbObj *pNew = static_cast<SDbObj *>(pRow->pObj);
-  SDbObj *pDb = mnodeGetDb(pNew->name);
-  if (pDb != NULL && pNew != pDb) {
-    memcpy(pDb, pNew, pRow->rowSize);
-    free(pNew->vgList);
-    free(pNew);
+int32_t SDbObj::update() {
+  SDbObj *pDb = mnodeGetDb(name);
+  if (pDb != NULL && this != pDb) {
+    memcpy(pDb, this, sizeof(SDbObj));
+    delete this;
   }
   //mnodeUpdateAllDbVgroups(pDb);
   mnodeDecDbRef(pDb);
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDbActionEncode(SSdbRow *pRow) {
-  SDbObj *pDb = static_cast<SDbObj *>(pRow->pObj);
-  memcpy(pRow->rowData, pDb, tsDbUpdateSize);
+int32_t SDbObj::encode(SSdbRow *pRow) {
+  memcpy(pRow->rowData, this, tsDbUpdateSize);
   pRow->rowSize = tsDbUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
-static int32_t mnodeDbActionDecode(SSdbRow *pRow) {
-  SDbObj *pDb = (SDbObj *) calloc(1, sizeof(SDbObj));
-  if (pDb == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-  
-  memcpy(pDb, pRow->rowData, tsDbUpdateSize);
-  pRow->pObj = pDb;
-  return TSDB_CODE_SUCCESS;
-}
+class DbTable : public SSdbTable {
+ public:
+  using SSdbTable::SSdbTable;
+  int32_t decode(SSdbRow *pRow) override {
+    auto pDb = new SDbObj;
+    if (pDb == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
 
-static int32_t mnodeDbActionRestored() {
-  return 0;
-}
+    memcpy(pDb, pRow->rowData, tsDbUpdateSize);
+    pRow->pObj = pDb;
+    return TSDB_CODE_SUCCESS;
+  }
+  int32_t restore() override { return 0; }
+};
 
 int32_t mnodeInitDbs() {
   SDbObj tObj;
@@ -141,17 +132,9 @@ int32_t mnodeInitDbs() {
   desc.name = "dbs";
   desc.hashSessions = TSDB_DEFAULT_DBS_HASH_SIZE;
   desc.maxRowSize = tsDbUpdateSize;
-  desc.refCountPos = (int8_t *)(&tObj.refCount) - (int8_t *)&tObj;
   desc.keyType = SDB_KEY_STRING;
-  desc.fpInsert = mnodeDbActionInsert;
-  desc.fpDelete = mnodeDbActionDelete;
-  desc.fpUpdate = mnodeDbActionUpdate;
-  desc.fpEncode = mnodeDbActionEncode;
-  desc.fpDecode = mnodeDbActionDecode;
-  desc.fpDestroy = mnodeDbActionDestroy;
-  desc.fpRestored = mnodeDbActionRestored;
 
-  tsDbSdb = sdbOpenTable(desc);
+  tsDbSdb = SSdbMgmt::instance().openTable<DbTable>(desc);
   if (tsDbSdb == NULL) {
     mError("failed to init db data");
     return -1;
@@ -419,7 +402,7 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("db:%s, failed to create, reason:%s", pDb->name, tstrerror(code));
     pMsg->pDb = NULL;
-    mnodeDestroyDb(pDb);
+    delete pDb;
   }
 
   return code;
