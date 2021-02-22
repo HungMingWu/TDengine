@@ -50,7 +50,7 @@ typedef enum {
 struct SSdbTable;
 struct SSdbRow {
   ESdbOper   type;
-  int32_t    processedCount;  // for sync fwd callback
+  std::atomic<int32_t>    processedCount;  // for sync fwd callback
   int32_t    code;            // for callback in sdb queue
   int32_t    rowSize;
   void *     rowData;
@@ -85,7 +85,7 @@ struct SSdbTable {
   int32_t   hashSessions;
   int32_t   maxRowSize;
   int32_t   autoIndex;
-  int64_t   numOfRows;
+  std::atomic<int64_t>  numOfRows;
   void *    iHandle;
   std::mutex mutex;
 

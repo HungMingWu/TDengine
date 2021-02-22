@@ -80,7 +80,7 @@ static void    sdbCleanupWorker();
 static int32_t sdbAllocQueue();
 static void    sdbFreeQueue();
 
-int64_t SSdbTable::getNumOfRows() const { return numOfRows; }
+int64_t SSdbTable::getNumOfRows() const { return numOfRows.load(); }
 
 uint64_t sdbGetVersion() { return SSdbMgmt::instance().getVersion(); }
 
@@ -152,7 +152,7 @@ static void sdbRestoreTables() {
 
     totalRows += pTable->numOfRows;
     numOfTables++;
-    sdbInfo("vgId:1, sdb:%s is checked, rows:%" PRId64, pTable->name, pTable->numOfRows);
+    sdbInfo("vgId:1, sdb:%s is checked, rows:%" PRId64, pTable->name, pTable->numOfRows.load());
   }
 
   sdbInfo("vgId:1, sdb is restored, mver:%" PRIu64 " rows:%d tables:%d", SSdbMgmt::instance().version, totalRows,
@@ -242,7 +242,7 @@ static void sdbConfirmForward(int32_t vgId, void *wparam, int32_t code) {
   SMnodeMsg * pMsg = pRow->pMsg;
 
   if (code <= 0) pRow->code = code;
-  int32_t count = atomic_add_fetch_32(&pRow->processedCount, 1);
+  int32_t count = ++pRow->processedCount;
   if (count <= 1) {
     if (pMsg != NULL) sdbTrace("vgId:1, msg:%p waiting for confirm, count:%d code:%x", pMsg, count, code);
     return;
@@ -461,7 +461,7 @@ int32_t SSdbTable::insertHash(SSdbRow *pRow) {
   mutex.unlock();
 
   incRef(pRow->pObj);
-  atomic_add_fetch_32(&numOfRows, 1);
+  numOfRows++;
 
   if (keyType == SDB_KEY_AUTO) {
     autoIndex = MAX(autoIndex, *((uint32_t *)pRow->pObj));
@@ -470,7 +470,7 @@ int32_t SSdbTable::insertHash(SSdbRow *pRow) {
   }
 
   sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rowSize:%d rows:%" PRId64 ", msg:%p", name,
-           getRowStr(pRow->pObj), pRow->rowSize, numOfRows, pRow->pMsg);
+           getRowStr(pRow->pObj), pRow->rowSize, numOfRows.load(), pRow->pMsg);
 
   int32_t code = pRow->pObj->insert();
   if (code != TSDB_CODE_SUCCESS) {
@@ -503,10 +503,10 @@ int32_t SSdbTable::deleteHash(SSdbRow *pRow) {
   taosHashRemove(static_cast<SHashObj *>(iHandle), key, keySize);
   mutex.unlock();
 
-  atomic_sub_fetch_32(&numOfRows, 1);
+  numOfRows--;
 
   sdbTrace("vgId:1, sdb:%s, delete key:%s from hash, numOfRows:%" PRId64 ", msg:%p", name,
-           getRowStr(pRow->pObj), numOfRows, pRow->pMsg);
+           getRowStr(pRow->pObj), numOfRows.load(), pRow->pMsg);
 
   decRef(pRow->pObj);
 
@@ -515,7 +515,7 @@ int32_t SSdbTable::deleteHash(SSdbRow *pRow) {
 
 int32_t SSdbTable::updateHash(SSdbRow *pRow) {
   sdbTrace("vgId:1, sdb:%s, update key:%s in hash, numOfRows:%" PRId64 ", msg:%p", name,
-           getRowStr(pRow->pObj), numOfRows, pRow->pMsg);
+           getRowStr(pRow->pObj), numOfRows.load(), pRow->pMsg);
 
   pRow->pObj->update();
   return TSDB_CODE_SUCCESS;
@@ -860,7 +860,7 @@ static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
     return TSDB_CODE_WAL_SIZE_LIMIT;
   }
 
-  int32_t queued = atomic_add_fetch_32(&SSdbMgmt::instance().queuedMsg, 1);
+  int32_t queued = ++SSdbMgmt::instance().queuedMsg;
   if (queued > MAX_QUEUED_MSG_NUM) {
     sdbDebug("vgId:1, too many msg:%d in sdb queue, flow control", queued);
     taosMsleep(1);
@@ -875,7 +875,7 @@ static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
 }
 
 static void sdbFreeFromQueue(SSdbRow *pRow) {
-  int32_t queued = atomic_sub_fetch_32(&SSdbMgmt::instance().queuedMsg, 1);
+  int32_t queued = --SSdbMgmt::instance().queuedMsg;
   sdbTrace("vgId:1, msg:%p free from sdb queue, queued:%d", pRow->pMsg, queued);
 
   pRow->pTable->decRef(pRow->pObj);

@@ -233,3 +233,6 @@ Please follow the [contribution guidelines](CONTRIBUTING.md) to contribute to th
 
 Add WeChat “tdengine” to join the group，you can communicate with other users.
 
+
+## Reference
+- [zpp serializer](https://github.com/eyalz800/serializer)

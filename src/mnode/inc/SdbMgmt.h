@@ -14,7 +14,7 @@ struct SSdbMgmt {
   SSyncNodePtr sync;
   SWal*      wal;
   SSyncCfg   cfg;
-  int32_t    queuedMsg;
+  std::atomic<int32_t>   queuedMsg;
   int32_t    numOfTables;
   SSdbTable *tableList[SDB_TABLE_MAX];
   std::mutex mutex;

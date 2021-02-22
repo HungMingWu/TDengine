@@ -42,6 +42,9 @@ int32_t SClusterObj::update() {
 }
 
 int32_t SClusterObj::encode(SSdbRow *pRow) {
+  std::vector<unsigned char> data;
+  zpp::serializer::memory_output_archive out(data);
+  out(uid, createdTime, reserved);
   memcpy(pRow->rowData, this, tsClusterUpdateSize);
   pRow->rowSize = tsClusterUpdateSize;
   return TSDB_CODE_SUCCESS;

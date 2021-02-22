@@ -73,7 +73,6 @@ static int32_t mnodeAutoCreateChildTable(SMnodeMsg *pMsg);
 static int32_t mnodeFindSuperTableColumnIndex(SSTableObj *pStable, char *colName);
 
 SCTableObj::~SCTableObj() {
-  tfree(schema);
   tfree(sql);
 }
 
@@ -164,7 +163,6 @@ int32_t SCTableObj::update() {
   if (pTable != this) {
     void *oldTableId = pTable->info.tableId;
     void *oldSql = pTable->sql;
-    void *oldSchema = pTable->schema;
     void *oldSTable = pTable->superTable;
     int32_t oldRefCount = pTable->refCount;
 
@@ -172,11 +170,10 @@ int32_t SCTableObj::update() {
 
     pTable->refCount = oldRefCount;
     pTable->sql = sql;
-    pTable->schema = schema;
+    pTable->schema = std::move(schema);
     pTable->superTable = static_cast<SSTableObj *>(oldSTable);
 
     free(oldSql);
-    free(oldSchema);
     free(oldTableId);
     delete this;
   }
@@ -200,7 +197,7 @@ int32_t SCTableObj::encode(SSdbRow *pRow) {
 
   if (info.type != TSDB_CHILD_TABLE) {
     int32_t schemaSize = numOfColumns * sizeof(SSchema);
-    memcpy(pRow->rowData + len, schema, schemaSize);
+    memcpy(pRow->rowData + len, &schema[0], schemaSize);
     len += schemaSize;
 
     if (sqlLen != 0) {
@@ -232,12 +229,8 @@ static int32_t mnodeChildTableActionDecode(SSdbRow *pRow) {
 
   if (pTable->info.type != TSDB_CHILD_TABLE) {
     int32_t schemaSize = pTable->numOfColumns * sizeof(SSchema);
-    pTable->schema = (SSchema *)malloc(schemaSize);
-    if (pTable->schema == NULL) {
-      delete pTable;
-      return TSDB_CODE_MND_INVALID_TABLE_TYPE;
-    }
-    memcpy(pTable->schema, pRow->rowData + len, schemaSize);
+    pTable->schema.resize(pTable->numOfColumns);
+    memcpy(&pTable->schema[0], pRow->rowData + len, schemaSize);
     len += schemaSize;
 
     if (pTable->sqlLen != 0) {
@@ -275,12 +268,8 @@ class ChildTable : public SSdbTable {
 
     if (pTable->info.type != TSDB_CHILD_TABLE) {
       int32_t schemaSize = pTable->numOfColumns * sizeof(SSchema);
-      pTable->schema = (SSchema *)malloc(schemaSize);
-      if (pTable->schema == NULL) {
-        delete pTable;
-        return TSDB_CODE_MND_INVALID_TABLE_TYPE;
-      }
-      memcpy(pTable->schema, pRow->rowData + len, schemaSize);
+      pTable->schema.resize(pTable->numOfColumns);
+      memcpy(&pTable->schema[0], pRow->rowData + len, schemaSize);
       len += schemaSize;
 
       if (pTable->sqlLen != 0) {
@@ -427,7 +416,6 @@ SSTableObj::~SSTableObj() {
     taosHashCleanup(static_cast<SHashObj *>(vgHash));
     vgHash = NULL;
   }
-  tfree(schema);
 }
 
 int32_t SSTableObj::insert() {
@@ -460,7 +448,6 @@ int32_t SSTableObj::update() {
            pTable->vgHash, taosHashGetSize(static_cast<SHashObj *>(pTable->vgHash)), vgHash, taosHashGetSize(static_cast<SHashObj *>(vgHash)));
 
     void *oldTableId = pTable->info.tableId;
-    void *oldSchema = pTable->schema;
     void *oldVgHash = pTable->vgHash;
     int32_t oldRefCount = pTable->refCount;
     int32_t oldNumOfTables = pTable->numOfTables;
@@ -469,10 +456,9 @@ int32_t SSTableObj::update() {
 
     pTable->vgHash = oldVgHash;
     pTable->refCount = oldRefCount;
-    pTable->schema = schema;
+    pTable->schema = std::move(schema);
     pTable->numOfTables = oldNumOfTables;
     free(oldTableId);
-    free(oldSchema);
 
     mDebug("table:%s, update finished, hash:%p sizeOfVgList:%d", pTable->info.tableId, pTable->vgHash,
            taosHashGetSize(static_cast<SHashObj *>(pTable->vgHash)));
@@ -497,7 +483,7 @@ int32_t SSTableObj::encode(SSdbRow *pRow) {
   len += tsSuperTableUpdateSize;
 
   int32_t schemaSize = sizeof(SSchema) * (numOfColumns + numOfTags);
-  memcpy(pRow->rowData + len, schema, schemaSize);
+  memcpy(pRow->rowData + len, &schema[0], schemaSize);
   len += schemaSize;
 
   pRow->rowSize = len;
@@ -525,13 +511,8 @@ class SuperTable : public SSdbTable {
     len += tsSuperTableUpdateSize;
 
     int32_t schemaSize = sizeof(SSchema) * (pStable->numOfColumns + pStable->numOfTags);
-    pStable->schema = static_cast<SSchema *>(malloc(schemaSize));
-    if (pStable->schema == NULL) {
-      delete pStable;
-      return TSDB_CODE_MND_NOT_SUPER_TABLE;
-    }
-
-    memcpy(pStable->schema, pRow->rowData + len, schemaSize);
+    pStable->schema.resize(pStable->numOfColumns);
+    memcpy(&pStable->schema[0], pRow->rowData + len, schemaSize);
 
     pRow->pObj = pStable;
 
@@ -971,14 +952,8 @@ static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg) {
 
   int32_t numOfCols = pStable->numOfColumns + pStable->numOfTags;
   int32_t schemaSize = numOfCols * sizeof(SSchema);
-  pStable->schema = (SSchema *)calloc(1, schemaSize);
-  if (pStable->schema == NULL) {
-    free(pStable);
-    mError("msg:%p, app:%p table:%s, failed to create, no schema input", pMsg, pMsg->rpcMsg.ahandle, pCreate->tableFname);
-    return TSDB_CODE_MND_INVALID_TABLE_NAME;
-  }
-
-  memcpy(pStable->schema, pCreate->schema, numOfCols * sizeof(SSchema));
+  pStable->schema.resize(pStable->numOfColumns);
+  memcpy(&pStable->schema[0], pCreate->schema, numOfCols * sizeof(SSchema));
 
   if (pStable->numOfColumns > TSDB_MAX_COLUMNS || pStable->numOfTags > TSDB_MAX_TAGS) {
     mError("msg:%p, app:%p table:%s, failed to create, too many columns", pMsg, pMsg->rpcMsg.ahandle, pCreate->tableFname);
@@ -987,13 +962,12 @@ static int32_t mnodeProcessCreateSuperTableMsg(SMnodeMsg *pMsg) {
 
   pStable->nextColId = 0;
 
-  for (int32_t col = 0; col < numOfCols; col++) {
-    SSchema *tschema = pStable->schema;
-    tschema[col].colId = pStable->nextColId++;
-    tschema[col].bytes = htons(tschema[col].bytes);
+  for (auto &tschema : pStable->schema) {
+    tschema.colId = pStable->nextColId++;
+    tschema.bytes = htons(tschema.bytes);
   }
 
-  if (!isValidSchema(pStable->schema, pStable->numOfColumns, pStable->numOfTags)) {
+  if (!isValidSchema(&pStable->schema[0], pStable->numOfColumns, pStable->numOfTags)) {
     mError("msg:%p, app:%p table:%s, failed to create table, invalid schema", pMsg, pMsg->rpcMsg.ahandle, pCreate->tableFname);
     return TSDB_CODE_MND_INVALID_CREATE_TABLE_MSG;
   }
@@ -1084,7 +1058,7 @@ static int32_t mnodeProcessDropSuperTableMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeFindSuperTableTagIndex(SSTableObj *pStable, const char *tagName) {
-  SSchema *schema = (SSchema *) pStable->schema;
+  auto &schema = pStable->schema;
   for (int32_t tag = 0; tag < pStable->numOfTags; tag++) {
     if (strcasecmp(schema[pStable->numOfColumns + tag].name, tagName) == 0) {
       return tag;
@@ -1123,14 +1097,9 @@ static int32_t mnodeAddSuperTableTag(SMnodeMsg *pMsg, SSchema schema[], int32_t 
     }
   }
 
-  int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize + sizeof(SSchema) * ntags));
-
-  memcpy(pStable->schema + pStable->numOfColumns + pStable->numOfTags, schema, sizeof(SSchema) * ntags);
-
-  SSchema *tschema = (SSchema *)(pStable->schema + pStable->numOfColumns + pStable->numOfTags);
   for (int32_t i = 0; i < ntags; i++) {
-    tschema[i].colId = pStable->nextColId++;
+    pStable->schema.push_back(schema[i]);
+    pStable->schema.back().colId = pStable->nextColId++;
   }
 
   pStable->numOfTags += ntags;
@@ -1165,8 +1134,7 @@ static int32_t mnodeDropSuperTableTag(SMnodeMsg *pMsg, char *tagName) {
     return TSDB_CODE_MND_TAG_NOT_EXIST;
   }
 
-  memmove(pStable->schema + pStable->numOfColumns + col, pStable->schema + pStable->numOfColumns + col + 1,
-          sizeof(SSchema) * (pStable->numOfTags - col - 1));
+  pStable->schema.erase(pStable->schema.begin() + pStable->numOfColumns + col);
   pStable->numOfTags--;
   pStable->tversion++;
 
@@ -1209,7 +1177,7 @@ static int32_t mnodeModifySuperTableTagName(SMnodeMsg *pMsg, char *oldTagName, c
   }
 
   // update
-  SSchema *schema = (SSchema *) (pStable->schema + pStable->numOfColumns + col);
+  SSchema *schema = &pStable->schema[pStable->numOfColumns + col];
   tstrncpy(schema->name, newTagName, sizeof(schema->name));
 
   mInfo("msg:%p, app:%p stable %s, start to modify tag %s to %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId,
@@ -1226,7 +1194,7 @@ static int32_t mnodeModifySuperTableTagName(SMnodeMsg *pMsg, char *oldTagName, c
 }
 
 static int32_t mnodeFindSuperTableColumnIndex(SSTableObj *pStable, char *colName) {
-  SSchema *schema = (SSchema *) pStable->schema;
+  auto  &schema = pStable->schema;
   for (int32_t col = 0; col < pStable->numOfColumns; col++) {
     if (strcasecmp(schema[col].name, colName) == 0) {
       return col;
@@ -1265,19 +1233,12 @@ static int32_t mnodeAddSuperTableColumn(SMnodeMsg *pMsg, SSchema schema[], int32
     }
   }
 
-  int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize + sizeof(SSchema) * ncols));
-
-  memmove(pStable->schema + pStable->numOfColumns + ncols, pStable->schema + pStable->numOfColumns,
-          sizeof(SSchema) * pStable->numOfTags);
-  memcpy(pStable->schema + pStable->numOfColumns, schema, sizeof(SSchema) * ncols);
-
-  SSchema *tschema = (SSchema *) (pStable->schema + pStable->numOfColumns);
-  for (int32_t i = 0; i < ncols; i++) {
-    tschema[i].colId = pStable->nextColId++;
+  for (int32_t i = 0; i < ncols; i) {
+    auto it = pStable->schema.insert(pStable->schema.begin() + pStable->numOfColumns, schema[i]);
+    it->colId = pStable->nextColId++;
+    pStable->numOfColumns++;
   }
 
-  pStable->numOfColumns += ncols;
   pStable->sversion++;
 
   SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
@@ -1315,14 +1276,9 @@ static int32_t mnodeDropSuperTableColumn(SMnodeMsg *pMsg, char *colName) {
     return TSDB_CODE_MND_FIELD_NOT_EXIST;
   }
 
-  memmove(pStable->schema + col, pStable->schema + col + 1,
-          sizeof(SSchema) * (pStable->numOfColumns + pStable->numOfTags - col - 1));
-
+  pStable->schema.erase(pStable->schema.begin() + col);
   pStable->numOfColumns--;
   pStable->sversion++;
-
-  int32_t schemaSize = sizeof(SSchema) * (pStable->numOfTags + pStable->numOfColumns);
-  pStable->schema = static_cast<SSchema *>(realloc(pStable->schema, schemaSize));
 
   SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(pDb->acct));
   if (pAcct != NULL) {
@@ -1369,7 +1325,7 @@ static int32_t mnodeChangeSuperTableColumn(SMnodeMsg *pMsg, char *oldName, char 
   }
 
   // update
-  SSchema *schema = (SSchema *) (pStable->schema + col);
+  SSchema *schema = &pStable->schema[col];
   tstrncpy(schema->name, newName, sizeof(schema->name));
 
   mInfo("msg:%p, app:%p stable %s, start to modify column %s to %s", pMsg, pMsg->rpcMsg.ahandle, pStable->info.tableId,
@@ -1696,7 +1652,7 @@ void mnodeProcessDropSuperTableRsp(SRpcMsg *rpcMsg) {
   mInfo("drop stable rsp received, result:%s", tstrerror(rpcMsg->code));
 }
 
-static void *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCreateMsg, SCTableObj *pTable) {
+static SMDCreateTableMsg *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCreateMsg, SCTableObj *pTable) {
   SCreateTableMsg* pMsg = (SCreateTableMsg*) ((char*)pCreateMsg + sizeof(SCMCreateTableMsg));
 
   char* tagData = NULL;
@@ -1755,9 +1711,9 @@ static void *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCreateMsg, SCTabl
 
   SSchema *pSchema = (SSchema *) pCreate->data;
   if (pTable->info.type == TSDB_CHILD_TABLE) {
-    memcpy(pSchema, pTable->superTable->schema, totalCols * sizeof(SSchema));
+    memcpy(pSchema, &pTable->superTable->schema[0], totalCols * sizeof(SSchema));
   } else {
-    memcpy(pSchema, pTable->schema, totalCols * sizeof(SSchema));
+    memcpy(pSchema, &pTable->schema[0], totalCols * sizeof(SSchema));
   }
   for (int32_t col = 0; col < totalCols; ++col) {
     pSchema->bytes = htons(pSchema->bytes);
@@ -1784,7 +1740,7 @@ static int32_t mnodeDoCreateChildTableFp(SMnodeMsg *pMsg) {
          pTable->info.tableId, pTable->vgId, pTable->tid, pTable->uid);
 
   SCMCreateTableMsg *pCreate = static_cast<SCMCreateTableMsg *>(pMsg->rpcMsg.pCont);
-  SMDCreateTableMsg *pMDCreate = static_cast<SMDCreateTableMsg *>(mnodeBuildCreateChildTableMsg(pCreate, pTable));
+  SMDCreateTableMsg *pMDCreate = mnodeBuildCreateChildTableMsg(pCreate, pTable);
   if (pMDCreate == NULL) {
     return terrno;
   }
@@ -1903,18 +1859,13 @@ static int32_t mnodeDoCreateChildTable(SMnodeMsg *pMsg, int32_t tid) {
 
     int32_t numOfCols  = pTable->numOfColumns;
     int32_t schemaSize = numOfCols * sizeof(SSchema);
-    pTable->schema     = (SSchema *) calloc(1, schemaSize);
-    if (pTable->schema == NULL) {
-      free(pTable);
-      return TSDB_CODE_MND_OUT_OF_MEMORY;
-    }
-    memcpy(pTable->schema, pCreate->schema, numOfCols * sizeof(SSchema));
+    pTable->schema.resize(numOfCols);
+    memcpy(&pTable->schema[0], pCreate->schema, numOfCols * sizeof(SSchema));
 
     pTable->nextColId = 0;
-    for (int32_t col = 0; col < numOfCols; col++) {
-      SSchema *tschema   = pTable->schema;
-      tschema[col].colId = pTable->nextColId++;
-      tschema[col].bytes = htons(tschema[col].bytes);
+    for (auto &tschema : pTable->schema) {
+      tschema.colId = pTable->nextColId++;
+      tschema.bytes = htons(tschema.bytes);
     }
 
     if (pTable->sqlLen != 0) {
@@ -2073,7 +2024,7 @@ static int32_t mnodeProcessDropChildTableMsg(SMnodeMsg *pMsg) {
 }
 
 static int32_t mnodeFindNormalTableColumnIndex(SCTableObj *pTable, char *colName) {
-  SSchema *schema = (SSchema *) pTable->schema;
+  auto &schema = pTable->schema;
   for (int32_t col = 0; col < pTable->numOfColumns; col++) {
     if (strcasecmp(schema[col].name, colName) == 0) {
       return col;
@@ -2091,7 +2042,7 @@ static int32_t mnodeAlterNormalTableColumnCb(SMnodeMsg *pMsg, int32_t code) {
     return code;
   }
 
-  SMDCreateTableMsg *pMDCreate = static_cast<SMDCreateTableMsg *>(mnodeBuildCreateChildTableMsg(NULL, pTable));
+  SMDCreateTableMsg *pMDCreate = mnodeBuildCreateChildTableMsg(NULL, pTable);
   if (pMDCreate == NULL) {
     return terrno;
   }
@@ -2137,14 +2088,9 @@ static int32_t mnodeAddNormalTableColumn(SMnodeMsg *pMsg, SSchema schema[], int3
     }
   }
 
-  int32_t schemaSize = pTable->numOfColumns * sizeof(SSchema);
-  pTable->schema = static_cast<SSchema *>(realloc(pTable->schema, schemaSize + sizeof(SSchema) * ncols));
-
-  memcpy(pTable->schema + pTable->numOfColumns, schema, sizeof(SSchema) * ncols);
-
-  SSchema *tschema = (SSchema *) (pTable->schema + pTable->numOfColumns);
   for (int32_t i = 0; i < ncols; i++) {
-    tschema[i].colId = pTable->nextColId++;
+    pTable->schema.push_back(schema[i]);
+    pTable->schema.back().colId = pTable->nextColId++;
   }
 
   pTable->numOfColumns += ncols;
@@ -2178,7 +2124,8 @@ static int32_t mnodeDropNormalTableColumn(SMnodeMsg *pMsg, char *colName) {
     return TSDB_CODE_MND_FIELD_NOT_EXIST;
   }
 
-  memmove(pTable->schema + col, pTable->schema + col + 1, sizeof(SSchema) * (pTable->numOfColumns - col - 1));
+  auto it = pTable->schema.begin() + col;
+  pTable->schema.erase(it);
   pTable->numOfColumns--;
   pTable->sversion++;
 
@@ -2220,7 +2167,7 @@ static int32_t mnodeChangeNormalTableColumn(SMnodeMsg *pMsg, char *oldName, char
   }
 
   // update
-  SSchema *schema = (SSchema *) (pTable->schema + col);
+  SSchema *schema = &pTable->schema[col];
   tstrncpy(schema->name, newName, sizeof(schema->name));
 
   mInfo("msg:%p, app:%p ctable %s, start to modify column %s to %s", pMsg, pMsg->rpcMsg.ahandle, pTable->info.tableId,

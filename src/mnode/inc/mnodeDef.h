@@ -19,6 +19,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <vector>
 #include "taosdef.h"
 #include "taosmsg.h"
 #include "tidpool.h"
@@ -126,7 +127,7 @@ struct SSTableObj : public STableObj {
   int32_t    numOfTags;
   // Serialization above
   int32_t    numOfTables;
-  SSchema *  schema;
+  std::vector<SSchema>  schema;
   void *     vgHash;
 
  public:
@@ -150,7 +151,7 @@ struct SSTableObj : public STableObj {
   int32_t    sqlLen;
   // Serialization above
   char*      sql;          //used by normal table
-  SSchema*   schema;       //used by normal table
+  std::vector<SSchema>   schema;       //used by normal table
   SSTableObj*superTable;
 
  public:

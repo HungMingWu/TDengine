@@ -242,7 +242,7 @@ typedef struct SSchema {
   int16_t bytes;
 } SSchema;
 
-typedef struct {
+struct SMDCreateTableMsg {
   int32_t  contLen;
   int32_t  vgId;
   int8_t   tableType;
@@ -259,7 +259,7 @@ typedef struct {
   char     tableFname[TSDB_TABLE_FNAME_LEN];
   char     stableFname[TSDB_TABLE_FNAME_LEN];
   char     data[];
-} SMDCreateTableMsg;
+};
 
 typedef struct {
   int32_t len;  // one create table message

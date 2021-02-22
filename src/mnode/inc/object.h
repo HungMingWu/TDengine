@@ -1,5 +1,7 @@
 #pragma once
 #include <atomic>
+#include "serializer.h"
+
 struct SSdbRow;
 struct objectBase {
   int32_t              updateEnd{0};
