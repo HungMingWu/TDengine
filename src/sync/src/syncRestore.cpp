@@ -179,7 +179,7 @@ static int32_t syncRestoreWal(SSyncPeerPtr pPeer, uint64_t *wver) {
       break;
     }  // wal sync over
 
-    ret = taosReadMsg(pPeer->syncFd, pHead->cont, pHead->len);
+    ret = taosReadMsg(pPeer->syncFd, pHead->cont.data(), pHead->len);
     if (ret != pHead->len) {
       sError("%s, failed to read walcont, len:%d while restore wal since %s", pPeer->id, pHead->len, strerror(errno));
       break;

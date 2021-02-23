@@ -43,7 +43,7 @@ int32_t SClusterObj::update() {
 
 int32_t SClusterObj::encode(SSdbRow *pRow) {
   std::vector<unsigned char> data;
-  zpp::serializer::memory_output_archive out(data);
+  binser::memory_output_archive<> out(data);
   out(uid, createdTime, reserved);
   memcpy(pRow->rowData, this, tsClusterUpdateSize);
   pRow->rowSize = tsClusterUpdateSize;
@@ -136,7 +136,8 @@ static int32_t mnodeCreateCluster() {
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsClusterSdb.get();
   row.pObj = pCluster;
-
+  binser::memory_output_archive<> output(row.serializeRow);
+  output(*pCluster);
   return row.Insert();
 }
 

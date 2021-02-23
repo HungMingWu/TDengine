@@ -204,7 +204,7 @@ static int32_t syncReadOneWalRecord(int32_t sfd, SWalHead *pHead) {
 
   assert(pHead->len <= TSDB_MAX_WAL_SIZE);
 
-  ret = read(sfd, pHead->cont, pHead->len);
+  ret = read(sfd, pHead->cont.data(), pHead->len);
   if (ret < 0) {
     sError("sfd:%d, failed to read wal content since %s, ret:%d", sfd, strerror(errno), ret);
     return -1;

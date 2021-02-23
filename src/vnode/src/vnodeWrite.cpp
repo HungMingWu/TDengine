@@ -100,7 +100,7 @@ int32_t vnodeProcessWrite(void *vparam, SWalHead *pHead, int32_t qtype, void *rp
   pVnode->version = pHead->version;
 
   // write data locally
-  code = (*vnodeProcessWriteMsgFp[pHead->msgType])(pVnode, pHead->cont, pRspRet);
+  code = (*vnodeProcessWriteMsgFp[pHead->msgType])(pVnode, pHead->cont.data(), pRspRet);
   if (code < 0) return code;
 
   return syncCode;

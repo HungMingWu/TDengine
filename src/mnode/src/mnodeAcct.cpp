@@ -161,25 +161,25 @@ void mnodeDecAcctRef(SAcctObj *pAcct) {
 }
 
 void mnodeAddDbToAcct(SAcctObj *pAcct, SDbObj *pDb) {
-  atomic_add_fetch_32(&pAcct->acctInfo.numOfDbs, 1);
+  pAcct->acctInfo.numOfDbs++;
   pDb->pAcct = pAcct;
   mnodeIncAcctRef(pAcct);
 }
 
 void mnodeDropDbFromAcct(SAcctObj *pAcct, SDbObj *pDb) {
-  atomic_sub_fetch_32(&pAcct->acctInfo.numOfDbs, 1);
+  pAcct->acctInfo.numOfDbs--;
   pDb->pAcct = NULL;
   mnodeDecAcctRef(pAcct);
 }
 
 void mnodeAddUserToAcct(SAcctObj *pAcct, SUserObj *pUser) {
-  atomic_add_fetch_32(&pAcct->acctInfo.numOfUsers, 1);
+  pAcct->acctInfo.numOfUsers++;
   pUser->pAcct = pAcct;
   mnodeIncAcctRef(pAcct);
 }
 
 void mnodeDropUserFromAcct(SAcctObj *pAcct, SUserObj *pUser) {
-  atomic_sub_fetch_32(&pAcct->acctInfo.numOfUsers, 1);
+  pAcct->acctInfo.numOfUsers--;
   pUser->pAcct = NULL;
   mnodeDecAcctRef(pAcct);
 }

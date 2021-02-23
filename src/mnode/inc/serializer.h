@@ -1,5 +1,4 @@
-#ifndef __zpp_serializer_h__
-#define __zpp_serializer_h__
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -23,7 +22,7 @@
 #include <variant>
 #endif
 
-namespace zpp
+namespace binser
 {
 /**
  * Supports serialization of objects and polymorphic objects.
@@ -39,7 +38,7 @@ namespace zpp
  *       {
  *       }
  *
- *     friend zpp::serializer::access;
+ *     friend binser::access;
  *     template <typename Archive, typename Self>
  *     static void serialize(Archive & archive, Self & self)
  *     {
@@ -64,8 +63,8 @@ namespace zpp
  * static void foo()
  * {
  *     std::vector<unsigned char> data;
- *     zpp::serializer::memory_input_archive in(data);
- *     zpp::serializer::memory_output_archive out(data);
+ *     binser::memory_input_archive in(data);
+ *     binser::memory_output_archive out(data);
  *
  *     out(point(1337, 1338));
  *
@@ -78,7 +77,7 @@ namespace zpp
  *
  * Example of polymorphic serialization:
  * ~~~
- * class person : public zpp::serializer::polymorphic
+ * class person : public binser::polymorphic
  * {
  * public:
  *     person() = default;
@@ -87,7 +86,7 @@ namespace zpp
  *       {
  *       }
  *
- *     friend zpp::serializer::access;
+ *     friend binser::access;
  *     template <typename Archive, typename Self>
  *     static void serialize(Archive & archive, Self & self)
  *     {
@@ -118,7 +117,7 @@ namespace zpp
  *     {
  *     }
  *
- *     friend zpp::serializer::access;
+ *     friend binser::access;
  *     template <typename Archive, typename Self>
  *     static void serialize(Archive & archive, Self & self)
  *     {
@@ -138,17 +137,17 @@ namespace zpp
  *
  * namespace
  * {
- * zpp::serializer::register_types<
- *    zpp::serializer::make_type<person,
- * zpp::serializer::make_id("v1::person")>,
- *    zpp::serializer::make_type<student,
- * zpp::serializer::make_id("v1::student")> > _; } // <anynymous namespace>
+ * binser::register_types<
+ *    binser::make_type<person,
+ * binser::make_id("v1::person")>,
+ *    binser::make_type<student,
+ * binser::make_id("v1::student")> > _; } // <anynymous namespace>
  *
  * static void foo()
  * {
  *     std::vector<unsigned char> data;
- *     zpp::serializer::memory_input_archive in(data);
- *     zpp::serializer::memory_output_archive out(data);
+ *     binser::memory_input_archive in(data);
+ *     binser::memory_output_archive out(data);
  *
  *     std::unique_ptr<person> my_person =
  * std::make_unique<student>("1337", "1337University"); out(my_person);
@@ -162,10 +161,10 @@ namespace zpp
  * static void bar()
  * {
  *     std::vector<unsigned char> data;
- *     zpp::serializer::memory_input_archive in(data);
- *     zpp::serializer::memory_output_archive out(data);
+ *     binser::memory_input_archive in(data);
+ *     binser::memory_output_archive out(data);
  *
- *     out(zpp::serializer::as_polymorphic(student("1337",
+ *     out(binser::as_polymorphic(student("1337",
  * "1337University")));
  *
  *     std::unique_ptr<person> my_person;
@@ -175,10 +174,22 @@ namespace zpp
  * }
  * ~~~
  */
-namespace serializer
-{
+
+ /*
+  * endianness
+  */
+enum class EndiannessType {
+    LittleEndian,
+    BigEndian
+};
+
 namespace detail
 {
+template< class T >
+struct remove_cvref {
+    typedef std::remove_cv_t<std::remove_reference_t<T>> type;
+};
+
 /**
  * Map any sequence of types to void.
  */
@@ -309,6 +320,38 @@ swap_byte_order(std::uint64_t value) noexcept
 {
     return (std::uint64_t(swap_byte_order(std::uint32_t(value))) << 32) |
            (swap_byte_order(std::uint32_t(value >> 32)));
+}
+
+template<typename TValue>
+TValue swap(TValue value) {
+    constexpr size_t TSize = sizeof(TValue);
+    using UT = typename std::conditional<TSize == 1, uint8_t,
+        typename std::conditional<TSize == 2, uint16_t,
+        typename std::conditional<TSize == 4, uint32_t, uint64_t>::type>::type>::type;
+    return static_cast<TValue>(swap_byte_order(static_cast<UT>(value)));
+}
+
+/**
+ * endianness utils
+ */
+ // add test data in separate struct, because some compilers only support constexpr functions with return-only body
+ // suppress msvc warnings.
+#ifdef _MSC_VER
+#pragma warning( disable : 4310 )
+#endif
+struct EndiannessTestData {
+    static constexpr uint32_t _sample4Bytes = 0x01020304;
+    static constexpr uint8_t _sample1stByte = (const uint8_t&)_sample4Bytes;
+};
+#ifdef _MSC_VER
+#pragma warning( default : 4310 )
+#endif
+
+constexpr EndiannessType getSystemEndianness() {
+    static_assert(EndiannessTestData::_sample1stByte == 0x04 || EndiannessTestData::_sample1stByte == 0x01,
+        "system must be either little or big endian");
+    return EndiannessTestData::_sample1stByte == 0x04 ? EndiannessType::LittleEndian
+        : EndiannessType::BigEndian;
 }
 
 /**
@@ -684,14 +727,14 @@ serialization_method_t<Archive> make_serialization_method() noexcept
  * It enables saving and loading items into/from the archive, via
  * operator().
  */
-template <typename ArchiveType>
+template <template <EndiannessType> class ArchiveType, EndiannessType endian>
 class archive
 {
 public:
     /**
      * The derived archive type.
      */
-    using archive_type = ArchiveType;
+    using archive_type = ArchiveType<endian>;
 
     /**
      * Save/Load the given items into/from the archive.
@@ -836,14 +879,15 @@ private:
  * This archive serves as an optimization around vector, use
  * 'memory_output_archive' instead.
  */
+template <EndiannessType endian>
 class lazy_vector_memory_output_archive
-    : public archive<lazy_vector_memory_output_archive>
+    : public archive<lazy_vector_memory_output_archive, endian>
 {
 public:
     /**
      * The base archive.
      */
-    using base = archive<lazy_vector_memory_output_archive>;
+    using base = archive<lazy_vector_memory_output_archive, endian>;
 
     /**
      * Declare base as friend.
@@ -867,9 +911,62 @@ protected:
     }
 
     /**
-     * Serialize a single item - save it to the vector.
+     * Serialize a integral type item - save it to the vector.
      */
     template <typename Item>
+    void serialize_integral(Item&& item, std::true_type)
+    {
+        auto swapItem = detail::swap(item);
+        // Increase vector size.
+        if (m_size + sizeof(swapItem) > m_output->size()) {
+            m_output->resize((m_size + sizeof(swapItem)) * 3 / 2);
+        }
+
+        // Copy the data to the end of the vector.
+        std::copy_n(
+            reinterpret_cast<const unsigned char*>(std::addressof(swapItem)),
+            sizeof(swapItem),
+            m_output->data() + m_size);
+
+        // Increase the size.
+        m_size += sizeof(swapItem);
+    }
+
+    template <typename Item>
+    void serialize_integral(Item&& item, std::false_type)
+    {
+        // Increase vector size.
+        if (m_size + sizeof(item) > m_output->size()) {
+            m_output->resize((m_size + sizeof(item)) * 3 / 2);
+        }
+
+        // Copy the data to the end of the vector.
+        std::copy_n(
+            reinterpret_cast<const unsigned char*>(std::addressof(item)),
+            sizeof(item),
+            m_output->data() + m_size);
+
+        // Increase the size.
+        m_size += sizeof(item);
+    }
+
+    template <typename Item, 
+        typename std::enable_if<
+            std::is_integral<typename detail::remove_cvref<Item>::type>::value,
+            void *>::type = nullptr>
+    void serialize(Item&& item)
+    {
+        serialize_integral(std::forward<Item>(item),
+            std::integral_constant<bool, endian != detail::getSystemEndianness()>{});
+    }
+
+    /**
+     * Serialize a single item - save it to the vector.
+     */
+    template <typename Item,
+        typename std::enable_if<
+            !std::is_integral<typename detail::remove_cvref<Item>::type>::value,
+            void*>::type = nullptr>
     void serialize(Item && item)
     {
         // Increase vector size.
@@ -938,13 +1035,14 @@ private:
  * This archive serves as an output archive, which saves data into memory.
  * Every save operation appends data into the vector.
  */
-class memory_output_archive : private lazy_vector_memory_output_archive
+template <EndiannessType endian = detail::getSystemEndianness()>
+class memory_output_archive : private lazy_vector_memory_output_archive<endian>
 {
 public:
     /**
      * The base archive.
      */
-    using base = lazy_vector_memory_output_archive;
+    using base = lazy_vector_memory_output_archive<endian>;
 
     /**
      * Constructs a memory output archive, that outputs to the given
@@ -952,7 +1050,7 @@ public:
      */
     explicit memory_output_archive(
         std::vector<unsigned char> & output) noexcept :
-        lazy_vector_memory_output_archive(output)
+        lazy_vector_memory_output_archive<endian>(output)
     {
     }
 
@@ -963,17 +1061,17 @@ public:
     void operator()(Items &&... items)
     {
         // Set the size to the vector size.
-        adjust_size();
+        this->adjust_size();
 
         try {
             // Serialize the items.
             base::operator()(std::forward<Items>(items)...);
 
             // Fit the vector.
-            fit_vector();
+            this->fit_vector();
         } catch (...) {
             // Fit the vector.
-            fit_vector();
+            this->fit_vector();
             throw;
         }
     }
@@ -984,13 +1082,14 @@ public:
  * from non owning memory. Every load operation advances an offset to that
  * the next data may be loaded on the next iteration.
  */
-class memory_view_input_archive : public archive<memory_view_input_archive>
+template <EndiannessType endian>
+class memory_view_input_archive : public archive<memory_view_input_archive, endian>
 {
 public:
     /**
      * The base archive.
      */
-    using base = archive<memory_view_input_archive>;
+    using base = archive<memory_view_input_archive, endian>;
 
     /**
      * Declare base as friend.
@@ -1042,9 +1141,64 @@ protected:
     }
 
     /**
-     * Serialize a single item - load it from the vector.
+     * Serialize a integral type item - save it to the vector.
      */
     template <typename Item>
+    void serialize_integral(Item&& item, std::true_type)
+    {
+        // Verify that the vector is large enough to contain the item.
+        if (m_size < (sizeof(item) + m_offset)) {
+            throw out_of_range("Input vector was not large enough to "
+                "contain the requested item");
+        }
+
+        // Fetch the item from the vector.
+        std::copy_n(
+            m_input + m_offset,
+            sizeof(item),
+            reinterpret_cast<unsigned char*>(std::addressof(item)));
+
+        // Increase the offset according to item size.
+        m_offset += sizeof(item);
+        item = detail::swap(item);
+    }
+
+    template <typename Item>
+    void serialize_integral(Item&& item, std::false_type)
+    {
+        // Verify that the vector is large enough to contain the item.
+        if (m_size < (sizeof(item) + m_offset)) {
+            throw out_of_range("Input vector was not large enough to "
+                "contain the requested item");
+        }
+
+        // Fetch the item from the vector.
+        std::copy_n(
+            m_input + m_offset,
+            sizeof(item),
+            reinterpret_cast<unsigned char*>(std::addressof(item)));
+
+        // Increase the offset according to item size.
+        m_offset += sizeof(item);
+    }
+
+    template <typename Item,
+        typename std::enable_if<
+        std::is_integral<typename detail::remove_cvref<Item>::type>::value,
+        void*>::type = nullptr>
+    void serialize(Item&& item)
+    {
+        serialize_integral(std::forward<Item>(item),
+            std::integral_constant<bool, endian != detail::getSystemEndianness()>{});
+    }
+
+    /**
+     * Serialize a single item - load it from the vector.
+     */
+    template <typename Item,
+        typename std::enable_if<
+        !std::is_integral<typename detail::remove_cvref<Item>::type>::value,
+        void*>::type = nullptr>
     void serialize(Item && item)
     {
         // Verify that the vector is large enough to contain the item.
@@ -1104,14 +1258,15 @@ private:
  * owning memory. Every load operation erases data from the beginning of
  * the vector.
  */
-class memory_input_archive : private memory_view_input_archive
+template <EndiannessType endian = detail::getSystemEndianness()>
+class memory_input_archive : private memory_view_input_archive<endian>
 {
 public:
     /**
      * Construct a memory input archive from a vector.
      */
     memory_input_archive(std::vector<unsigned char> & input) :
-        memory_view_input_archive(input.data(), input.size()),
+        memory_view_input_archive<endian>(input.data(), input.size()),
         m_input(std::addressof(input))
     {
     }
@@ -1124,27 +1279,27 @@ public:
     {
         try {
             // Update the input archive.
-            static_cast<memory_view_input_archive &>(*this) = {
+            static_cast<memory_view_input_archive<endian>&>(*this) = {
                 m_input->data(), m_input->size()};
 
             // Load the items.
-            memory_view_input_archive::operator()(
+            memory_view_input_archive<endian>::operator()(
                 std::forward<Items>(items)...);
         } catch (...) {
             // Erase the loaded elements.
             m_input->erase(m_input->begin(),
-                           m_input->begin() + get_offset());
+                           m_input->begin() + this->get_offset());
 
             // Reset to offset zero.
-            reset();
+            this->reset();
             throw;
         }
 
         // Erase the loaded elements.
-        m_input->erase(m_input->begin(), m_input->begin() + get_offset());
+        m_input->erase(m_input->begin(), m_input->begin() + this->get_offset());
 
         // Reset to offset zero.
-        reset();
+        this->reset();
     }
 
 private:
@@ -2097,8 +2252,8 @@ struct archive_sequence
  * The built in archives.
  */
 using builtin_archives =
-    archive_sequence<memory_view_input_archive,
-                     lazy_vector_memory_output_archive>;
+    archive_sequence<memory_view_input_archive<detail::getSystemEndianness()>,
+                     lazy_vector_memory_output_archive<detail::getSystemEndianness()>>;
 
 /**
  * Makes a meta pair of type and id.
@@ -2291,7 +2446,4 @@ constexpr id_type make_id(const char (&name)[size])
     return detail::swap_byte_order((std::uint64_t(h0) << 32) | h1);
 } // make_id
 
-} // namespace serializer
-} // namespace zpp
-
-#endif
+} // namespace binser

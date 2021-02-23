@@ -222,7 +222,7 @@ static void sdbHandleFailedConfirm(SSdbRow *pRow) {
   int32_t   action = pHead->msgType % 10;
 
   sdbError("vgId:1, row:%p:%s hver:%" PRIu64 " action:%s, failed to foward since %s", pRow->pObj,
-           sdbGetKeyStr(static_cast<SSdbTable *>(pRow->pTable), pHead->cont), pHead->version, actStr[action],
+           sdbGetKeyStr(static_cast<SSdbTable *>(pRow->pTable), pHead->cont.data()), pHead->version, actStr[action],
            tstrerror(pRow->code));
 
   // It's better to create a table in two stages, create it first and then set it success
@@ -522,16 +522,16 @@ int32_t SSdbTable::updateHash(SSdbRow *pRow) {
 }
 
 static int32_t sdbPerformInsertAction(SWalHead *pHead, SSdbTable *pTable) {
-  SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont, .pTable = pTable};
+  SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont.data(), .pTable = pTable};
   pTable->decode(&row);
   return pTable->insertHash(&row);
 }
 
 static int32_t sdbPerformDeleteAction(SWalHead *pHead, SSdbTable *pTable) {
-  objectBase *pObj = pTable->getRowMeta(pHead->cont);
+  objectBase *pObj = pTable->getRowMeta(pHead->cont.data());
   if (pObj == NULL) {
     sdbDebug("vgId:1, sdb:%s, object:%s not exist in hash, ignore delete action", pTable->name,
-             sdbGetKeyStr(pTable, pHead->cont));
+             sdbGetKeyStr(pTable, pHead->cont.data()));
     return TSDB_CODE_SUCCESS;
   }
   SSdbRow row;
@@ -541,13 +541,13 @@ static int32_t sdbPerformDeleteAction(SWalHead *pHead, SSdbTable *pTable) {
 }
 
 static int32_t sdbPerformUpdateAction(SWalHead *pHead, SSdbTable *pTable) {
-  objectBase *pObj = pTable->getRowMeta(pHead->cont);
+  objectBase *pObj = pTable->getRowMeta(pHead->cont.data());
   if (pObj == NULL) {
     sdbDebug("vgId:1, sdb:%s, object:%s not exist in hash, ignore update action", pTable->name,
-             sdbGetKeyStr(pTable, pHead->cont));
+             sdbGetKeyStr(pTable, pHead->cont.data()));
     return TSDB_CODE_SUCCESS;
   }
-  SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont, .pTable = pTable};
+  SSdbRow row = {.rowSize = pHead->len, .rowData = pHead->cont.data(), .pTable = pTable};
   pTable->decode(&row);
   return pTable->updateHash(&row);
 }
@@ -578,12 +578,12 @@ static int32_t sdbProcessWrite(void *wparam, SWalHead *pHead, int32_t qtype, voi
     // for data from WAL or forward, version may be smaller
     if (pHead->version <= SSdbMgmt::instance().version) {
       sdbDebug("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
-               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont), qtype, pHead->version,
+               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
                SSdbMgmt::instance().version);
       return TSDB_CODE_SUCCESS;
     } else if (pHead->version != SSdbMgmt::instance().version + 1) {
       sdbError("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
-               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont), qtype, pHead->version,
+               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
                SSdbMgmt::instance().version);
       return TSDB_CODE_SYN_INVALID_VERSION;
     } else {
@@ -607,19 +607,19 @@ static int32_t sdbProcessWrite(void *wparam, SWalHead *pHead, int32_t qtype, voi
 
     if (syncCode < 0) {
       sdbError("vgId:1, sdb:%s, failed to forward req since %s action:%s key:%s hver:%" PRIu64 ", msg:%p", pTable->name,
-               tstrerror(syncCode), actStr[action], sdbGetKeyStr(pTable, pHead->cont), pHead->version, pRow->pMsg);
+               tstrerror(syncCode), actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), pHead->version, pRow->pMsg);
     } else if (syncCode > 0) {
       sdbDebug("vgId:1, sdb:%s, forward req is sent, action:%s key:%s hver:%" PRIu64 ", msg:%p", pTable->name,
-               actStr[action], sdbGetKeyStr(pTable, pHead->cont), pHead->version, pRow->pMsg);
+               actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), pHead->version, pRow->pMsg);
     } else {
       sdbTrace("vgId:1, sdb:%s, no need to send fwd req, action:%s key:%s hver:%" PRIu64 ", msg:%p", pTable->name,
-               actStr[action], sdbGetKeyStr(pTable, pHead->cont), pHead->version, pRow->pMsg);
+               actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), pHead->version, pRow->pMsg);
     }
     return syncCode;
   }
 
   sdbTrace("vgId:1, sdb:%s, record from %s is disposed, action:%s key:%s hver:%" PRIu64, pTable->name, qtypeStr[qtype],
-           actStr[action], sdbGetKeyStr(pTable, pHead->cont), pHead->version);
+           actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), pHead->version);
 
   // even it is WAL/FWD, it shall be called to update version in sync
   SSdbMgmt::instance().sync->forwardToPeerImpl(pHead, pRow, TAOS_QTYPE_RPC);
@@ -890,7 +890,7 @@ static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, 
   }
 
   memcpy(&pRow->pHead, pHead, sizeof(SWalHead) + pHead->len);
-  pRow->rowData = pRow->pHead.cont;
+  pRow->rowData = pRow->pHead.cont.data();
 
   int32_t code = sdbWriteToQueue(pRow, qtype);
   if (code == TSDB_CODE_MND_ACTION_IN_PROGRESS) code = 0;
@@ -912,7 +912,7 @@ static int32_t sdbWriteRowToQueue(const SSdbRow *pInputRow, int32_t action) {
   pRow->processedCount = 1;
 
   SWalHead *pHead = &pRow->pHead;
-  pRow->rowData = pHead->cont;
+  pRow->rowData = pHead->cont.data();
   pRow->pObj->encode(pRow);
 
   pHead->len = pRow->rowSize;

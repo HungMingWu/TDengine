@@ -130,7 +130,7 @@ int32_t SWal::restore(void *pVnode, FWalWrite writeFp) {
   int64_t fileId = -1;
 
   while ((code = getNextFile(&fileId)) >= 0) {
-    if (fileId == fileId) continue;
+    if (fileId == this->fileId) continue;
 
     char walName[WAL_FILE_LEN];
     snprintf(walName, sizeof(name), "%s/%s%" PRId64, path, WAL_PREFIX, fileId);
@@ -218,21 +218,15 @@ int32_t SWal::skipCorruptedRecord(SWalHead *pHead, FileOpPtr tfd, int64_t *offse
 }
 
 int32_t SWal::restoreWalFile(void *pVnode, FWalWrite writeFp, char *name, int64_t fileId) {
-  int32_t size = WAL_MAX_SIZE;
-  void *  buffer = tmalloc(size);
-  if (buffer == NULL) {
-    wError("vgId:%d, file:%s, failed to open for restore since %s", vgId, name, strerror(errno));
-    return TAOS_SYSTEM_ERROR(errno);
-  }
-
+  std::vector<uint8_t> buffer(WAL_MAX_SIZE);
   FileOpPtr tfd = tfOpen(name, O_RDWR);
 
   int32_t   code = TSDB_CODE_SUCCESS;
   int64_t   offset = 0;
-  SWalHead *pHead = (SWalHead*)buffer;
+  SWalHead  head;
 
   while (1) {
-    int32_t ret = tfd->read(pHead, sizeof(SWalHead));
+    int32_t ret = tfd->read(&head, sizeof(SWalHead));
     if (ret == 0) break;
 
     if (ret < 0) {
@@ -247,50 +241,48 @@ int32_t SWal::restoreWalFile(void *pVnode, FWalWrite writeFp, char *name, int64_
       break;
     }
 
-    if (!taosCheckChecksumWhole((uint8_t *)pHead, sizeof(SWalHead))) {
+    if (!taosCheckChecksumWhole((uint8_t *)&head, sizeof(SWalHead))) {
       wError("vgId:%d, file:%s, wal head cksum is messed up, hver:%" PRIu64 " len:%d offset:%" PRId64, vgId, name,
-             pHead->version, pHead->len, offset);
-      code = skipCorruptedRecord(pHead, tfd, &offset);
+             head.version, head.len, offset);
+      code = skipCorruptedRecord(&head, tfd, &offset);
       if (code != TSDB_CODE_SUCCESS) {
         walFtruncate(tfd, offset);
         break;
       }
     }
 
-    if (pHead->len < 0 || pHead->len > size - sizeof(SWalHead)) {
+    if (head.len < 0 || head.len > WAL_MAX_SIZE - sizeof(SWalHead)) {
       wError("vgId:%d, file:%s, wal head len out of range, hver:%" PRIu64 " len:%d offset:%" PRId64, vgId, name,
-             pHead->version, pHead->len, offset);
-      code = skipCorruptedRecord(pHead, tfd, &offset);
+             head.version, head.len, offset);
+      code = skipCorruptedRecord(&head, tfd, &offset);
       if (code != TSDB_CODE_SUCCESS) {
         walFtruncate(tfd, offset);
         break;
       }
     }
 
-    ret = tfd->read(pHead->cont, pHead->len);
+    std::vector<uint8_t> cont(head.len);
+    ret = tfd->read(cont.data(), cont.size());
     if (ret < 0) {
       wError("vgId:%d, file:%s, failed to read wal body since %s", vgId, name, strerror(errno));
       code = TAOS_SYSTEM_ERROR(errno);
       break;
     }
 
-    if (ret < pHead->len) {
-      wError("vgId:%d, file:%s, failed to read wal body, ret:%d len:%d", vgId, name, ret, pHead->len);
+    if (ret < cont.size()) {
+      wError("vgId:%d, file:%s, failed to read wal body, ret:%d len:%d", vgId, name, ret, head.len);
       offset += sizeof(SWalHead);
       continue;
     }
 
-    offset = offset + sizeof(SWalHead) + pHead->len;
+    offset = offset + sizeof(SWalHead) + head.len;
 
     wTrace("vgId:%d, restore wal, fileId:%" PRId64 " hver:%" PRIu64 " wver:%" PRIu64 " len:%d", vgId,
-           fileId, pHead->version, version, pHead->len);
+           fileId, head.version, version, head.len);
 
-    version = pHead->version;
-    (*writeFp)(pVnode, pHead, TAOS_QTYPE_WAL, NULL);
+    version = head.version;
+    (*writeFp)(pVnode, &head, TAOS_QTYPE_WAL, NULL);
   }
-
-  tfree(buffer);
-
   return code;
 }
 

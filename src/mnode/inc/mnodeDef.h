@@ -48,6 +48,11 @@ struct SClusterObj : public objectBase {
   int32_t remove() override;
   int32_t encode(SSdbRow *pRow) override;
   int32_t update() override;
+
+  template <typename Archive, typename Self>
+  static void serialize(Archive &archive, Self &self) {
+    archive(self.uid, self.createdTime, self.reserved);
+  }
 };
 
 struct SDnodeObj : public objectBase {
@@ -108,7 +113,7 @@ struct SMnodeObj : public objectBase {
 
 struct STableObj : public objectBase {
   struct {
-    char * tableId;
+    char * tableId = nullptr;
     int8_t type;
   } info;
 
@@ -267,7 +272,7 @@ struct SUserObj : public objectBase {
   int32_t update() override;
 };
 
-typedef struct {
+struct SAcctInfo {
   int64_t totalStorage;  // Total storage wrtten from this account
   int64_t compStorage;   // Compressed storage on disk
   int64_t queryTime;
@@ -275,8 +280,8 @@ typedef struct {
   int64_t inblound;
   int64_t outbound;
   int64_t sKey;
-  int32_t numOfUsers;
-  int32_t numOfDbs;
+  std::atomic<int32_t> numOfUsers;
+  std::atomic<int32_t> numOfDbs;
   int32_t numOfTimeSeries;
   int32_t numOfPointsPerSecond;
   int32_t numOfConns;
@@ -284,7 +289,7 @@ typedef struct {
   int32_t numOfStreams;
   int8_t  accessState;   // Checked by mgmt heartbeat message
   int8_t  reserved[3];
-} SAcctInfo;
+};
 
 struct SAcctObj : public objectBase {
   char      user[TSDB_USER_LEN];

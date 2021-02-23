@@ -17,6 +17,7 @@
 #define TDENGINE_WAL_INT_H
 
 #include <mutex>
+#include <vector>
 #include "tlog.h"
 #include "tfile.h"
 
@@ -57,7 +58,7 @@ struct SWalHead {
   uint64_t version;
   uint32_t signature;
   uint32_t cksum;
-  char     cont[];
+  std::vector<char>     cont;
 };
 
 typedef int32_t FWalWrite(void *ahandle, SWalHead *pHead, int32_t qtype, void *pMsg);

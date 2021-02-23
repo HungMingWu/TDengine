@@ -61,7 +61,7 @@ struct SSdbRow {
   int32_t  (*fpRsp)(SMnodeMsg *pMsg, int32_t code) = nullptr;
   char       reserveForSync[24];
   SWalHead   pHead;
-
+  std::vector<uint8_t> serializeRow;
  public:
   int32_t Insert();
   int32_t Delete();
