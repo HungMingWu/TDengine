@@ -115,7 +115,6 @@ void bnAccquireDnodes() {
     pIter = mnodeGetNextDnode(pIter, &pDnode);
     if (pDnode == NULL) break;
     if (pDnode->status == TAOS_DN_STATUS_OFFLINE) {
-      mnodeDecDnodeRef(pDnode);
       continue;
     }
 
@@ -139,7 +138,6 @@ void bnReleaseDnodes() {
   for (int32_t i = 0; i < tsBnDnodes.size(); ++i) {
     SDnodeObj *pDnode = tsBnDnodes[i];
     if (pDnode != NULL) {
-      mnodeDecDnodeRef(pDnode);
     }
   }
 }
@@ -149,7 +147,6 @@ int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   if (pUser == NULL) return 0;
 
   if (strcmp(pUser->pAcct->user, "root") != 0) {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -222,8 +219,6 @@ int32_t bnGetScoresMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->pIter = NULL;
 
-  mnodeDecUserRef(pUser);
-
   return 0;
 }
 
@@ -280,7 +275,6 @@ int32_t bnRetrieveScores(SShowObj *pShow, char *data, int32_t rows, void *pConn)
     cols++;
 
     numOfRows++;
-    mnodeDecDnodeRef(pDnode);
   }
 
   mnodeVacuumResult(data, pShow->numOfColumns, numOfRows, rows, pShow);

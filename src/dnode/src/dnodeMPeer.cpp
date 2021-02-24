@@ -123,7 +123,7 @@ void dnodeDispatchToMPeerQueue(SRpcMsg *pMsg) {
 }
 
 static void dnodeFreeMPeerMsg(SMnodeMsg *pPeer) {
-  mnodeCleanupMsg(pPeer);
+  delete pPeer;
   taosFreeQitem(pPeer);
 }
 

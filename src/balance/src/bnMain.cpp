@@ -84,8 +84,6 @@ static void bnAdjustVnodeIndex(SVgObj *pInVg) {
       if (pVgroup->vnodeGid[0].dnodeId == d1Id) d1Num++;
       if (pVgroup->vnodeGid[0].dnodeId == d2Id) d2Num++;
     }
-
-    mnodeDecVgroupRef(pVgroup);
   }
 
   if (pInVg->numOfVnodes == 1) {
@@ -134,7 +132,6 @@ static void bnDiscardVnode(SVgObj *pVgroup, SVnodeGid *pVnodeGid) {
   SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(pVnodeGid->dnodeId));
   if (pDnode != NULL) {
     pDnode->openVnodes--;
-    mnodeDecDnodeRef(pDnode);
   }
 
   SVnodeGid vnodeGid[TSDB_MAX_REPLICA]; memset(vnodeGid, 0, sizeof(vnodeGid)); /* = {0}; */
@@ -194,7 +191,6 @@ int32_t bnAllocVnodes(SVgObj *pVgroup) {
       if (pDnode == NULL) break;
       mDebug("dnode:%d, status:%s vnodes:%d disk:%fGB role:%d", pDnode->dnodeId, dnodeStatus[pDnode->status],
              pDnode->openVnodes.load(), pDnode->diskAvailable, pDnode->alternativeRole);
-      mnodeDecDnodeRef(pDnode);
     }
 
     if (mnodeGetOnlineDnodesNum() == 0) {
@@ -371,13 +367,10 @@ static bool bnMonitorBalance() {
                  pVgroup->vgId, pSrcDnode->dnodeId, pDestDnode->dnodeId, pSrcDnode->score,
                  srcScore, pDestDnode->score, destScore);
           bnAddVnode(pVgroup, pSrcDnode, pDestDnode);
-          mnodeDecVgroupRef(pVgroup);
           mnodeCancelGetNextVgroup(pIter);
           return true;
         }
       }
-
-      mnodeDecVgroupRef(pVgroup);
     }
   }
 
@@ -403,7 +396,6 @@ void bnReset() {
       pDnode->offlineReason = TAOS_DN_OFF_STATUS_NOT_RECEIVED;
     }
 
-    mnodeDecDnodeRef(pDnode);
   }
 
   tsAccessSquence = 0;
@@ -438,7 +430,6 @@ static bool bnMonitorVgroups() {
       }
     }
 
-    mnodeDecVgroupRef(pVgroup);
     if (code == TSDB_CODE_SUCCESS) {
       mnodeCancelGetNextVgroup(pIter);
       break;
@@ -459,7 +450,6 @@ bool SDnodeObj::monitorDropping() {
     if (pVgroup == NULL) break;
 
     hasThisDnode = bnCheckDnodeInVgroup(this, pVgroup);
-    mnodeDecVgroupRef(pVgroup);
 
     if (hasThisDnode) {
       mnodeCancelGetNextVgroup(pIter);
@@ -481,7 +471,6 @@ static bool bnMontiorDropping() {
   SDnodeObj *pDnode = NULL;
 
   while (1) {
-    mnodeDecDnodeRef(pDnode);
     pIter = mnodeGetNextDnode(pIter, &pDnode);
     if (pDnode == NULL) break;
 
@@ -494,14 +483,12 @@ static bool bnMontiorDropping() {
               tsAccessSquence - pDnode->lastAccess);
 
       pDnode->update(TAOS_DN_STATUS_DROPPING);
-      mnodeDecDnodeRef(pDnode);
       mnodeCancelGetNextDnode(pIter);
       return true;
     }
 
     if (pDnode->status == TAOS_DN_STATUS_DROPPING) {
       bool ret = pDnode->monitorDropping();
-      mnodeDecDnodeRef(pDnode);
       mnodeCancelGetNextDnode(pIter);
       return ret;
     }
@@ -545,7 +532,6 @@ static void bnSetVgroupOffline(SDnodeObj* pDnode) {
         pVgroup->vnodeGid[i].role = TAOS_SYNC_ROLE_OFFLINE;
       }
     }
-    mnodeDecVgroupRef(pVgroup);
   }
 }
 
@@ -566,7 +552,6 @@ void bnCheckStatus() {
         bnStartTimer(3000);
       }
     }
-    mnodeDecDnodeRef(pDnode);
   }
 }
 
@@ -604,8 +589,6 @@ int32_t bnDropDnode(SDnodeObj *pDnode) {
     if (pTempDnode != pDnode && bnCheckFree(pTempDnode)) {
       totalFreeVnodes += (TSDB_MAX_VNODES - pTempDnode->openVnodes);
     }
-
-    mnodeDecDnodeRef(pTempDnode);
   }
 
   if (pDnode->openVnodes > totalFreeVnodes) {
@@ -668,7 +651,6 @@ int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnode
 
   SDnodeObj *pDestDnode = static_cast<SDnodeObj *>(mnodeGetDnode(dnodeId));
   if (pDestDnode == NULL) {
-    mnodeDecVgroupRef(pVgroup);
     mError("dnode:%d, failed to alter vgId:%d to dnode:%d, for dnode not exist", pSrcDnode->dnodeId, vnodeId, dnodeId);
     return TSDB_CODE_MND_DNODE_NOT_EXIST;
   }
@@ -696,9 +678,6 @@ int32_t bnAlterDnode(struct SDnodeObj *pSrcDnode, int32_t vnodeId, int32_t dnode
 
   bnReleaseDnodes();
   tsBnMgmt.unlock();
-
-  mnodeDecVgroupRef(pVgroup);
-  mnodeDecDnodeRef(pDestDnode);
 
   return code;
 }

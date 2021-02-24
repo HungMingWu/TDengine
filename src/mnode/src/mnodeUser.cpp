@@ -37,11 +37,10 @@ static std::shared_ptr<SSdbTable> tsUserSdb;
 static int32_t tsUserUpdateSize = 0;
 
 int32_t SUserObj::insert() {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
+  std::shared_ptr<SAcctObj> pAcct(static_cast<SAcctObj *>(mnodeGetAcct(acct)));
 
   if (pAcct != NULL) {
     mnodeAddUserToAcct(pAcct, this);
-    mnodeDecAcctRef(pAcct);
   } else {
     mError("user:%s, acct:%s info not exist in sdb", user, acct);
     return TSDB_CODE_MND_INVALID_ACCT;
@@ -51,11 +50,10 @@ int32_t SUserObj::insert() {
 }
 
 int32_t SUserObj::remove() {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
+  AcctObjPtr pAcct(static_cast<SAcctObj *>(mnodeGetAcct(acct)));
 
   if (pAcct != NULL) {
     mnodeDropUserFromAcct(pAcct, this);
-    mnodeDecAcctRef(pAcct);
   }
 
   return TSDB_CODE_SUCCESS;
@@ -67,7 +65,6 @@ int32_t SUserObj::update() {
     memcpy(pSaved, this, tsUserUpdateSize);
     delete this;
   }
-  mnodeDecUserRef(pSaved);
   return TSDB_CODE_SUCCESS;
 }
 
@@ -94,8 +91,6 @@ static void mnodePrintUserAuth() {
     char *base64 = base64_encode((const unsigned char *)pUser->pass, TSDB_KEY_LEN * 2);
     fprintf(fp, "user:%24s auth:%s\n", pUser->user, base64);
     free(base64);
-
-    mnodeDecUserRef(pUser);
   }
 
   fflush(fp);
@@ -106,10 +101,8 @@ class UserTable : public SSdbTable {
  public:
   using SSdbTable::SSdbTable;
   int32_t decode(SSdbRow *pRow) override {
-    auto pUser = new SUserObj;
-    if (pUser == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-    memcpy(pUser, pRow->rowData, tsUserUpdateSize);
+    auto pUser = std::make_shared<SUserObj>();
+    memcpy(pUser.get(), pRow->rowData, tsUserUpdateSize);
     pRow->pObj = pUser;
     return TSDB_CODE_SUCCESS;
   }
@@ -121,7 +114,6 @@ class UserTable : public SSdbTable {
       mnodeCreateUser(pAcct, TSDB_DEFAULT_USER, TSDB_DEFAULT_PASS, NULL);
       mnodeCreateUser(pAcct, "monitor", tsInternalPass, NULL);
       mnodeCreateUser(pAcct, "_" TSDB_DEFAULT_USER, tsInternalPass, NULL);
-      mnodeDecAcctRef(pAcct);
     }
 
     if (tsPrintAuth != 0) {
@@ -174,7 +166,7 @@ static int32_t mnodeUpdateUser(SUserObj *pUser, void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsUserSdb.get();
-  row.pObj = pUser;
+  row.pObj.reset(pUser);
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
   int32_t code = row.Update();
@@ -201,10 +193,9 @@ int32_t mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg) {
     return TSDB_CODE_MND_INVALID_PASS_FORMAT;
   }
 
-  SUserObj *pUser = mnodeGetUser(name);
+  std::shared_ptr<SUserObj> pUser(mnodeGetUser(name));
   if (pUser != NULL) {
     mDebug("user:%s, is already there", name);
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_USER_ALREADY_EXIST;
   }
 
@@ -213,7 +204,7 @@ int32_t mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg) {
     return code;
   }
 
-  pUser = static_cast<SUserObj *>(calloc(1, sizeof(SUserObj)));
+  pUser.reset(new SUserObj);
   tstrncpy(pUser->user, name, TSDB_USER_LEN);
   taosEncryptPass((uint8_t*) pass, strlen(pass), pUser->pass);
   strcpy(pUser->acct, pAcct->user);
@@ -234,7 +225,6 @@ int32_t mnodeCreateUser(SAcctObj *pAcct, char *name, char *pass, void *pMsg) {
   code = row.Insert();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("user:%s, failed to create by %s, reason:%s", pUser->user, mnodeGetUserFromMsg(pMsg), tstrerror(code));
-    tfree(pUser);
   } else {
     mLInfo("user:%s, is created by %s", pUser->user, mnodeGetUserFromMsg(pMsg));
   }
@@ -246,7 +236,7 @@ static int32_t mnodeDropUser(SUserObj *pUser, void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsUserSdb.get();
-  row.pObj = pUser;
+  row.pObj.reset(pUser);
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
   int32_t code = row.Delete();
@@ -304,7 +294,6 @@ int32_t mnodeGetUserMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   pShow->numOfRows = pUser->pAcct->acctInfo.numOfUsers;
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
 
-  mnodeDecUserRef(pUser);
   return 0;
 }
 
@@ -346,7 +335,6 @@ int32_t mnodeRetrieveUsers(SShowObj *pShow, char *data, int32_t rows, void *pCon
     cols++;
 
     numOfRows++;
-    mnodeDecUserRef(pUser);
   }
 
   mnodeVacuumResult(data, pShow->numOfColumns, numOfRows, rows, pShow);
@@ -378,7 +366,7 @@ int32_t mnodeProcessCreateUserMsg(SMnodeMsg *pMsg) {
   
   if (pOperUser->superAuth) {
     SCreateUserMsg *pCreate = static_cast<SCreateUserMsg *>(pMsg->rpcMsg.pCont);
-    return mnodeCreateUser(pOperUser->pAcct, pCreate->user, pCreate->pass, pMsg);
+    return mnodeCreateUser(pOperUser->pAcct.get(), pCreate->user, pCreate->pass, pMsg);
   } else {
     mError("user:%s, no rights to create user", pOperUser->user);
     return TSDB_CODE_MND_NO_RIGHTS;
@@ -396,7 +384,6 @@ int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg) {
   }
 
   if (strcmp(pUser->user, "monitor") == 0 || (strcmp(pUser->user + 1, pUser->acct) == 0 && pUser->user[0] == '_')) {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -469,7 +456,6 @@ int32_t mnodeProcessAlterUserMsg(SMnodeMsg *pMsg) {
     code = TSDB_CODE_MND_NO_RIGHTS;
   }
 
-  mnodeDecUserRef(pUser);
   return code;
 }
 
@@ -485,7 +471,6 @@ int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg) {
 
   if (strcmp(pUser->user, "monitor") == 0 || strcmp(pUser->user, pUser->acct) == 0 ||
     (strcmp(pUser->user + 1, pUser->acct) == 0 && pUser->user[0] == '_')) {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -510,7 +495,6 @@ int32_t mnodeProcessDropUserMsg(SMnodeMsg *pMsg) {
     code = TSDB_CODE_MND_NO_RIGHTS;
   }
 
-  mnodeDecUserRef(pUser);
   return code;
 }
 
@@ -528,12 +512,11 @@ void mnodeDropAllUsers(SAcctObj *pAcct)  {
       SSdbRow row;
       row.type = SDB_OPER_LOCAL;
       row.pTable = tsUserSdb.get();
-      row.pObj = pUser;
+      row.pObj.reset(pUser);
       row.Delete();
       numOfUsers++;
     }
 
-    mnodeDecUserRef(pUser);
   }
 
   mDebug("acct:%s, all users:%d is dropped from sdb", pAcct->user, numOfUsers);
@@ -557,7 +540,6 @@ int32_t mnodeRetriveAuth(char *user, char *spi, char *encrypt, char *secret, cha
     *ckey = 0;
 
     memcpy(secret, pUser->pass, TSDB_KEY_LEN);
-    mnodeDecUserRef(pUser);
     mDebug("user:%s, auth info is returned", user);
     return TSDB_CODE_SUCCESS;
   }

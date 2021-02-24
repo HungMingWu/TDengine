@@ -21,6 +21,7 @@
 #include "mnode.h"
 #include "walInt.h"
 #include "object.h"
+#include "taoserror.h"
 
 typedef enum {
   SDB_TABLE_CLUSTER = 0,
@@ -107,6 +108,37 @@ struct SSdbTable {
   void *  getObjKey(void *key);
   virtual int32_t decode(SSdbRow *pRow) = 0;
   virtual int32_t restore() = 0;
+};
+
+template <class K, class V> 
+class SdbHashTable : public SSdbTable {
+ protected:
+  std::unordered_map<K, std::shared_ptr<V>> objects;
+
+ public:
+  using SSdbTable::SSdbTable;
+
+  int32_t insert(const K& key, std::shared_ptr<V> obj) {
+    //sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rows:%" PRId64 "", name, key.c_str(), numOfRows.load());
+
+    int32_t code = obj->insert();
+    if (code != TSDB_CODE_SUCCESS) {
+      //sdbError("vgId:1, sdb:%s, failed to insert key:%s to hash, remove it", name, key.c_str());
+      obj->remove();
+      return code;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = objects.find(key);
+    if (it != objects.end()) {
+      //sdbError("vgId:1, sdb:%s, failed to insert:%s since it exist", name, key.c_str());
+      return TSDB_CODE_MND_SDB_OBJ_ALREADY_THERE;
+    }
+    objects[key] = obj;
+    atomic_add_fetch_32(&autoIndex, 1);
+
+    return code;
+  }
 };
 
 int32_t sdbInit();

@@ -124,7 +124,7 @@ void dnodeDispatchToMReadQueue(SRpcMsg *pMsg) {
 }
 
 static void dnodeFreeMReadMsg(SMnodeMsg *pRead) {
-  mnodeCleanupMsg(pRead);
+  delete pRead;
   taosFreeQitem(pRead);
 }
 

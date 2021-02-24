@@ -129,7 +129,7 @@ static void dnodeFreeMWriteMsg(SMnodeMsg *pWrite) {
   dTrace("msg:%p, app:%p type:%s is freed from mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
          taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get());
 
-  mnodeCleanupMsg(pWrite);
+  delete pWrite;
   taosFreeQitem(pWrite);
 }
 

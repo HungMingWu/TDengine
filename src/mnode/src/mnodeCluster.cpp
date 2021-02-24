@@ -49,10 +49,9 @@ int32_t SClusterObj::encode(SSdbRow *pRow) {
   return TSDB_CODE_SUCCESS;
 }
 
-class ClusterTable : public SSdbTable {
-  std::unordered_map<std::string, SClusterObjPtr> objects;
+class ClusterTable : public SdbHashTable<std::string, SClusterObj> {
  public:
-  using SSdbTable::SSdbTable;
+  using SdbHashTable::SdbHashTable;
   int32_t decode(SSdbRow *pRow) override {
     auto pCluster = std::make_shared<SClusterObj>();
     memcpy(pCluster.get(), pRow->rowData, tsClusterUpdateSize);
@@ -73,31 +72,7 @@ class ClusterTable : public SSdbTable {
     mnodeUpdateClusterId();
     return TSDB_CODE_SUCCESS;
   }
-  int32_t insert(const std::string &, SClusterObjPtr);
 };
-
-int32_t ClusterTable::insert(const std::string &key, SClusterObjPtr obj) {
-  sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rows:%" PRId64 "", name, key.c_str(),
-           numOfRows.load());
-
-  int32_t code = obj->insert();
-  if (code != TSDB_CODE_SUCCESS) {
-    sdbError("vgId:1, sdb:%s, failed to insert key:%s to hash, remove it", name, key.c_str());
-    obj->remove();
-    return code;
-  }
-
-  std::lock_guard<std::mutex> lock(mutex);
-  auto it = objects.find(key);
-  if  (it == objects.end()) {
-    sdbError("vgId:1, sdb:%s, failed to insert:%s since it exist", name, key.c_str());
-    return TSDB_CODE_MND_SDB_OBJ_ALREADY_THERE;
-  }
-  objects[key] = obj;
-  atomic_add_fetch_32(&autoIndex, 1);
-
-  return code;
-}
 
 static std::shared_ptr<ClusterTable> tsClusterSdb;
 
