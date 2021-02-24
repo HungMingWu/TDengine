@@ -26,8 +26,6 @@
 #include "mnodeVgroup.h"
 #include "SdbMgmt.h"
 
-std::shared_ptr<SSdbTable> tsAcctSdb;
-
 static int32_t tsAcctUpdateSize;
 static int32_t mnodeCreateRootAcct();
 
@@ -43,12 +41,13 @@ int32_t SAcctObj::remove() {
 }
 
 int32_t SAcctObj::update() {
+    #if 0
   SAcctObj *pSaved = static_cast<SAcctObj *>(mnodeGetAcct(user));
   if (this != pSaved) {
     memcpy(pSaved, this, tsAcctUpdateSize);
     delete this;
   }
-  mnodeDecAcctRef(pSaved);
+  #endif
   return TSDB_CODE_SUCCESS;
 }
 
@@ -62,10 +61,8 @@ class AcctTable : public SSdbTable {
  public:
   using SSdbTable::SSdbTable;
   int32_t decode(SSdbRow *pRow) override {
-    auto pAcct = new SAcctObj;
-    if (pAcct == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-    memcpy(pAcct, pRow->rowData, tsAcctUpdateSize);
+    auto pAcct = std::make_shared<SAcctObj>();
+    memcpy(pAcct.get(), pRow->rowData, tsAcctUpdateSize);
     pRow->pObj = pAcct;
     return TSDB_CODE_SUCCESS;
   }
@@ -84,6 +81,8 @@ class AcctTable : public SSdbTable {
     return TSDB_CODE_SUCCESS;
   }
 };
+
+std::shared_ptr<AcctTable> tsAcctSdb;
 
 int32_t mnodeInitAccts() {
   SAcctObj tObj;
@@ -123,7 +122,6 @@ void mnodeGetStatOfAllAcct(SAcctInfo* pAcctInfo) {
     }
     pAcctInfo->numOfDbs += pAcct->acctInfo.numOfDbs;
     pAcctInfo->numOfTimeSeries += pAcct->acctInfo.numOfTimeSeries;
-    mnodeDecAcctRef(pAcct);
   }
 
   SVgObj *pVgroup = NULL;
@@ -136,7 +134,6 @@ void mnodeGetStatOfAllAcct(SAcctInfo* pAcctInfo) {
     pAcctInfo->totalStorage += pVgroup->totalStorage;
     pAcctInfo->compStorage += pVgroup->compStorage;
     pAcctInfo->totalPoints += pVgroup->pointsWritten;
-    mnodeDecVgroupRef(pVgroup);
   }
 }
 
@@ -152,44 +149,31 @@ void mnodeCancelGetNextAcct(void *pIter) {
   tsAcctSdb->freeIter(pIter);
 }
 
-void mnodeIncAcctRef(SAcctObj *pAcct) {
-  tsAcctSdb->incRef(pAcct);
-}
-
-void mnodeDecAcctRef(SAcctObj *pAcct) {
-  tsAcctSdb->decRef(pAcct);
-}
-
-void mnodeAddDbToAcct(SAcctObj *pAcct, SDbObj *pDb) {
+void mnodeAddDbToAcct(AcctObjPtr pAcct, SDbObj *pDb) {
   pAcct->acctInfo.numOfDbs++;
   pDb->pAcct = pAcct;
-  mnodeIncAcctRef(pAcct);
 }
 
-void mnodeDropDbFromAcct(SAcctObj *pAcct, SDbObj *pDb) {
+void mnodeDropDbFromAcct(AcctObjPtr pAcct, SDbObj *pDb) {
   pAcct->acctInfo.numOfDbs--;
-  pDb->pAcct = NULL;
-  mnodeDecAcctRef(pAcct);
+  pDb->pAcct.reset();
 }
 
-void mnodeAddUserToAcct(SAcctObj *pAcct, SUserObj *pUser) {
+void mnodeAddUserToAcct(AcctObjPtr pAcct, SUserObj *pUser) {
   pAcct->acctInfo.numOfUsers++;
   pUser->pAcct = pAcct;
-  mnodeIncAcctRef(pAcct);
 }
 
-void mnodeDropUserFromAcct(SAcctObj *pAcct, SUserObj *pUser) {
+void mnodeDropUserFromAcct(AcctObjPtr pAcct, SUserObj *pUser) {
   pAcct->acctInfo.numOfUsers--;
-  pUser->pAcct = NULL;
-  mnodeDecAcctRef(pAcct);
+  pUser->pAcct.reset();
 }
 
 static int32_t mnodeCreateRootAcct() {
   int32_t numOfAccts = tsAcctSdb->getNumOfRows();
   if (numOfAccts != 0) return TSDB_CODE_SUCCESS;
 
-  SAcctObj *pAcct = static_cast<SAcctObj *>(malloc(sizeof(SAcctObj)));
-  memset(pAcct, 0, sizeof(SAcctObj));
+  auto pAcct = std::make_shared<SAcctObj>();
   strcpy(pAcct->user, TSDB_DEFAULT_USER);
   taosEncryptPass((uint8_t *)TSDB_DEFAULT_PASS, strlen(TSDB_DEFAULT_PASS), pAcct->pass);
   pAcct->cfg.maxUsers = 128;

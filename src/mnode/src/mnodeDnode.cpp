@@ -97,13 +97,13 @@ int32_t SDnodeObj::remove() {
 }
 
 int32_t SDnodeObj::update() {
+    #if 0
   SDnodeObj *pDnode = static_cast<SDnodeObj *>(mnodeGetDnode(dnodeId));
   if (pDnode != NULL && this != pDnode) {
     memcpy(pDnode, this, sizeof(SDnodeObj));
     delete this;
   }
-  mnodeDecDnodeRef(pDnode);
-
+  #endif
   mnodeUpdateDnodeEps();
   return TSDB_CODE_SUCCESS;
 }
@@ -118,10 +118,8 @@ class DnodeTable : public SSdbTable {
  public:
   using SSdbTable::SSdbTable;
   int32_t decode(SSdbRow *pRow) override {
-    auto pDnode = new SDnodeObj;
-    if (pDnode == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-    memcpy(pDnode, pRow->rowData, tsDnodeUpdateSize);
+    auto pDnode = std::make_shared<SDnodeObj>();
+    memcpy(pDnode.get(), pRow->rowData, tsDnodeUpdateSize);
     pRow->pObj = pDnode;
     return TSDB_CODE_SUCCESS;
   }
@@ -133,7 +131,6 @@ class DnodeTable : public SSdbTable {
       SDnodeObj *pDnode = mnodeGetDnodeByEp(tsLocalEp);
       if (pDnode != NULL) {
         mnodeCreateMnode(pDnode->dnodeId, pDnode->dnodeEp, false);
-        mnodeDecDnodeRef(pDnode);
       }
     }
 
@@ -194,7 +191,6 @@ int32_t mnodeGetOnlinDnodesCpuCoreNum() {
     if (pDnode->status != TAOS_DN_STATUS_OFFLINE) {
       cpuCores += pDnode->numOfCores;
     }
-    mnodeDecDnodeRef(pDnode);
   }
 
   if (cpuCores < 2) cpuCores = 2;
@@ -210,7 +206,6 @@ int32_t mnodeGetOnlineDnodesNum() {
     pIter = mnodeGetNextDnode(pIter, &pDnode);
     if (pDnode == NULL) break;
     if (pDnode->status != TAOS_DN_STATUS_OFFLINE) onlineDnodes++;
-    mnodeDecDnodeRef(pDnode);
   }
 
   return onlineDnodes;
@@ -231,26 +226,17 @@ SDnodeObj *mnodeGetDnodeByEp(char *ep) {
       mnodeCancelGetNextDnode(pIter);
       return pDnode;
     }
-    mnodeDecDnodeRef(pDnode);
   }
 
 
   return NULL;
 }
 
-void mnodeIncDnodeRef(SDnodeObj *pDnode) {
-  tsDnodeSdb->incRef(pDnode);
-}
-
-void mnodeDecDnodeRef(SDnodeObj *pDnode) {
-  tsDnodeSdb->decRef(pDnode);
-}
-
 void SDnodeObj::update(int status) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsDnodeSdb.get();
-  row.pObj = this;
+  row.pObj = shared_from_this();
 
   this->status = status;
   int32_t code = row.Update();
@@ -292,12 +278,10 @@ int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg) {
     int32_t dnodeId = 0;
     bool parseOk = taosCheckBalanceCfgOptions(pCmCfgDnode->config + 8, &vnodeId, &dnodeId);
     if (!parseOk) {
-      mnodeDecDnodeRef(pDnode);
       return TSDB_CODE_MND_INVALID_DNODE_CFG_OPTION;
     }
 
     int32_t code = bnAlterDnode(pDnode, vnodeId, dnodeId);
-    mnodeDecDnodeRef(pDnode);
     return code;
   } else {
     SCfgDnodeMsg *pMdCfgDnode = static_cast<SCfgDnodeMsg *>(rpcMallocCont(sizeof(SCfgDnodeMsg)));
@@ -313,7 +297,6 @@ int32_t mnodeProcessCfgDnodeMsg(SMnodeMsg *pMsg) {
 
     mInfo("dnode:%s, is configured by %s", pCmCfgDnode->ep, pMsg->pUser->user);
     dnodeSendMsgToDnode(&epSet, &rpcMdCfgDnodeMsg);
-    mnodeDecDnodeRef(pDnode);
     return TSDB_CODE_SUCCESS;
   }
 }
@@ -437,7 +420,6 @@ static void mnodeUpdateDnodeEps() {
     pEp->dnodeId = htonl(pDnode->dnodeId);
     pEp->dnodePort = htons(pDnode->dnodePort);
     tstrncpy(pEp->dnodeFqdn, pDnode->dnodeFqdn, TSDB_FQDN_LEN);
-    mnodeDecDnodeRef(pDnode);
   }
 
   pthread_mutex_unlock(&tsDnodeEpsMutex);
@@ -508,7 +490,6 @@ int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
 
   SStatusRsp *pRsp = static_cast<SStatusRsp *>(rpcMallocCont(contLen));
   if (pRsp == NULL) {
-    mnodeDecDnodeRef(pDnode);
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
 
@@ -535,7 +516,6 @@ int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
       pAccess->vgId = htonl(pVload->vgId);
       pAccess->accessState = pVgroup->accessState;
       pAccess++;
-      mnodeDecVgroupRef(pVgroup);
     }
   }
 
@@ -544,7 +524,6 @@ int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
     int32_t ret = mnodeCheckClusterCfgPara(&(pStatus->clusterCfg));
     if (0 != ret) {
       pDnode->offlineReason = ret;
-      mnodeDecDnodeRef(pDnode);
       rpcFreeCont(pRsp);
       mError("dnode:%d, %s cluster cfg parameters inconsistent, reason:%s", pDnode->dnodeId, pStatus->dnodeEp,
              offlineReason[ret]);
@@ -567,8 +546,6 @@ int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {
   //this func should be called after sdb replica changed
   mnodeGetMnodeInfos(&pRsp->mnodes);
   
-  mnodeDecDnodeRef(pDnode);
-
   SDnodeEps *pEps = (SDnodeEps *)((char *)pRsp + sizeof(SStatusRsp) + vgAccessSize);
   mnodeGetDnodeEpsData(pEps, epsSize);
 
@@ -599,7 +576,6 @@ static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg) {
 
   SDnodeObj *pDnode = mnodeGetDnodeByEp(ep);
   if (pDnode != NULL) {
-    mnodeDecDnodeRef(pDnode);
     mError("dnode:%d, already exist, %s:%d", pDnode->dnodeId, pDnode->dnodeFqdn, pDnode->dnodePort);
     return TSDB_CODE_MND_DNODE_ALREADY_EXIST;
   }
@@ -614,7 +590,7 @@ static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsDnodeSdb.get();
-  row.pObj = pDnode;
+  row.pObj.reset(pDnode);
   row.rowSize = sizeof(SDnodeObj);
   row.pMsg = pMsg;
 
@@ -634,7 +610,7 @@ int32_t SDnodeObj::drop(void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsDnodeSdb.get();
-  row.pObj = this;
+  row.pObj = shared_from_this();
   row.pMsg = static_cast<SMnodeMsg *>(pMsg);
 
   int32_t code = row.Delete();
@@ -660,14 +636,12 @@ static int32_t mnodeDropDnodeByEp(char *ep, SMnodeMsg *pMsg) {
 
   if (strcmp(pDnode->dnodeEp, mnodeGetMnodeMasterEp()) == 0) {
     mError("dnode:%d, can't drop dnode:%s which is master", pDnode->dnodeId, ep);
-    mnodeDecDnodeRef(pDnode);
     return TSDB_CODE_MND_NO_REMOVE_MASTER;
   }
 
   mInfo("dnode:%d, start to drop it", pDnode->dnodeId);
 
   int32_t code = bnDropDnode(pDnode);
-  mnodeDecDnodeRef(pDnode);
   return code;
 }
 
@@ -696,7 +670,6 @@ int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   if (pUser == NULL) return 0;
 
   if (strcmp(pUser->pAcct->user, TSDB_DEFAULT_USER) != 0) {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -767,8 +740,6 @@ int32_t mnodeGetDnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->pIter = NULL;
 
-  mnodeDecUserRef(pUser);
-
   return 0;
 }
 
@@ -819,7 +790,6 @@ int32_t mnodeRetrieveDnodes(SShowObj *pShow, char *data, int32_t rows, void *pCo
     cols++;
 
     numOfRows++;
-    mnodeDecDnodeRef(pDnode);
   }
 
   if (tsArbitrator[0] != 0) {
@@ -878,7 +848,6 @@ int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   if (pUser == NULL) return 0;
 
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0)  {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -919,7 +888,6 @@ int32_t mnodeGetModuleMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   pShow->numOfRows = mnodeGetDnodesNum() * TSDB_MOD_MAX;
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->pIter = NULL;
-  mnodeDecUserRef(pUser);
 
   return 0;
 }
@@ -960,8 +928,6 @@ int32_t mnodeRetrieveModules(SShowObj *pShow, char *data, int32_t rows, void *pC
 
       numOfRows++;
     }
-
-    mnodeDecDnodeRef(pDnode);
   }
 
   mnodeVacuumResult(data, pShow->numOfColumns, numOfRows, rows, pShow);
@@ -982,7 +948,6 @@ int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   if (pUser == NULL) return 0;
 
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0)  {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -1015,7 +980,6 @@ int32_t mnodeGetConfigMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
 
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->pIter = NULL;
-  mnodeDecUserRef(pUser);
 
   return 0;
 }
@@ -1080,7 +1044,6 @@ int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   if (pUser == NULL) return 0;
   
   if (strcmp(pUser->user, TSDB_DEFAULT_USER) != 0)  {
-    mnodeDecUserRef(pUser);
     return TSDB_CODE_MND_NO_RIGHTS;
   }
 
@@ -1114,12 +1077,10 @@ int32_t mnodeGetVnodeMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
 
   if (pDnode != NULL) {
     pShow->numOfRows += pDnode->openVnodes;
-    mnodeDecDnodeRef(pDnode);
   }
 
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->pIter = pDnode;
-  mnodeDecUserRef(pUser);
 
   return 0;
 }
@@ -1154,8 +1115,6 @@ int32_t mnodeRetrieveVnodes(SShowObj *pShow, char *data, int32_t rows, void *pCo
           cols++;
         }
       }
-
-      mnodeDecVgroupRef(pVgroup);
     }
   } else {
     numOfRows = 0;

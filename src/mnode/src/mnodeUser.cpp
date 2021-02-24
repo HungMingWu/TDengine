@@ -170,14 +170,6 @@ void mnodeCancelGetNextUser(void *pIter) {
   tsUserSdb->freeIter(pIter);
 }
 
-void mnodeIncUserRef(SUserObj *pUser) { 
-  return tsUserSdb->incRef(pUser); 
-}
-
-void mnodeDecUserRef(SUserObj *pUser) { 
-  return tsUserSdb->decRef(pUser); 
-}
-
 static int32_t mnodeUpdateUser(SUserObj *pUser, void *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;

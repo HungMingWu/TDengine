@@ -22,8 +22,6 @@ int32_t mnodeInitVgroups();
 void    mnodeCleanupVgroups();
 int64_t mnodeGetVgroupNum();
 SVgObj *mnodeGetVgroup(int32_t vgId);
-void    mnodeIncVgroupRef(SVgObj *pVgroup);
-void    mnodeDecVgroupRef(SVgObj *pVgroup);
 void    mnodeDropAllDbVgroups(SDbObj *pDropDb);
 void    mnodeSendDropAllDbVgroupsMsg(SDbObj *pDropDb);
 void    mnodeDropAllDnodeVgroups(SDnodeObj *pDropDnode);

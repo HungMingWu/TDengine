@@ -54,7 +54,7 @@ struct SSdbRow {
   int32_t    code;            // for callback in sdb queue
   int32_t    rowSize;
   void *     rowData;
-  objectBase* pObj;
+  ObjectPtr  pObj;
   SSdbTable *pTable;
   SMnodeMsg *pMsg;
   int32_t  (*fpReq)(SMnodeMsg *pMsg) = nullptr;
@@ -96,8 +96,6 @@ struct SSdbTable {
   void *fetchRow(void *pIter, void **ppRow);
   int64_t getNumOfRows() const;
   void    freeIter(void *pIter);
-  void    incRef(objectBase *pRow);
-  void    decRef(objectBase *pRow);
   int32_t Id() const { return autoIndex; }
   void *  getRowMetaFromObj(void *key);
   objectBase *getRowMeta(void *key);

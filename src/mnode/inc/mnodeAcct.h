@@ -24,11 +24,9 @@ void    mnodeGetStatOfAllAcct(SAcctInfo* pAcctInfo);
 void *  mnodeGetAcct(char *acctName);
 void *  mnodeGetNextAcct(void *pIter, SAcctObj **pAcct);
 void    mnodeCancelGetNextAcct(void *pIter);
-void    mnodeIncAcctRef(SAcctObj *pAcct);
-void    mnodeDecAcctRef(SAcctObj *pAcct);
-void    mnodeAddDbToAcct(SAcctObj *pAcct, SDbObj *pDb);
-void    mnodeDropDbFromAcct(SAcctObj *pAcct, SDbObj *pDb);
-void    mnodeAddUserToAcct(SAcctObj *pAcct, SUserObj *pUser);
-void    mnodeDropUserFromAcct(SAcctObj *pAcct, SUserObj *pUser);
+void    mnodeAddDbToAcct(AcctObjPtr pAcct, SDbObj *pDb);
+void    mnodeDropDbFromAcct(AcctObjPtr pAcct, SDbObj *pDb);
+void    mnodeAddUserToAcct(AcctObjPtr pAcct, SUserObj *pUser);
+void    mnodeDropUserFromAcct(AcctObjPtr pAcct, SUserObj *pUser);
 
 #endif

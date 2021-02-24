@@ -429,7 +429,7 @@ int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
   }
 
   SUserObj *pUser = pMsg->pUser;
-  SAcctObj *pAcct = pUser->pAcct;
+  auto pAcct = pUser->pAcct;
 
   if (pConnectMsg->db[0]) {
     char dbName[TSDB_TABLE_FNAME_LEN * 3] = {0};
@@ -443,10 +443,8 @@ int32_t mnodeProcessConnectMsg(SMnodeMsg *pMsg) {
     if (pDb->status != TSDB_DB_STATUS_READY) {
       mError("db:%s, status:%d, in dropping", pDb->name, pDb->status);
       code = TSDB_CODE_MND_DB_IN_DROPPING;
-      mnodeDecDbRef(pDb);
       return code;
     }
-    mnodeDecDbRef(pDb);
   }
 
   pConnectRsp = static_cast<SConnectRsp *>(rpcMallocCont(sizeof(SConnectRsp)));

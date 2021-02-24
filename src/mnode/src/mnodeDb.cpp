@@ -54,7 +54,7 @@ int64_t mnodeGetDbNum() {
 }
 
 int32_t SDbObj::insert() {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
+  std::shared_ptr<SAcctObj> pAcct(static_cast<SAcctObj *>(mnodeGetAcct(acct)));
 
   mutex.lock();
   vgListSize = VG_LIST_SIZE;
@@ -67,7 +67,6 @@ int32_t SDbObj::insert() {
 
   if (pAcct != NULL) {
     mnodeAddDbToAcct(pAcct, this);
-    mnodeDecAcctRef(pAcct);
   }
   else {
     mError("db:%s, acct:%s info not exist in sdb", name, acct);
@@ -78,7 +77,7 @@ int32_t SDbObj::insert() {
 }
 
 int32_t SDbObj::remove() {
-  SAcctObj *pAcct = static_cast<SAcctObj *>(mnodeGetAcct(acct));
+  std::shared_ptr<SAcctObj> pAcct(static_cast<SAcctObj *>(mnodeGetAcct(acct)));
 
   mnodeDropAllChildTables(this);
   mnodeDropAllSuperTables(this);
@@ -86,20 +85,20 @@ int32_t SDbObj::remove() {
 
   if (pAcct) {
     mnodeDropDbFromAcct(pAcct, this);
-    mnodeDecAcctRef(pAcct);
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
 int32_t SDbObj::update() {
+    #if 0
   SDbObj *pDb = mnodeGetDb(name);
   if (pDb != NULL && this != pDb) {
     memcpy(pDb, this, sizeof(SDbObj));
     delete this;
   }
   //mnodeUpdateAllDbVgroups(pDb);
-  mnodeDecDbRef(pDb);
+  #endif
   return TSDB_CODE_SUCCESS;
 }
 
@@ -113,10 +112,8 @@ class DbTable : public SSdbTable {
  public:
   using SSdbTable::SSdbTable;
   int32_t decode(SSdbRow *pRow) override {
-    auto pDb = new SDbObj;
-    if (pDb == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-    memcpy(pDb, pRow->rowData, tsDbUpdateSize);
+    auto pDb = std::make_shared<SDbObj>();
+    memcpy(pDb.get(), pRow->rowData, tsDbUpdateSize);
     pRow->pObj = pDb;
     return TSDB_CODE_SUCCESS;
   }
@@ -154,14 +151,6 @@ void mnodeCancelGetNextDb(void *pIter) {
 
 SDbObj *mnodeGetDb(char *db) {
   return (SDbObj *)tsDbSdb->getRow(db);
-}
-
-void mnodeIncDbRef(SDbObj *pDb) {
-  return tsDbSdb->incRef(pDb); 
-}
-
-void mnodeDecDbRef(SDbObj *pDb) { 
-  return tsDbSdb->decRef(pDb); 
 }
 
 SDbObj *mnodeGetDbByTableId(char *tableId) {
@@ -337,13 +326,12 @@ static int32_t mnodeCreateDbCb(SMnodeMsg *pMsg, int32_t code) {
   return code;
 }
 
-static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *pMsg) {
-  int32_t code = acctCheck(pAcct, ACCT_GRANT_DB);
+static int32_t mnodeCreateDb(AcctObjPtr pAcct, SCreateDbMsg *pCreate, SMnodeMsg *pMsg) {
+  int32_t code = acctCheck(pAcct.get(), ACCT_GRANT_DB);
   if (code != 0) return code;
 
-  SDbObj *pDb = mnodeGetDb(pCreate->db);
+  std::shared_ptr<SDbObj> pDb(mnodeGetDb(pCreate->db));
   if (pDb != NULL) {
-    mnodeDecDbRef(pDb); 
     if (pCreate->ignoreExist) {
       mDebug("db:%s, already exist, ignore exist is set", pCreate->db);
       return TSDB_CODE_SUCCESS;
@@ -356,7 +344,7 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
   code = grantCheck(TSDB_GRANT_DB);
   if (code != 0) return code;
 
-  pDb = static_cast<SDbObj *>(calloc(1, sizeof(SDbObj)));
+  pDb = std::make_shared<SDbObj>();
   tstrncpy(pDb->name, pCreate->db, sizeof(pDb->name));
   tstrncpy(pDb->acct, pAcct->user, sizeof(pDb->acct)); 
   pDb->createdTime = taosGetTimestampMs(); 
@@ -383,12 +371,10 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
 
   code = mnodeCheckDbCfg(&pDb->cfg);
   if (code != TSDB_CODE_SUCCESS) {
-    tfree(pDb);
     return code;
   }
 
-  pMsg->pDb = pDb;
-  mnodeIncDbRef(pDb);
+  pMsg->pDb = pDb.get();
 
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
@@ -402,7 +388,6 @@ static int32_t mnodeCreateDb(SAcctObj *pAcct, SCreateDbMsg *pCreate, SMnodeMsg *
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
     mError("db:%s, failed to create, reason:%s", pDb->name, tstrerror(code));
     pMsg->pDb = NULL;
-    delete pDb;
   }
 
   return code;
@@ -619,7 +604,6 @@ int32_t mnodeGetDbMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) {
   pShow->rowSize = pShow->offset[cols - 1] + pShow->bytes[cols - 1];
   pShow->numOfRows = pUser->pAcct->acctInfo.numOfDbs;
 
-  mnodeDecUserRef(pUser);
   return 0;
 }
 
@@ -643,7 +627,6 @@ int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn)
 
     if (pDb == NULL) break;
     if (pDb->pAcct != pUser->pAcct) {
-      mnodeDecDbRef(pDb);
       continue;
     }
 
@@ -760,13 +743,11 @@ int32_t mnodeRetrieveDbs(SShowObj *pShow, char *data, int32_t rows, void *pConn)
     cols++;
 
     numOfRows++;
-    mnodeDecDbRef(pDb);
   }
 
   pShow->numOfReads += numOfRows;
   mnodeVacuumResult(data, pShow->numOfColumns, numOfRows, rows, pShow);
 
-  mnodeDecUserRef(pUser);
   return numOfRows;
 }
 
@@ -777,7 +758,7 @@ static int32_t mnodeSetDbDropping(SDbObj *pDb) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsDbSdb.get();
-  row.pObj = pDb;
+  row.pObj.reset(pDb);
 
   int32_t code = row.Update();
   if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
@@ -965,7 +946,6 @@ static int32_t mnodeAlterDbCb(SMnodeMsg *pMsg, int32_t code) {
     if (pVgroup->pDb == pDb) {
       mnodeSendAlterVgroupMsg(pVgroup);
     }
-    mnodeDecVgroupRef(pVgroup);
   }
 
   mDebug("db:%s, all vgroups is altered", pDb->name);
@@ -993,7 +973,7 @@ static int32_t mnodeAlterDb(SDbObj *pDb, SAlterDbMsg *pAlter, void *pMsg) {
     SSdbRow row;
     row.type = SDB_OPER_GLOBAL;
     row.pTable = tsDbSdb.get();
-    row.pObj = pDb;
+    row.pObj.reset(pDb);
     row.pMsg = static_cast<SMnodeMsg *>(pMsg);
     row.fpRsp = mnodeAlterDbCb;
 
@@ -1044,7 +1024,7 @@ static int32_t mnodeDropDb(SMnodeMsg *pMsg) {
   SSdbRow row;
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsDbSdb.get();
-  row.pObj = pDb;
+  row.pObj.reset(pDb);
   row.pMsg = pMsg;
   row.fpRsp = mnodeDropDbCb;
 
@@ -1101,17 +1081,16 @@ void  mnodeDropAllDbs(SAcctObj *pAcct)  {
     pIter = mnodeGetNextDb(pIter, &pDb);
     if (pDb == NULL) break;
 
-    if (pDb->pAcct == pAcct) {
+    if (pDb->pAcct.get() == pAcct) {
       mInfo("db:%s, drop db from sdb for acct:%s is dropped", pDb->name, pAcct->user);
       SSdbRow row;
       row.type = SDB_OPER_LOCAL;
       row.pTable = tsDbSdb.get();
-      row.pObj = pDb;
+      row.pObj.reset(pDb);
       
       row.Delete();
       numOfDbs++;
     }
-    mnodeDecDbRef(pDb);
   }
 
   mInfo("acct:%s, all dbs:%d is dropped from sdb", pAcct->user, numOfDbs);

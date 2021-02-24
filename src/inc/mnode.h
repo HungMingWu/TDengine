@@ -30,13 +30,14 @@ typedef struct {
   void *  rsp;
 } SMnodeRsp;
 
-typedef struct SMnodeMsg {
+using TableObjPtr = std::shared_ptr<STableObj>;
+struct SMnodeMsg {
   struct SAcctObj * pAcct;
   struct SDnodeObj *pDnode;
   struct SUserObj * pUser;
   struct SDbObj *   pDb;
   struct SVgObj *   pVgroup;
-  struct STableObj *pTable;
+  TableObjPtr pTable;
   struct SSTableObj*pSTable;
   struct SMnodeMsg *pBatchMasterMsg;
   SMnodeRsp rpcRsp;
@@ -49,11 +50,13 @@ typedef struct SMnodeMsg {
   void *    pObj;
   SRpcMsg   rpcMsg;
   char      pCont[];
-} SMnodeMsg;
+
+ public:
+  ~SMnodeMsg();
+};
 
 void *  mnodeCreateMsg(SRpcMsg *pRpcMsg);
 int32_t mnodeInitMsg(SMnodeMsg *pMsg);
-void    mnodeCleanupMsg(SMnodeMsg *pMsg);
 void    mnodeDestroySubMsg(SMnodeMsg *pSubMsg);
 
 int32_t mnodeInitSystem();

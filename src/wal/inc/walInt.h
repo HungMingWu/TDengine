@@ -55,10 +55,15 @@ struct SWalHead {
   int8_t   sver;
   int8_t   reserved[2];
   int32_t  len;
-  uint64_t version;
+  uint64_t version = 0;
   uint32_t signature;
   uint32_t cksum;
   std::vector<char>     cont;
+};
+
+struct SWalContent {
+  SWalHead head;
+  std::vector<uint8_t> body;
 };
 
 typedef int32_t FWalWrite(void *ahandle, SWalHead *pHead, int32_t qtype, void *pMsg);

@@ -60,17 +60,8 @@ int32_t mnodeInitMsg(SMnodeMsg *pMsg) {
   return TSDB_CODE_SUCCESS;
 }
 
-void mnodeCleanupMsg(SMnodeMsg *pMsg) {
-  if (pMsg != NULL) {
-    if (pMsg->rpcMsg.pCont != pMsg->pCont) {
-      tfree(pMsg->rpcMsg.pCont);
-    }
-    if (pMsg->pUser) mnodeDecUserRef(pMsg->pUser);
-    if (pMsg->pDb) mnodeDecDbRef(pMsg->pDb);
-    if (pMsg->pVgroup) mnodeDecVgroupRef(pMsg->pVgroup);
-    if (pMsg->pTable) mnodeDecTableRef(pMsg->pTable);
-    if (pMsg->pSTable) mnodeDecTableRef(pMsg->pSTable);
-    if (pMsg->pAcct) mnodeDecAcctRef(pMsg->pAcct);
-    if (pMsg->pDnode) mnodeDecDnodeRef(pMsg->pDnode);
+SMnodeMsg::~SMnodeMsg() {
+  if (rpcMsg.pCont != pCont) {
+    tfree(rpcMsg.pCont);
   }
 }

@@ -23,8 +23,6 @@ void    mnodeCleanupTables();
 int64_t mnodeGetSuperTableNum();
 int64_t mnodeGetChildTableNum();
 void *  mnodeGetTable(char *tableId);
-void    mnodeIncTableRef(STableObj *pTable);
-void    mnodeDecTableRef(STableObj *pTable);
 void *  mnodeGetNextChildTable(void *pIter, SCTableObj **pTable);
 void *  mnodeGetNextSuperTable(void *pIter, SSTableObj **pTable);
 void    mnodeCancelGetNextChildTable(void *pIter);

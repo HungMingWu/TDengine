@@ -24,6 +24,7 @@
 #include "taosmsg.h"
 #include "tidpool.h"
 #include "object.h"
+#include "mnodeDef.h"
 
 struct SVgObj;
 struct SDbObj;
@@ -54,8 +55,9 @@ struct SClusterObj : public objectBase {
     archive(self.uid, self.createdTime, self.reserved);
   }
 };
+using SClusterObjPtr = std::shared_ptr<SClusterObj>;
 
-struct SDnodeObj : public objectBase {
+struct SDnodeObj : public objectBase, public std::enable_shared_from_this<SDnodeObj> {
   int32_t    dnodeId;
   std::atomic<int32_t>    openVnodes;
   int64_t    createdTime;
@@ -155,7 +157,7 @@ struct SSTableObj : public STableObj {
   int32_t    vgId;
   int32_t    sqlLen;
   // Serialization above
-  char*      sql;          //used by normal table
+  char*      sql = nullptr;          //used by normal table
   std::vector<SSchema>   schema;       //used by normal table
   SSTableObj*superTable;
 
@@ -226,6 +228,47 @@ typedef struct {
   int8_t  reserved[10];
 } SDbCfg;
 
+struct SAcctInfo {
+  int64_t              totalStorage;  // Total storage wrtten from this account
+  int64_t              compStorage;   // Compressed storage on disk
+  int64_t              queryTime;
+  int64_t              totalPoints;
+  int64_t              inblound;
+  int64_t              outbound;
+  int64_t              sKey;
+  std::atomic<int32_t> numOfUsers;
+  std::atomic<int32_t> numOfDbs;
+  int32_t              numOfTimeSeries;
+  int32_t              numOfPointsPerSecond;
+  int32_t              numOfConns;
+  int32_t              numOfQueries;
+  int32_t              numOfStreams;
+  int8_t               accessState;  // Checked by mgmt heartbeat message
+  int8_t               reserved[3];
+};
+
+struct SAcctObj : public objectBase {
+  char      user[TSDB_USER_LEN];
+  char      pass[TSDB_KEY_LEN];
+  SAcctCfg  cfg;
+  int64_t   createdTime;
+  int32_t   acctId;
+  int8_t    status;
+  int8_t    reserved0[7];
+  // Serialization above
+  int8_t    reserved1[4];
+  SAcctInfo acctInfo;
+  std::mutex  mutex;
+
+ public:
+  ~SAcctObj() override = default;
+  int32_t insert() override;
+  int32_t remove() override;
+  int32_t encode(SSdbRow *pRow) override;
+  int32_t update() override;
+};
+using AcctObjPtr = std::shared_ptr<SAcctObj>;
+
 struct SDbObj : public objectBase {
   char    name[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   int8_t  reserved0[4];
@@ -236,14 +279,14 @@ struct SDbObj : public objectBase {
   int8_t  status;
   int8_t  reserved1[11];
   // Serialization above
-  int32_t numOfVgroups;
+  int32_t              numOfVgroups;
   std::atomic<int32_t> numOfTables;
   std::atomic<int32_t> numOfSuperTables;
-  int32_t vgListSize; 
-  int32_t vgListIndex;
-  SVgObj **vgList;
-  struct SAcctObj *pAcct;
-  std::mutex  mutex;
+  int32_t              vgListSize;
+  int32_t              vgListIndex;
+  SVgObj **            vgList = nullptr;
+  AcctObjPtr           pAcct;
+  std::mutex           mutex;
 
  public:
   ~SDbObj() override;
@@ -262,50 +305,10 @@ struct SUserObj : public objectBase {
   int8_t            writeAuth;
   int8_t            reserved[10];
   // Serialization above
-  struct SAcctObj * pAcct;
+  AcctObjPtr        pAcct;
 
  public:
   ~SUserObj() override = default;
-  int32_t insert() override;
-  int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
-  int32_t update() override;
-};
-
-struct SAcctInfo {
-  int64_t totalStorage;  // Total storage wrtten from this account
-  int64_t compStorage;   // Compressed storage on disk
-  int64_t queryTime;
-  int64_t totalPoints;
-  int64_t inblound;
-  int64_t outbound;
-  int64_t sKey;
-  std::atomic<int32_t> numOfUsers;
-  std::atomic<int32_t> numOfDbs;
-  int32_t numOfTimeSeries;
-  int32_t numOfPointsPerSecond;
-  int32_t numOfConns;
-  int32_t numOfQueries;
-  int32_t numOfStreams;
-  int8_t  accessState;   // Checked by mgmt heartbeat message
-  int8_t  reserved[3];
-};
-
-struct SAcctObj : public objectBase {
-  char      user[TSDB_USER_LEN];
-  char      pass[TSDB_KEY_LEN];
-  SAcctCfg  cfg;
-  int64_t   createdTime;
-  int32_t   acctId;
-  int8_t    status;
-  int8_t    reserved0[7];
-  // Serialization above
-  int8_t    reserved1[4];
-  SAcctInfo acctInfo;
-  std::mutex  mutex;
-
- public:
-  ~SAcctObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
   int32_t encode(SSdbRow *pRow) override;

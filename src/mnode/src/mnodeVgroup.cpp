@@ -200,14 +200,6 @@ int32_t mnodeInitVgroups() {
   return 0;
 }
 
-void mnodeIncVgroupRef(SVgObj *pVgroup) {
-  return tsVgroupSdb->incRef(pVgroup); 
-}
-
-void mnodeDecVgroupRef(SVgObj *pVgroup) { 
-  return tsVgroupSdb->decRef(pVgroup); 
-}
-
 SVgObj *mnodeGetVgroup(int32_t vgId) {
   return (SVgObj *)tsVgroupSdb->getRow(&vgId);
 }

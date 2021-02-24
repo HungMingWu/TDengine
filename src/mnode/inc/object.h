@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <memory>
 #include "serializer.h"
 
 struct SSdbRow;
@@ -13,3 +14,4 @@ struct objectBase {
   virtual int32_t encode(SSdbRow *pRow) = 0;
   virtual int32_t update() = 0;
 };
+using ObjectPtr = std::shared_ptr<objectBase>;

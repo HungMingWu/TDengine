@@ -24,7 +24,6 @@
 #include "tglobal.h"
 #include "SdbMgmt.h"
 
-static std::shared_ptr<SSdbTable> tsClusterSdb;
 static int32_t tsClusterUpdateSize;
 static char    tsClusterId[TSDB_CLUSTER_ID_LEN];
 static int32_t mnodeCreateCluster();
@@ -51,13 +50,12 @@ int32_t SClusterObj::encode(SSdbRow *pRow) {
 }
 
 class ClusterTable : public SSdbTable {
+  std::unordered_map<std::string, SClusterObjPtr> objects;
  public:
   using SSdbTable::SSdbTable;
   int32_t decode(SSdbRow *pRow) override {
-    auto *pCluster = new SClusterObj;
-    if (pCluster == NULL) return TSDB_CODE_MND_OUT_OF_MEMORY;
-
-    memcpy(pCluster, pRow->rowData, tsClusterUpdateSize);
+    auto pCluster = std::make_shared<SClusterObj>();
+    memcpy(pCluster.get(), pRow->rowData, tsClusterUpdateSize);
     pRow->pObj = pCluster;
     return TSDB_CODE_SUCCESS;
   }
@@ -75,12 +73,35 @@ class ClusterTable : public SSdbTable {
     mnodeUpdateClusterId();
     return TSDB_CODE_SUCCESS;
   }
+  int32_t insert(const std::string &, SClusterObjPtr);
 };
 
-int32_t mnodeInitCluster() {
-  SClusterObj tObj;
-  tsClusterUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj;
+int32_t ClusterTable::insert(const std::string &key, SClusterObjPtr obj) {
+  sdbTrace("vgId:1, sdb:%s, insert key:%s to hash, rows:%" PRId64 "", name, key.c_str(),
+           numOfRows.load());
 
+  int32_t code = obj->insert();
+  if (code != TSDB_CODE_SUCCESS) {
+    sdbError("vgId:1, sdb:%s, failed to insert key:%s to hash, remove it", name, key.c_str());
+    obj->remove();
+    return code;
+  }
+
+  std::lock_guard<std::mutex> lock(mutex);
+  auto it = objects.find(key);
+  if  (it == objects.end()) {
+    sdbError("vgId:1, sdb:%s, failed to insert:%s since it exist", name, key.c_str());
+    return TSDB_CODE_MND_SDB_OBJ_ALREADY_THERE;
+  }
+  objects[key] = obj;
+  atomic_add_fetch_32(&autoIndex, 1);
+
+  return code;
+}
+
+static std::shared_ptr<ClusterTable> tsClusterSdb;
+
+int32_t mnodeInitCluster() {
   SSdbTableDesc desc;
   desc.id = SDB_TABLE_CLUSTER;
   desc.name = "cluster";
@@ -110,19 +131,11 @@ void mnodeCancelGetNextCluster(void *pIter) {
   tsClusterSdb->freeIter(pIter);
 }
 
-void mnodeIncClusterRef(SClusterObj *pCluster) {
-  tsClusterSdb->incRef(pCluster);
-}
-
-void mnodeDecClusterRef(SClusterObj *pCluster) {
-  tsClusterSdb->decRef(pCluster);
-}
-
 static int32_t mnodeCreateCluster() {
   int32_t numOfClusters = tsClusterSdb->getNumOfRows();
   if (numOfClusters != 0) return TSDB_CODE_SUCCESS;
 
-  auto pCluster = new SClusterObj;
+  auto pCluster = std::make_shared<SClusterObj>();
   pCluster->createdTime = taosGetTimestampMs();
   bool getuid = taosGetSystemUid(pCluster->uid);
   if (!getuid) {
@@ -136,8 +149,8 @@ static int32_t mnodeCreateCluster() {
   row.type = SDB_OPER_GLOBAL;
   row.pTable = tsClusterSdb.get();
   row.pObj = pCluster;
-  binser::memory_output_archive<> output(row.serializeRow);
-  output(*pCluster);
+  int32_t code = tsClusterSdb->insert(pCluster->uid, pCluster);
+  if (code != TSDB_CODE_SUCCESS) return code;
   return row.Insert();
 }
 
@@ -153,7 +166,6 @@ void mnodeUpdateClusterId() {
     mDebug("cluster id is set to %s", tsClusterId);
   }
 
-  mnodeDecClusterRef(pCluster);
   mnodeCancelGetNextCluster(pIter);
 }
 
@@ -208,7 +220,6 @@ int32_t mnodeRetrieveClusters(SShowObj *pShow, char *data, int32_t rows, void *p
     *(int32_t *) pWrite = pCluster->createdTime;
     cols++;
 
-    mnodeDecClusterRef(pCluster);
     numOfRows++;
   }
 
