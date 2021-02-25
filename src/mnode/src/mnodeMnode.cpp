@@ -85,9 +85,8 @@ int32_t SMnodeObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SMnodeObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsMnodeUpdateSize);
-  pRow->rowSize = tsMnodeUpdateSize;
+int32_t SMnodeObj::encode(binser::memory_output_archive<> &out) {
+  out(mnodeId, reserved0, createdTime, reserved1);
   return TSDB_CODE_SUCCESS;
 }
 

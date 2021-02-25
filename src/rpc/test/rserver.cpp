@@ -19,38 +19,30 @@
 #include "rpcLog.h"
 #include "trpc.h"
 #include "tqueue.h"
+#include "workpool.h"
 
 int msgSize = 128;
 int commit = 0;
 int dataFd = -1;
-STaosQueue *qhandle = nullptr;
-STaosQset * qset = NULL;
 
-void processShellMsg() {
-  static int num = 0;
-  STaosQall qall;
-  SRpcMsg   *pRpcMsg, rpcMsg;
-  int        type;
-  void      *pvnode;
- 
-  while (1) {
-    int numOfMsgs = qset->readAllQitems(&qall, &pvnode);
-    tDebug("%d shell msgs are received", numOfMsgs);
-    if (numOfMsgs <= 0) break;
+using RPCItem = std::pair<int, SRpcMsg *>;
 
-    for (int i=0; i<numOfMsgs; ++i) {
-      qall.getQitem(&type, (void **)&pRpcMsg);
- 
-      if (dataFd >=0) {
-        if ( write(dataFd, pRpcMsg->pCont, pRpcMsg->contLen) <0 ) {
+class RPCPool : public workpool<RPCItem, RPCPool> {
+ public:
+  void process(std::vector<RPCItem> &&items) {
+    static int num = 0;
+    for (auto &item : items) {
+      auto qtype = item.first;
+      auto pRpcMsg = item.second;
+      if (dataFd >= 0) {
+        if (write(dataFd, pRpcMsg->pCont, pRpcMsg->contLen) < 0) {
           tInfo("failed to write data file, reason:%s", strerror(errno));
         }
       }
     }
-
-    if (commit >=2) {
-      num += numOfMsgs;
-      if ( fsync(dataFd) < 0 ) {
+    if (commit >= 2) {
+      num += items.size();
+      if (fsync(dataFd) < 0) {
         tInfo("failed to flush data to file, reason:%s", strerror(errno));
       }
 
@@ -58,11 +50,9 @@ void processShellMsg() {
         tInfo("%d request have been written into disk", num);
       }
     }
-  
-    qall.resetQitems();
-    for (int i=0; i<numOfMsgs; ++i) {
-
-      qall.getQitem(&type, (void **)&pRpcMsg);
+    SRpcMsg rpcMsg;
+    for (auto &item : items) {
+      auto pRpcMsg = item.second;
       rpcFreeCont(pRpcMsg->pCont);
 
       memset(&rpcMsg, 0, sizeof(rpcMsg));
@@ -74,10 +64,9 @@ void processShellMsg() {
 
       taosFreeQitem(pRpcMsg);
     }
-
   }
-
-}
+  using workpool<RPCItem, RPCPool>::workpool;
+};
 
 int retrieveAuthInfo(char *meterId, char *spi, char *encrypt, char *secret, char *ckey) {
   // app shall retrieve the auth info based on meterID from DB or a data file
@@ -99,6 +88,7 @@ int retrieveAuthInfo(char *meterId, char *spi, char *encrypt, char *secret, char
   return ret;
 }
 
+static RPCPool pool(1);
 void processRequestMsg(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   SRpcMsg *pTemp;
  
@@ -106,7 +96,7 @@ void processRequestMsg(SRpcMsg *pMsg, SRpcEpSet *pEpSet) {
   memcpy(pTemp, pMsg, sizeof(SRpcMsg));
 
   tDebug("request is received, type:%d, contLen:%d, item:%p", pMsg->msgType, pMsg->contLen, pTemp);
-  qhandle->writeQitem(TAOS_QTYPE_RPC, pTemp);
+  pool.put(std::make_pair(TAOS_QTYPE_RPC, pTemp));
 }
 
 int main(int argc, char *argv[]) {
@@ -172,12 +162,6 @@ int main(int argc, char *argv[]) {
     if (dataFd<0) 
       tInfo("failed to open data file, reason:%s", strerror(errno));
   }
-
-  qhandle = new STaosQueue;
-  qset = new STaosQset();
-  qset->addIntoQset(qhandle, NULL);
-
-  processShellMsg();
 
   if (dataFd >= 0) {
     close(dataFd);

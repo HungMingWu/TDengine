@@ -144,16 +144,18 @@ int32_t SVgObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SVgObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsVgUpdateSize);
+int32_t SVgObj::encode(binser::memory_output_archive<> &out) {
+  out(vgId, numOfVnodes, createdTime, lbDnodeId, lbTime,
+      dbName, inUse, accessState, status, reserved0, 
+      vnodeGid, vgCfgVersion, reserved1);
+  #if 0
   SVgObj *pTmpVgroup = static_cast<SVgObj *>(pRow->rowData);
   for (int32_t i = 0; i < TSDB_MAX_REPLICA; ++i) {
     pTmpVgroup->vnodeGid[i].pDnode = NULL;
     pTmpVgroup->vnodeGid[i].role = 0;
     memset(pTmpVgroup->vnodeGid[i].vver, 0, sizeof(pTmpVgroup->vnodeGid[i].vver));
   }
-
-  pRow->rowSize = tsVgUpdateSize;
+  #endif
   return TSDB_CODE_SUCCESS;
 }
 

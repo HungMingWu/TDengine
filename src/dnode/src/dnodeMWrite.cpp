@@ -20,106 +20,45 @@
 #include "mnode.h"
 #include "dnodeMInfos.h"
 #include "dnodeMWrite.h"
+#include "workpool.h"
 
-typedef struct {
-  pthread_t thread;
-  int32_t   workerId;
-} SMWriteWorker;
+using SMnodeMsgItem = std::pair<int, SMnodeMsg *>;
+class MWritePool : public workpool<SMnodeMsgItem, MWritePool> {
+ public:
+  void process(std::vector<SMnodeMsgItem> &&items) {
+    for (auto &item : items) {
+      auto pWrite = item.second;
+      dTrace("msg:%p, app:%p type:%s will be processed in mwrite queue", pWrite, pWrite->rpcMsg.ahandle,
+             taosMsg[pWrite->rpcMsg.msgType]);
 
-typedef struct {
-  int32_t curNum;
-  int32_t maxNum;
-  SMWriteWorker *worker;
-} SMWriteWorkerPool;
+      int32_t code = mnodeProcessWrite(pWrite);
+      dnodeSendRpcMWriteRsp(pWrite, code);
+    }
+  }
+  using workpool<SMnodeMsgItem, MWritePool>::workpool;
+};
 
-static SMWriteWorkerPool tsMWriteWP;
-static std::unique_ptr<STaosQset>         tsMWriteQset;
-static std::unique_ptr<STaosQueue>        tsMWriteQueue;
+static std::shared_ptr<MWritePool> tsMWriteWP;
 extern void *            tsDnodeTmr;
 
-static void *dnodeProcessMWriteQueue(void *param);
-
 int32_t dnodeInitMWrite() {
-  tsMWriteQset.reset(new STaosQset());
-
-  tsMWriteWP.maxNum = 1;
-  tsMWriteWP.curNum = 0;
-  tsMWriteWP.worker = (SMWriteWorker *)calloc(sizeof(SMWriteWorker), tsMWriteWP.maxNum);
-
-  if (tsMWriteWP.worker == NULL) return -1;
-  for (int32_t i = 0; i < tsMWriteWP.maxNum; ++i) {
-    SMWriteWorker *pWorker = tsMWriteWP.worker + i;
-    pWorker->workerId = i;
-    dDebug("dnode mwrite worker:%d is created", i);
-  }
-
-  dDebug("dnode mwrite is initialized, workers:%d qset:%p", tsMWriteWP.maxNum, tsMWriteQset.get());
+  tsMWriteWP = std::make_shared<MWritePool>(1);
   return 0;
 }
 
 void dnodeCleanupMWrite() {
-  for (int32_t i = 0; i < tsMWriteWP.maxNum; ++i) {
-    SMWriteWorker *pWorker = tsMWriteWP.worker + i;
-    if (pWorker->thread) {
-      tsMWriteQset->threadResume();
-    }
-    dDebug("dnode mwrite worker:%d is closed", i);
-  }
-
-  for (int32_t i = 0; i < tsMWriteWP.maxNum; ++i) {
-    SMWriteWorker *pWorker = tsMWriteWP.worker + i;
-    dDebug("dnode mwrite worker:%d start to join", i);
-    if (pWorker->thread) {
-      pthread_join(pWorker->thread, NULL);
-    }
-    dDebug("dnode mwrite worker:%d join success", i);
-  }
-
-  dDebug("dnode mwrite is closed, qset:%p", tsMWriteQset.get());
-
-  tsMWriteQset.reset();
-  tfree(tsMWriteWP.worker);
-}
-
-int32_t dnodeAllocMWritequeue() {
-  tsMWriteQueue.reset(new STaosQueue);
-
-  tsMWriteQset->addIntoQset(tsMWriteQueue.get(), NULL);
-
-  for (int32_t i = tsMWriteWP.curNum; i < tsMWriteWP.maxNum; ++i) {
-    SMWriteWorker *pWorker = tsMWriteWP.worker + i;
-    pWorker->workerId = i;
-
-    pthread_attr_t thAttr;
-    pthread_attr_init(&thAttr);
-    pthread_attr_setdetachstate(&thAttr, PTHREAD_CREATE_JOINABLE);
-
-    if (pthread_create(&pWorker->thread, &thAttr, dnodeProcessMWriteQueue, pWorker) != 0) {
-      dError("failed to create thread to process mwrite queue, reason:%s", strerror(errno));
-    }
-
-    pthread_attr_destroy(&thAttr);
-    tsMWriteWP.curNum = i + 1;
-    dDebug("dnode mwrite worker:%d is launched, total:%d", pWorker->workerId, tsMWriteWP.maxNum);
-  }
-
-  dDebug("dnode mwrite queue:%p is allocated", tsMWriteQueue.get());
-  return TSDB_CODE_SUCCESS;
-}
-
-void dnodeFreeMWritequeue() {
-  dDebug("dnode mwrite queue:%p is freed", tsMWriteQueue.get());
-  tsMWriteQueue.reset();
+  tsMWriteWP->stop();
+  tsMWriteWP.reset();
 }
 
 void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
-  if (!mnodeIsRunning() || tsMWriteQueue == NULL) {
+  if (!mnodeIsRunning() || tsMWriteWP == NULL) {
     dnodeSendRedirectMsg(pMsg, true);
   } else {
     SMnodeMsg *pWrite = static_cast<SMnodeMsg *>(mnodeCreateMsg(pMsg));
     dTrace("msg:%p, app:%p type:%s is put into mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
-           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get());
-    tsMWriteQueue->writeQitem(TAOS_QTYPE_RPC, pWrite);
+           taosMsg[pWrite->rpcMsg.msgType], tsMWriteWP.get());
+    tsMWriteWP->put(std::make_pair(TAOS_QTYPE_RPC, pWrite));
   }
 
   rpcFreeCont(pMsg->pCont);
@@ -127,7 +66,7 @@ void dnodeDispatchToMWriteQueue(SRpcMsg *pMsg) {
 
 static void dnodeFreeMWriteMsg(SMnodeMsg *pWrite) {
   dTrace("msg:%p, app:%p type:%s is freed from mwrite queue:%p", pWrite, pWrite->rpcMsg.ahandle,
-         taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get());
+         taosMsg[pWrite->rpcMsg.msgType], tsMWriteWP.get());
 
   delete pWrite;
   taosFreeQitem(pWrite);
@@ -152,29 +91,8 @@ void dnodeSendRpcMWriteRsp(void *pMsg, int32_t code) {
   dnodeFreeMWriteMsg(pWrite);
 }
 
-static void *dnodeProcessMWriteQueue(void *param) {
-  SMnodeMsg *pWrite;
-  int32_t    type;
-  void *     unUsed;
-  
-  while (1) {
-    if (tsMWriteQset->readQitem(&type, (void **)&pWrite, &unUsed) == 0) {
-      dDebug("qset:%p, mnode write got no message from qset, exiting", tsMWriteQset.get());
-      break;
-    }
-
-    dTrace("msg:%p, app:%p type:%s will be processed in mwrite queue", pWrite, pWrite->rpcMsg.ahandle,
-           taosMsg[pWrite->rpcMsg.msgType]);
-
-    int32_t code = mnodeProcessWrite(pWrite);
-    dnodeSendRpcMWriteRsp(pWrite, code);
-  }
-
-  return NULL;
-}
-
 void dnodeReprocessMWriteMsg(SMnodeMsg *pWrite) {
-  if (!mnodeIsRunning() || tsMWriteQueue == NULL) {
+  if (!mnodeIsRunning() || tsMWriteWP == NULL) {
     dDebug("msg:%p, app:%p type:%s is redirected for mnode not running, retry times:%d", pWrite, pWrite->rpcMsg.ahandle,
            taosMsg[pWrite->rpcMsg.msgType], pWrite->retry);
 
@@ -194,9 +112,9 @@ void dnodeReprocessMWriteMsg(SMnodeMsg *pWrite) {
     dnodeFreeMWriteMsg(pWrite);
   } else {
     dDebug("msg:%p, app:%p type:%s is reput into mwrite queue:%p, retry times:%d", pWrite, pWrite->rpcMsg.ahandle,
-           taosMsg[pWrite->rpcMsg.msgType], tsMWriteQueue.get(), pWrite->retry);
+           taosMsg[pWrite->rpcMsg.msgType], tsMWriteWP.get(), pWrite->retry);
 
-    tsMWriteQueue->writeQitem(TAOS_QTYPE_RPC, pWrite);
+    tsMWriteWP->put(std::make_pair(TAOS_QTYPE_RPC, pWrite));
   }
 }
 

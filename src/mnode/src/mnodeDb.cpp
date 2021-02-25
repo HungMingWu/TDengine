@@ -102,9 +102,8 @@ int32_t SDbObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SDbObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsDbUpdateSize);
-  pRow->rowSize = tsDbUpdateSize;
+int32_t SDbObj::encode(binser::memory_output_archive<> &out) {
+  out(name, reserved0, acct, createdTime, dbCfgVersion, cfg, status, reserved1);
   return TSDB_CODE_SUCCESS;
 }
 

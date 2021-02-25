@@ -172,31 +172,19 @@ int32_t SCTableObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SCTableObj::encode(SSdbRow *pRow) {
-  assert(pRow->rowData != NULL);
-
+int32_t SCTableObj::encode(binser::memory_output_archive<> &out) {
   int32_t len = strlen(info.tableId);
   if (len >= TSDB_TABLE_FNAME_LEN) return TSDB_CODE_MND_INVALID_TABLE_ID;
-
-  memcpy(pRow->rowData, info.tableId, len);
-  memset(pRow->rowData + len, 0, 1);
-  len++;
-
-  memcpy(pRow->rowData + len, (char*)this + sizeof(char *), tsChildTableUpdateSize);
-  len += tsChildTableUpdateSize;
-
+  out(binser::as_binary(info.tableId, len), reserved0, nextColId, sversion, uid,
+      suid, createdTime, numOfColumns, tid, vgId,
+      sqlLen);
+ 
   if (info.type != TSDB_CHILD_TABLE) {
-    int32_t schemaSize = numOfColumns * sizeof(SSchema);
-    memcpy(pRow->rowData + len, &schema[0], schemaSize);
-    len += schemaSize;
-
+    for (int32_t i = 0; i < numOfColumns; i++) out(schema[i]);
     if (sqlLen != 0) {
-      memcpy(pRow->rowData + len, sql, sqlLen);
-      len += sqlLen;
+      out(binser::as_binary(sql, sqlLen));
     }
   }
-
-  pRow->rowSize = len;
 
   return TSDB_CODE_SUCCESS;
 }
@@ -439,24 +427,14 @@ int32_t SSTableObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SSTableObj::encode(SSdbRow *pRow) {
-  assert(pRow->rowData != NULL);
-
+int32_t SSTableObj::encode(binser::memory_output_archive<> &out) {
   int32_t len = strlen(info.tableId);
   if (len >= TSDB_TABLE_FNAME_LEN) len = TSDB_CODE_MND_INVALID_TABLE_ID;
-
-  memcpy(pRow->rowData, info.tableId, len);
-  memset(pRow->rowData + len, 0, 1);
-  len++;
-
-  memcpy(pRow->rowData + len, (char*)this + sizeof(char *), tsSuperTableUpdateSize);
-  len += tsSuperTableUpdateSize;
+  out(binser::as_binary(info.tableId, len), reserved0, nextColId, sversion, uid, 
+      createdTime, tversion, numOfColumns, numOfTags);
 
   int32_t schemaSize = sizeof(SSchema) * (numOfColumns + numOfTags);
-  memcpy(pRow->rowData + len, &schema[0], schemaSize);
-  len += schemaSize;
-
-  pRow->rowSize = len;
+  for (int32_t i = 0; i < schemaSize; i++) out(schema[i]);
 
   return TSDB_CODE_SUCCESS;
 }

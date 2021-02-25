@@ -51,9 +51,8 @@ int32_t SAcctObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SAcctObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsAcctUpdateSize);
-  pRow->rowSize = tsAcctUpdateSize;
+int32_t SAcctObj::encode(binser::memory_output_archive<> &out) {
+  out(user, pass, cfg, createdTime, acctId, status, reserved0);
   return TSDB_CODE_SUCCESS;
 }
 

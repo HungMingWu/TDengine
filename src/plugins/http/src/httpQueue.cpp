@@ -14,6 +14,7 @@
  */
 
 #include "os.h"
+#include "workpool.h"
 #include "tqueue.h"
 #include "tnote.h"
 #include "taos.h"
@@ -27,16 +28,6 @@
 #include "httpQueue.h"
 
 typedef struct {
-  pthread_t thread;
-  int32_t   workerId;
-} SHttpWorker;
-
-typedef struct {
-  int32_t      num;
-  SHttpWorker *httpWorker;
-} SHttpWorkerPool;
-
-typedef struct {
   void *  param;
   void *  result;
   int32_t code;
@@ -44,107 +35,43 @@ typedef struct {
   FHttpResultFp fp;
 } SHttpResult;
 
-static SHttpWorkerPool tsHttpPool;
-static std::unique_ptr<STaosQset>  tsHttpQset;
-static std::unique_ptr<STaosQueue> tsHttpQueue;
+using SHttpItem = std::pair<int, SHttpResult*>;
+class HttpPool : public workpool<SHttpItem, HttpPool> {
+ public:
+  void process(std::vector<SHttpItem> &&items) {
+    for (auto &item : items) {
+      auto qtype = item.first;
+      auto pMsg = item.second;
+      httpTrace("context:%p, res:%p will be processed in result queue, code:%d rows:%d", pMsg->param, pMsg->result,
+                pMsg->code, pMsg->rows);
+      (*pMsg->fp)(pMsg->param, pMsg->result, pMsg->code, pMsg->rows);
+    }
+  }
+  using workpool<SHttpItem, HttpPool>::workpool;
+};
+
+static std::shared_ptr<HttpPool> tsHttpPool;
 
 void httpDispatchToResultQueue(void *param, TAOS_RES *result, int32_t code, int32_t rows, FHttpResultFp fp) {
-  if (tsHttpQueue != NULL) {
+  if (tsHttpPool != NULL) {
     SHttpResult *pMsg = (SHttpResult *)taosAllocateQitem(sizeof(SHttpResult));
     pMsg->param = param;
     pMsg->result = result;
     pMsg->code = code;
     pMsg->rows = rows;
     pMsg->fp = fp;
-    tsHttpQueue->writeQitem(TAOS_QTYPE_RPC, pMsg);
+    tsHttpPool->put(std::make_pair(TAOS_QTYPE_RPC, pMsg));
   } else {
     (*fp)(param, result, code, rows);
   }
 }
 
-static void *httpProcessResultQueue(void *param) {
-  SHttpResult *pMsg;
-  int32_t      type;
-  void *       unUsed;
-
-  while (1) {
-    if (tsHttpQset->readQitem(&type, (void **)&pMsg, &unUsed) == 0) {
-      httpDebug("qset:%p, http queue got no message from qset, exiting", tsHttpQset.get());
-      break;
-    }
-
-    httpTrace("context:%p, res:%p will be processed in result queue, code:%d rows:%d", pMsg->param, pMsg->result,
-              pMsg->code, pMsg->rows);
-    (*pMsg->fp)(pMsg->param, pMsg->result, pMsg->code, pMsg->rows);
-    taosFreeQitem(pMsg);
-  }
-
-  return NULL;
-}
-
-static bool httpAllocateResultQueue() {
-  tsHttpQueue.reset(new STaosQueue);
-
-  tsHttpQset->addIntoQset(tsHttpQueue.get(), NULL);
-
-  for (int32_t i = 0; i < tsHttpPool.num; ++i) {
-    SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
-    pWorker->workerId = i;
-
-    pthread_attr_t thAttr;
-    pthread_attr_init(&thAttr);
-    pthread_attr_setdetachstate(&thAttr, PTHREAD_CREATE_JOINABLE);
-
-    if (pthread_create(&pWorker->thread, &thAttr, httpProcessResultQueue, pWorker) != 0) {
-      httpError("failed to create thread to process http result queue, reason:%s", strerror(errno));
-    }
-
-    pthread_attr_destroy(&thAttr);
-    httpDebug("http result worker:%d is launched, total:%d", pWorker->workerId, tsHttpPool.num);
-  }
-
-   httpInfo("http result queue is opened");
-  return true;
-}
-
-static void httpFreeResultQueue() {
-  tsHttpQueue.reset();
-}
-
 bool httpInitResultQueue() {
-  tsHttpQset.reset(new STaosQset());
-
-  tsHttpPool.num = tsHttpMaxThreads;
-  tsHttpPool.httpWorker = (SHttpWorker *)calloc(sizeof(SHttpWorker), tsHttpPool.num);
-
-  if (tsHttpPool.httpWorker == NULL) return -1;
-  for (int32_t i = 0; i < tsHttpPool.num; ++i) {
-    SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
-    pWorker->workerId = i;
-  }
-
-  return httpAllocateResultQueue();
+  tsHttpPool = std::make_shared<HttpPool>(tsHttpMaxThreads);
 }
 
 void httpCleanupResultQueue() {
-  httpFreeResultQueue();
-
-  for (int32_t i = 0; i < tsHttpPool.num; ++i) {
-    SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
-    if (pWorker->thread) {
-      tsHttpQset->threadResume();
-    }
-  }
-
-  for (int32_t i = 0; i < tsHttpPool.num; ++i) {
-    SHttpWorker *pWorker = tsHttpPool.httpWorker + i;
-    if (pWorker->thread) {
-      pthread_join(pWorker->thread, NULL);
-    }
-  }
-
-  tsHttpQset.reset();
-  free(tsHttpPool.httpWorker);
-
+  tsHttpPool->stop();
+  tsHttpPool.reset();
   httpInfo("http result queue is closed");
 }

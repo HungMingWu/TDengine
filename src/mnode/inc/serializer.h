@@ -190,6 +190,12 @@ struct remove_cvref {
     typedef std::remove_cv_t<std::remove_reference_t<T>> type;
 };
 
+template <typename T>
+struct is_atomic_t : std::false_type {};
+
+template <typename T>
+struct is_atomic_t<std::atomic<T>> : std::true_type {};
+
 /**
  * Map any sequence of types to void.
  */
@@ -820,7 +826,8 @@ private:
     template <typename Item,
               typename...,
               typename = std::enable_if_t<std::is_fundamental<
-                  std::remove_reference_t<Item>>::value>,
+                  std::remove_reference_t<Item>>::value || 
+                  detail::is_atomic_t<std::remove_reference_t<Item>>::value>,
               typename = void,
               typename = void>
     void serialize_item(Item && item)
@@ -948,6 +955,14 @@ protected:
 
         // Increase the size.
         m_size += sizeof(item);
+    }
+
+    template <typename Item>
+    void serialize(std::atomic<Item>& item)
+    {
+        Item value = item.load();
+        serialize_integral(std::forward<Item>(value),
+            std::integral_constant<bool, endian != detail::getSystemEndianness()>{});
     }
 
     template <typename Item, 
@@ -1180,6 +1195,15 @@ protected:
 
         // Increase the offset according to item size.
         m_offset += sizeof(item);
+    }
+
+    template <typename Item>
+    void serialize(std::atomic<Item>& item)
+    {
+        Item value;
+        serialize_integral(std::forward<Item>(value),
+            std::integral_constant<bool, endian != detail::getSystemEndianness()>{});
+        item = value;
     }
 
     template <typename Item,

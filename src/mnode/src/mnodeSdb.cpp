@@ -16,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include "workpool.h"
 #include "os.h"
 #include "taoserror.h"
 #include "hash.h"
@@ -53,31 +54,54 @@ const char *actStr[] = {
   "invalid"
 };
 
-struct SSdbWorker {
-  std::thread thread;
-  int32_t   workerId;
+static void sdbFreeFromQueue(SSdbRow *pRow);
+static void sdbConfirmForward(int32_t vgId, void *wparam, int32_t code);
+static int32_t sdbProcessWrite(void *pRow, SWalHead *pHead, int32_t qtype, void *unused);
+
+using SDBItem = std::pair<int, SSdbRow *>;
+
+class SdbPool : public workpool<SDBItem, SdbPool> {
+ public:
+  void process(std::vector<SDBItem> &&items) {
+    for (auto &item : items) {
+      auto qtype = item.first;
+      auto pRow = item.second;
+      sdbTrace("vgId:1, msg:%p, row:%p hver:%" PRIu64 ", will be processed in sdb queue", pRow->pMsg, pRow->pObj,
+               pRow->pHead.version);
+
+      pRow->code = sdbProcessWrite((qtype == TAOS_QTYPE_RPC) ? pRow : NULL, &pRow->pHead, qtype, NULL);
+      if (pRow->code > 0) pRow->code = 0;
+
+      sdbTrace("vgId:1, msg:%p is processed in sdb queue, code:%x", pRow->pMsg, pRow->code);
+    }
+
+    SSdbMgmt::instance().wal->fsync(true);
+
+    // browse all items, and process them one by one
+    for (const auto &item : items) {
+      const auto qtype = item.first;
+      const auto pRow = item.second;
+
+      if (qtype == TAOS_QTYPE_RPC) {
+        sdbConfirmForward(1, pRow, pRow->code);
+      } else {
+        if (qtype == TAOS_QTYPE_FWD) {
+          syncConfirmForward(SSdbMgmt::instance().sync, pRow->pHead.version, pRow->code);
+        }
+        sdbFreeFromQueue(pRow);
+      }
+    }
+  }
+  using workpool<SDBItem, SdbPool>::workpool;
 };
 
-typedef struct {
-  int32_t num;
-  SSdbWorker *worker;
-} SSdbWorkerPool;
+static std::shared_ptr<SdbPool> tsSdbPool;
 
 extern void *     tsMnodeTmr;
 static void *     tsSdbTmr;
-static std::unique_ptr<STaosQset> tsSdbWQset;
-static std::unique_ptr<STaosQall> tsSdbWQall;
-static std::unique_ptr<STaosQueue>     tsSdbWQueue;
-static SSdbWorkerPool tsSdbPool;
 
-static int32_t sdbProcessWrite(void *pRow, SWalHead *pHead, int32_t qtype, void *unused);
 static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam);
 static int32_t sdbWriteRowToQueue(const SSdbRow *pRow, int32_t action);
-static void    sdbFreeFromQueue(SSdbRow *pRow);
-static void    sdbWorkerFp(SSdbWorker *pWorker);
-static int32_t sdbInitWorker();
-static void    sdbCleanupWorker();
-static int32_t sdbAllocQueue();
 static void    sdbFreeQueue();
 
 int64_t SSdbTable::getNumOfRows() const { return numOfRows.load(); }
@@ -364,9 +388,7 @@ int32_t sdbUpdateSync(void *pMnodes) {
 }
 
 int32_t sdbInit() {
-  if (sdbInitWorker() != 0) {
-    return -1;
-  }
+  tsSdbPool = std::make_shared<SdbPool>(1);
 
   if (sdbInitWal() != 0) {
     return -1;
@@ -387,7 +409,8 @@ void sdbCleanUp() {
 
   SSdbMgmt::instance().status = SDB_STATUS_CLOSING;
 
-  sdbCleanupWorker();
+  tsSdbPool->stop();
+  tsSdbPool.reset();
   sdbDebug("vgId:1, sdb will be closed, mver:%" PRIu64, SSdbMgmt::instance().version);
 
   if (SSdbMgmt::instance().sync) {
@@ -765,63 +788,6 @@ SSdbTable::~SSdbTable() {
   sdbDebug("vgId:1, sdb:%s, is closed, numOfTables:%d", name, SSdbMgmt::instance().numOfTables);
 }
 
-static int32_t sdbInitWorker() {
-  tsSdbPool.num = 1;
-  tsSdbPool.worker = static_cast<SSdbWorker *>(calloc(sizeof(SSdbWorker), tsSdbPool.num));
-
-  if (tsSdbPool.worker == NULL) return -1;
-  for (int32_t i = 0; i < tsSdbPool.num; ++i) {
-    SSdbWorker *pWorker = tsSdbPool.worker + i;
-    pWorker->workerId = i;
-  }
-
-  sdbAllocQueue();
-  
-  mInfo("vgId:1, sdb write is opened");
-  return 0;
-}
-
-static void sdbCleanupWorker() {
-  for (int32_t i = 0; i < tsSdbPool.num; ++i) {
-    SSdbWorker *pWorker = tsSdbPool.worker + i;
-    tsSdbWQset->threadResume();
-  }
-
-  for (int32_t i = 0; i < tsSdbPool.num; ++i) {
-    SSdbWorker *pWorker = tsSdbPool.worker + i;
-    pWorker->thread.join();
-  }
-
-  sdbFreeQueue();
-  tfree(tsSdbPool.worker);
-
-  mInfo("vgId:1, sdb write is closed");
-}
-
-static int32_t sdbAllocQueue() {
-  tsSdbWQueue.reset(new STaosQueue());
-  tsSdbWQset.reset(new STaosQset());
-  tsSdbWQset->addIntoQset(tsSdbWQueue.get(), NULL);
-
-  tsSdbWQall.reset(new STaosQall());
-  
-  for (int32_t i = 0; i < tsSdbPool.num; ++i) {
-    SSdbWorker *pWorker = tsSdbPool.worker + i;
-    pWorker->workerId = i;
-    pWorker->thread = std::thread([pWorker] { sdbWorkerFp(pWorker); });
-    mDebug("sdb write worker:%d is launched, total:%d", pWorker->workerId, tsSdbPool.num);
-  }
-
-  mDebug("sdb write queue:%p is allocated", tsSdbWQueue.get());
-  return TSDB_CODE_SUCCESS;
-}
-
-static void sdbFreeQueue() {
-  tsSdbWQueue.reset();
-  tsSdbWQall.reset();
-  tsSdbWQset.reset();
-}
-
 static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
   SWalHead *pHead = &pRow->pHead;
 
@@ -838,7 +804,7 @@ static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
   }
 
   sdbTrace("vgId:1, msg:%p qtype:%s write into to sdb queue, queued:%d", pRow->pMsg, qtypeStr[qtype], queued);
-  tsSdbWQueue->writeQitem(qtype, pRow);
+  tsSdbPool->put(std::make_pair(qtype, pRow));
 
   return TSDB_CODE_MND_ACTION_IN_PROGRESS;
 }
@@ -881,7 +847,9 @@ static int32_t sdbWriteRowToQueue(const SSdbRow *pInputRow, int32_t action) {
 
   SWalHead *pHead = &pRow->pHead;
   pRow->rowData = pHead->cont.data();
-  pRow->pObj->encode(pRow);
+  std::vector<uint8_t> output;
+  binser::memory_output_archive<> out(output);
+  pRow->pObj->encode(out);
 
   pHead->len = pRow->rowSize;
   pHead->msgType = pTable->id * 10 + action;
@@ -890,51 +858,5 @@ static int32_t sdbWriteRowToQueue(const SSdbRow *pInputRow, int32_t action) {
 }
 
 int32_t sdbInsertRowToQueue(SSdbRow *pRow) { return sdbWriteRowToQueue(pRow, SDB_ACTION_INSERT); }
-
-static void sdbWorkerFp(SSdbWorker *pWorker) {
-  SSdbRow *pRow;
-  int32_t  qtype;
-  void *   unUsed;
-
-  taosBlockSIGPIPE();
-
-  while (1) {
-    int32_t numOfMsgs = tsSdbWQset->readAllQitems(tsSdbWQall.get(), &unUsed);
-    if (numOfMsgs == 0) {
-      sdbDebug("qset:%p, sdb got no message from qset, exiting", tsSdbWQset.get());
-      break;
-    }
-
-    for (int32_t i = 0; i < numOfMsgs; ++i) {
-      tsSdbWQall->getQitem(&qtype, (void **)&pRow);
-      sdbTrace("vgId:1, msg:%p, row:%p hver:%" PRIu64 ", will be processed in sdb queue", pRow->pMsg, pRow->pObj,
-               pRow->pHead.version);
-
-      pRow->code = sdbProcessWrite((qtype == TAOS_QTYPE_RPC) ? pRow : NULL, &pRow->pHead, qtype, NULL);
-      if (pRow->code > 0) pRow->code = 0;
-
-      sdbTrace("vgId:1, msg:%p is processed in sdb queue, code:%x", pRow->pMsg, pRow->code);
-    }
-
-    SSdbMgmt::instance().wal->fsync(true);
-
-    // browse all items, and process them one by one
-    tsSdbWQall->resetQitems();
-    for (int32_t i = 0; i < numOfMsgs; ++i) {
-      tsSdbWQall->getQitem(&qtype, (void **)&pRow);
-
-      if (qtype == TAOS_QTYPE_RPC) {
-        sdbConfirmForward(1, pRow, pRow->code);
-      } else {
-        if (qtype == TAOS_QTYPE_FWD) {
-          syncConfirmForward(SSdbMgmt::instance().sync, pRow->pHead.version, pRow->code);
-        }
-        sdbFreeFromQueue(pRow);
-      }
-    }
-  }
-
-  return;
-}
 
 int32_t sdbGetReplicaNum() { return SSdbMgmt::instance().cfg.replica; }

@@ -47,13 +47,8 @@ struct SClusterObj : public objectBase {
   ~SClusterObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
-
-  template <typename Archive, typename Self>
-  static void serialize(Archive &archive, Self &self) {
-    archive(self.uid, self.createdTime, self.reserved);
-  }
 };
 using SClusterObjPtr = std::shared_ptr<SClusterObj>;
 
@@ -92,7 +87,7 @@ struct SDnodeObj : public objectBase, public std::enable_shared_from_this<SDnode
   void update(int status);
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &out) override;
   int32_t update() override;
 };
 
@@ -109,7 +104,7 @@ struct SMnodeObj : public objectBase {
   ~SMnodeObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
 };
 
@@ -141,7 +136,7 @@ struct SSTableObj : public STableObj {
   ~SSTableObj() override;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
 };
 
@@ -165,16 +160,21 @@ struct SSTableObj : public STableObj {
   ~SCTableObj() override;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &out) override;
   int32_t update() override;
  };
 
-typedef struct {
+struct SVnodeGid {
   int32_t    dnodeId;
   int8_t     role;
   int8_t     vver[3];  // To ensure compatibility, 3 bits are used to represent the remainder of 64 bit version
   SDnodeObj *pDnode;
-} SVnodeGid;
+
+  template <typename Archive, typename Self>
+  static void serialize(Archive &archive, Self &self) {
+    archive(self.dnodeId, self.role, self.vver);// bug, need to fix, self.pDnode);
+  }
+};
 
 struct SVgObj : public objectBase {
   uint32_t       vgId;
@@ -202,11 +202,11 @@ struct SVgObj : public objectBase {
   ~SVgObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<>&) override;
   int32_t update() override;
 };
 
-typedef struct {
+struct SDbCfg {
   int32_t cacheBlockSize;
   int32_t totalBlocks;
   int32_t maxTables;
@@ -226,7 +226,15 @@ typedef struct {
   int8_t  update;
   int8_t  cacheLastRow;
   int8_t  reserved[10];
-} SDbCfg;
+
+  template <typename Archive, typename Self>
+  static void serialize(Archive &archive, Self &self) {
+    archive(self.cacheBlockSize, self.totalBlocks, self.maxTables, self.daysPerFile, self.daysToKeep, 
+            self.daysToKeep1, self.daysToKeep2, self.minRowsPerFileBlock, self.maxRowsPerFileBlock, self.commitTime,
+            self.fsyncPeriod, self.precision, self.compression, self.walLevel, self.replications,
+            self.quorum, self.update, self.cacheLastRow, self.reserved);
+  }
+};
 
 struct SAcctInfo {
   int64_t              totalStorage;  // Total storage wrtten from this account
@@ -264,7 +272,7 @@ struct SAcctObj : public objectBase {
   ~SAcctObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
 };
 using AcctObjPtr = std::shared_ptr<SAcctObj>;
@@ -292,7 +300,7 @@ struct SDbObj : public objectBase {
   ~SDbObj() override;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
 };
 
@@ -311,7 +319,7 @@ struct SUserObj : public objectBase {
   ~SUserObj() override = default;
   int32_t insert() override;
   int32_t remove() override;
-  int32_t encode(SSdbRow *pRow) override;
+  int32_t encode(binser::memory_output_archive<> &) override;
   int32_t update() override;
 };
 

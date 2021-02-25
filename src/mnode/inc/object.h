@@ -11,7 +11,7 @@ struct objectBase {
   virtual ~objectBase() {}
   virtual int32_t insert() = 0;
   virtual int32_t remove() = 0;
-  virtual int32_t encode(SSdbRow *pRow) = 0;
+  virtual int32_t encode(binser::memory_output_archive<> &) = 0;
   virtual int32_t update() = 0;
 };
 using ObjectPtr = std::shared_ptr<objectBase>;

@@ -40,12 +40,8 @@ int32_t SClusterObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SClusterObj::encode(SSdbRow *pRow) {
-  std::vector<unsigned char> data;
-  binser::memory_output_archive<> out(data);
+int32_t SClusterObj::encode(binser::memory_output_archive<> &out) {
   out(uid, createdTime, reserved);
-  memcpy(pRow->rowData, this, tsClusterUpdateSize);
-  pRow->rowSize = tsClusterUpdateSize;
   return TSDB_CODE_SUCCESS;
 }
 
@@ -126,7 +122,7 @@ static int32_t mnodeCreateCluster() {
   row.pObj = pCluster;
   int32_t code = tsClusterSdb->insert(pCluster->uid, pCluster);
   if (code != TSDB_CODE_SUCCESS) return code;
-  return row.Insert();
+  return sdbInsertRowToQueue(&row);
 }
 
 const char* mnodeGetClusterId() {

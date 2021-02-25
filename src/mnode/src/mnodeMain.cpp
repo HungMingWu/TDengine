@@ -81,7 +81,6 @@ int32_t mnodeStartSystem() {
     return TSDB_CODE_MND_FAILED_TO_CREATE_DIR;
   }
 
-  dnodeAllocMWritequeue();
   dnodeAllocMReadQueue();
   dnodeAllocateMPeerQueue();
 
@@ -113,7 +112,6 @@ void mnodeCleanupSystem() {
     mInfo("starting to clean up mnode");
     tsMgmtIsRunning = false;
 
-    dnodeFreeMWritequeue();
     dnodeFreeMReadQueue();
     dnodeFreeMPeerQueue();
     mnodeCleanupTimer();

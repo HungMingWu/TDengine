@@ -21,7 +21,6 @@
 int32_t dnodeInitMWrite();
 void    dnodeCleanupMWrite();
 int32_t dnodeAllocMWritequeue();
-void    dnodeFreeMWritequeue();
 void    dnodeDispatchToMWriteQueue(SRpcMsg *pMsg);
 
 #endif

@@ -108,9 +108,10 @@ int32_t SDnodeObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SDnodeObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsDnodeUpdateSize);
-  pRow->rowSize = tsDnodeUpdateSize;
+int32_t SDnodeObj::encode(binser::memory_output_archive<> &out) {
+  out(dnodeId, openVnodes, createdTime, resever0, customScore,
+      lastAccess, numOfCores, dnodePort, dnodeFqdn, dnodeEp,
+      alternativeRole, status, isMgmt, reserve1);
   return TSDB_CODE_SUCCESS;
 }
 

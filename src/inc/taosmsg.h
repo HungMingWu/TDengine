@@ -235,12 +235,17 @@ typedef struct {
   SShellSubmitRspBlock failedBlocks[];
 } SShellSubmitRspMsg;
 
-typedef struct SSchema {
+struct SSchema {
   uint8_t type;
   char    name[TSDB_COL_NAME_LEN];
   int16_t colId;
   int16_t bytes;
-} SSchema;
+
+  template <typename Archive, typename Self>
+  static void serialize(Archive &archive, Self &self) {
+    archive(self.type, self.name, self.colId, self.bytes);
+  }
+};
 
 struct SMDCreateTableMsg {
   int32_t  contLen;
@@ -329,7 +334,7 @@ typedef struct {
   SRpcEpSet epSet;
 } SConnectRsp;
 
-typedef struct {
+struct SAcctCfg {
   int32_t maxUsers;
   int32_t maxDbs;
   int32_t maxTimeSeries;
@@ -341,7 +346,14 @@ typedef struct {
   int64_t maxInbound;
   int64_t maxOutbound;
   int8_t  accessState;  // Configured only by command
-} SAcctCfg;
+
+  template <typename Archive, typename Self>
+  static void serialize(Archive &archive, Self &self) {
+    archive(self.maxUsers, self.maxDbs, self.maxTimeSeries, self.maxConnections, self.maxStreams,
+            self.maxPointsPerSecond, self.maxStorage, self.maxQueryTime, self.maxInbound, self.maxOutbound,
+            self.accessState);
+  }
+};
 
 typedef struct {
   char     user[TSDB_USER_LEN];

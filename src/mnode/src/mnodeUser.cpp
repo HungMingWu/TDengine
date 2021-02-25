@@ -68,9 +68,8 @@ int32_t SUserObj::update() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t SUserObj::encode(SSdbRow *pRow) {
-  memcpy(pRow->rowData, this, tsUserUpdateSize);
-  pRow->rowSize = tsUserUpdateSize;
+int32_t SUserObj::encode(binser::memory_output_archive<> &out) {
+  out(user, pass, acct, createdTime, superAuth, writeAuth, reserved);
   return TSDB_CODE_SUCCESS;
 }
 
