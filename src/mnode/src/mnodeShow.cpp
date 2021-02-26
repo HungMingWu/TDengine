@@ -478,7 +478,7 @@ int32_t mnodeProcessUseMsg(SMnodeMsg *pMsg) {
   SUseDbMsg *pUseDbMsg = static_cast<SUseDbMsg *>(pMsg->rpcMsg.pCont);
 
   int32_t code = TSDB_CODE_SUCCESS;
-  if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(pUseDbMsg->db);
+  if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(&pUseDbMsg->db[0]);
   if (pMsg->pDb == NULL) {
     return TSDB_CODE_MND_INVALID_DB;
   }

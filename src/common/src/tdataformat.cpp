@@ -654,32 +654,26 @@ void *tdDecodeKVRow(void *buf, SKVRow *row) {
 }
 
 int tdInitKVRowBuilder(SKVRowBuilder *pBuilder) {
-  pBuilder->tCols = 128;
-  pBuilder->nCols = 0;
-  pBuilder->pColIdx = (SColIdx *)malloc(sizeof(SColIdx) * pBuilder->tCols);
-  if (pBuilder->pColIdx == NULL) return -1;
   pBuilder->alloc = 1024;
   pBuilder->size = 0;
   pBuilder->buf = malloc(pBuilder->alloc);
   if (pBuilder->buf == NULL) {
-    free(pBuilder->pColIdx);
     return -1;
   }
   return 0;
 }
 
 void tdDestroyKVRowBuilder(SKVRowBuilder *pBuilder) {
-  tfree(pBuilder->pColIdx);
   tfree(pBuilder->buf);
 }
 
 void tdResetKVRowBuilder(SKVRowBuilder *pBuilder) {
-  pBuilder->nCols = 0;
+  pBuilder->pColIdx.clear();
   pBuilder->size = 0;
 }
 
 SKVRow tdGetKVRowFromBuilder(SKVRowBuilder *pBuilder) {
-  int tlen = sizeof(SColIdx) * pBuilder->nCols + pBuilder->size;
+  int tlen = sizeof(SColIdx) * pBuilder->pColIdx.size() + pBuilder->size;
   if (tlen == 0) return NULL;
 
   tlen += TD_KV_ROW_HEAD_SIZE;
@@ -687,10 +681,10 @@ SKVRow tdGetKVRowFromBuilder(SKVRowBuilder *pBuilder) {
   SKVRow row = malloc(tlen);
   if (row == NULL) return NULL;
 
-  kvRowSetNCols(row, pBuilder->nCols);
+  kvRowSetNCols(row, pBuilder->pColIdx.size());
   kvRowSetLen(row, tlen);
 
-  memcpy(kvRowColIdx(row), pBuilder->pColIdx, sizeof(SColIdx) * pBuilder->nCols);
+  memcpy(kvRowColIdx(row), &pBuilder->pColIdx[0], sizeof(SColIdx) * pBuilder->pColIdx.size());
   memcpy(kvRowValues(row), pBuilder->buf, pBuilder->size);
 
   return row;

@@ -705,7 +705,7 @@ static int32_t doParseInsertStatement(SSqlCmd* pCmd, char **str, SParsedDataColI
   
   STableDataBlocks *dataBuf = NULL;
   tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_DEFAULT_PAYLOAD_SIZE,
-                                        sizeof(SSubmitBlk), tinfo.rowSize, pTableMetaInfo->name, pTableMeta, &dataBuf, NULL);
+                                        sizeof(SSubmitBlk), tinfo.rowSize, &pTableMetaInfo->name[0], pTableMeta, &dataBuf, NULL);
   
   int32_t maxNumOfRows;
   int ret = tscAllocateMemIfNeed(dataBuf, tinfo.rowSize, &maxNumOfRows);
@@ -812,7 +812,7 @@ static int32_t tscCheckIfCreateTable(char **sqlstr, SSqlObj *pSql) {
       return code;
     }
 
-    tstrncpy(pCmd->tagData.name, pSTableMeterMetaInfo->name, sizeof(pCmd->tagData.name));
+    pCmd->tagData.name = pSTableMeterMetaInfo->name;
     pCmd->tagData.dataLen = 0;
 
     code = tscGetTableMeta(pSql, pSTableMeterMetaInfo);
@@ -898,7 +898,7 @@ static int32_t tscCheckIfCreateTable(char **sqlstr, SSqlObj *pSql) {
       return tscInvalidSQLErrMsg(pCmd->payload, "keyword TAGS expected", sToken.z);
     }
 
-    SKVRowBuilder kvRowBuilder = {0};
+    SKVRowBuilder kvRowBuilder;
     if (tdInitKVRowBuilder(&kvRowBuilder) < 0) {
       return TSDB_CODE_TSC_OUT_OF_MEMORY;
     }
@@ -1456,7 +1456,7 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
 
   STableDataBlocks *pTableDataBlock = NULL;
   tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE,
-                                        sizeof(SSubmitBlk), tinfo.rowSize, pTableMetaInfo->name, pTableMeta, &pTableDataBlock, NULL);
+                                        sizeof(SSubmitBlk), tinfo.rowSize, &pTableMetaInfo->name[0], pTableMeta, &pTableDataBlock, NULL);
 
   tscAllocateMemIfNeed(pTableDataBlock, tinfo.rowSize, &maxRows);
 

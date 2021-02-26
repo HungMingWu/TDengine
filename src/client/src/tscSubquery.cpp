@@ -2269,7 +2269,7 @@ static void multiVnodeInsertFinalize(void* param, TAOS_RES* tres, int numOfRows)
         tscFreeQueryInfo(&pSql->cmd);
         SQueryInfo* pQueryInfo = tscGetQueryInfoDetailSafely(&pSql->cmd, 0);
         const STableMetaInfo* pMasterTableMetaInfo = pParentObj->cmd.getMetaInfo(pSql->cmd.clauseIndex, 0);
-        tscAddTableMetaInfo(pQueryInfo, pMasterTableMetaInfo->name, NULL, NULL, NULL, NULL);
+        tscAddTableMetaInfo(pQueryInfo, &pMasterTableMetaInfo->name[0], NULL, NULL, NULL, NULL);
 
         tscDebug("%p, failed sub:%d, %p", pParentObj, i, pSql);
       }

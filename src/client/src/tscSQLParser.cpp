@@ -273,7 +273,7 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       if (pInfo->type == TSDB_SQL_DROP_DB) {
         assert(pInfo->pDCLInfo->nTokens == 1);
 
-        code = setObjFullName(pTableMetaInfo->name, getAccountId(pSql), pzName, NULL, NULL);
+        code = setObjFullName(&pTableMetaInfo->name[0], getAccountId(pSql), pzName, NULL, NULL);
         if (code != TSDB_CODE_SUCCESS) {
           return invalidSqlErrMsg(pCmd->payload, msg2);
         }
@@ -287,13 +287,13 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
         }
       } else if (pInfo->type == TSDB_SQL_DROP_DNODE) {
         pzName->n = strdequote(pzName->z);
-        strncpy(pTableMetaInfo->name, pzName->z, pzName->n);
+        strncpy(&pTableMetaInfo->name[0], pzName->z, pzName->n);
       } else {  // drop user
         if (pzName->n >= TSDB_USER_LEN) {
           return invalidSqlErrMsg(pCmd->payload, msg3);
         }
 
-        strncpy(pTableMetaInfo->name, pzName->z, pzName->n);
+        strncpy(&pTableMetaInfo->name[0], pzName->z, pzName->n);
       }
 
       break;
@@ -307,7 +307,7 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
         return invalidSqlErrMsg(pCmd->payload, msg);
       }
 
-      int32_t ret = setObjFullName(pTableMetaInfo->name, getAccountId(pSql), pToken, NULL, NULL);
+      int32_t ret = setObjFullName(&pTableMetaInfo->name[0], getAccountId(pSql), pToken, NULL, NULL);
       if (ret != TSDB_CODE_SUCCESS) {
         return invalidSqlErrMsg(pCmd->payload, msg);
       }
@@ -337,7 +337,7 @@ int32_t tscToSQLCmd(SSqlObj* pSql, struct SSqlInfo* pInfo) {
         return invalidSqlErrMsg(pCmd->payload, msg1);
       }
 
-      int32_t ret = setObjFullName(pTableMetaInfo->name, getAccountId(pSql), &(pCreateDB->dbname), NULL, NULL);
+      int32_t ret = setObjFullName(&pTableMetaInfo->name[0], getAccountId(pSql), &(pCreateDB->dbname), NULL, NULL);
       if (ret != TSDB_CODE_SUCCESS) {
         return invalidSqlErrMsg(pCmd->payload, msg2);
       }
@@ -887,11 +887,10 @@ int32_t tscSetTableFullName(STableMetaInfo* pTableMetaInfo, SStrToken* pzTableNa
   int32_t  code = TSDB_CODE_SUCCESS;
 
   // backup the old name in pTableMetaInfo
-  char oldName[TSDB_TABLE_FNAME_LEN] = {0};
-  tstrncpy(oldName, pTableMetaInfo->name, tListLen(oldName));
+  FixedFrameStr oldName = pTableMetaInfo->name;
 
   if (hasSpecifyDB(pzTableName)) { // db has been specified in sql string so we ignore current db path
-    code = setObjFullName(pTableMetaInfo->name, getAccountId(pSql), NULL, pzTableName, NULL);
+    code = setObjFullName(&pTableMetaInfo->name[0], getAccountId(pSql), NULL, pzTableName, NULL);
     if (code != 0) {
       invalidSqlErrMsg(pCmd->payload, msg1);
     }
@@ -901,7 +900,7 @@ int32_t tscSetTableFullName(STableMetaInfo* pTableMetaInfo, SStrToken* pzTableNa
     if (t.n == 0) {  // current database not available or not specified
       code = TSDB_CODE_TSC_DB_NOT_SELECTED;
     } else {
-      code = setObjFullName(pTableMetaInfo->name, NULL, &t, pzTableName, NULL);
+      code = setObjFullName(&pTableMetaInfo->name[0], NULL, &t, pzTableName, NULL);
       if (code != 0) {
         invalidSqlErrMsg(pCmd->payload, msg1);
       }
@@ -916,7 +915,7 @@ int32_t tscSetTableFullName(STableMetaInfo* pTableMetaInfo, SStrToken* pzTableNa
    * the old name exists and is not equalled to the new name. Release the table meta
    * that are corresponding to the old name for the new table name.
    */
-  if (strlen(oldName) > 0 && strncasecmp(oldName, pTableMetaInfo->name, tListLen(pTableMetaInfo->name)) != 0) {
+  if (strlen(&oldName[0]) > 0 && strncasecmp(&oldName[0], &pTableMetaInfo->name[0], pTableMetaInfo->name.size()) != 0) {
     tscClearTableMetaInfo(pTableMetaInfo);
   }
 
@@ -2623,7 +2622,7 @@ int32_t setShowInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
         return invalidSqlErrMsg(pCmd->payload, msg1);
       }
 
-      int32_t ret = setObjFullName(pTableMetaInfo->name, getAccountId(pSql), pDbPrefixToken, NULL, NULL);
+      int32_t ret = setObjFullName(&pTableMetaInfo->name[0], getAccountId(pSql), pDbPrefixToken, NULL, NULL);
       if (ret != TSDB_CODE_SUCCESS) {
         return invalidSqlErrMsg(pCmd->payload, msg1);
       }
@@ -3456,7 +3455,7 @@ static int32_t getJoinCondInfo(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, tSQLExpr* 
 
   pLeft->uid = pTableMetaInfo->pTableMeta->id.uid;
   pLeft->tagColId = pTagSchema1->colId;
-  strcpy(pLeft->tableId, pTableMetaInfo->name);
+  pLeft->tableId = pTableMetaInfo->name;
 
   index = (SColumnIndex)COLUMN_INDEX_INITIALIZER;
   if (getColumnIndexByName(pCmd, &pExpr->pRight->colInfo, pQueryInfo, &index) != TSDB_CODE_SUCCESS) {
@@ -3468,7 +3467,7 @@ static int32_t getJoinCondInfo(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, tSQLExpr* 
 
   pRight->uid = pTableMetaInfo->pTableMeta->id.uid;
   pRight->tagColId = pTagSchema2->colId;
-  strcpy(pRight->tableId, pTableMetaInfo->name);
+  pRight->tableId = pTableMetaInfo->name;
 
   if (pTagSchema1->type != pTagSchema2->type) {
     return invalidSqlErrMsg(pCmd->payload, msg3);
@@ -4060,7 +4059,7 @@ static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo,
   }
   num = j;
 
-  char* name = extractDBName(pTableMetaInfo->name, db);
+  char* name = extractDBName(&pTableMetaInfo->name[0], db);
   SStrToken dbToken;
   dbToken.type = TK_STRING;
   dbToken.z = name;
@@ -6239,7 +6238,7 @@ int32_t doCheckForCreateFromStable(SSqlObj* pSql, SSqlInfo* pInfo) {
     }
 
     // get table meta from mnode
-    tstrncpy(pCreateTableInfo->tagdata.name, pStableMetaInfo->name, tListLen(pCreateTableInfo->tagdata.name));
+    pCreateTableInfo->tagdata.name = pStableMetaInfo->name;
     SArray* pList = pCreateTableInfo->pTagVals;
 
     code = tscGetTableMeta(pSql, pStableMetaInfo);
@@ -6256,7 +6255,7 @@ int32_t doCheckForCreateFromStable(SSqlObj* pSql, SSqlInfo* pInfo) {
     const SSchema  *pTagSchema = pStableMetaInfo->pTableMeta->getTagSchema();
     STagData *pTag = &pCreateTableInfo->tagdata;
 
-    SKVRowBuilder kvRowBuilder = {0};
+    SKVRowBuilder kvRowBuilder;
     if (tdInitKVRowBuilder(&kvRowBuilder) < 0) {
       return TSDB_CODE_TSC_OUT_OF_MEMORY;
     }
@@ -6319,7 +6318,7 @@ int32_t doCheckForCreateFromStable(SSqlObj* pSql, SSqlInfo* pInfo) {
       return ret;
     }
 
-    pCreateTableInfo->fullname = strndup(pTableMetaInfo->name, TSDB_TABLE_FNAME_LEN);
+    pCreateTableInfo->fullname = strndup(&pTableMetaInfo->name[0], TSDB_TABLE_FNAME_LEN);
   }
 
   return TSDB_CODE_SUCCESS;
@@ -6566,7 +6565,7 @@ int32_t doCheckForQuery(SSqlObj* pSql, SQuerySQL* pQuerySql, int32_t index) {
 
     // has no table alias name
     if (memcmp(pTableItem->pz, p1->pVar.pz, p1->pVar.nLen) == 0) {
-      extractTableName(pTableMetaInfo1->name, pTableMetaInfo1->aliasName);
+      extractTableName(&pTableMetaInfo1->name[0], pTableMetaInfo1->aliasName);
     } else {
       tstrncpy(pTableMetaInfo1->aliasName, p1->pVar.pz, sizeof(pTableMetaInfo1->aliasName));
     }

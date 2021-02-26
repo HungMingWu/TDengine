@@ -190,7 +190,7 @@ static void tscProcessStreamQueryCallback(void *param, TAOS_RES *tres, int numOf
 
     STableMetaInfo* pTableMetaInfo = pStream->pSql->cmd.getMetaInfo(0, 0);
 
-    char* name = pTableMetaInfo->name;
+    char* name = &pTableMetaInfo->name[0];
     taosHashRemove(tscTableMetaInfo, name, strnlen(name, TSDB_TABLE_FNAME_LEN));
     pTableMetaInfo->vgroupList = (SVgroupsInfo*)tscVgroupInfoClear(pTableMetaInfo->vgroupList);
 

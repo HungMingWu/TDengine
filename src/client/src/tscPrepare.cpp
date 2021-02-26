@@ -700,7 +700,7 @@ static int insertStmtBindParam(STscStmt* stmt, TAOS_BIND* bind) {
   STableDataBlocks* pBlock = NULL;
 
   tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
-                          pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
+                          pTableMeta->tableInfo.rowSize, &pTableMetaInfo->name[0], pTableMeta, &pBlock, NULL);
 
   uint32_t totalDataSize = sizeof(SSubmitBlk) + pCmd->batchSize * pBlock->rowSize;
   if (totalDataSize > pBlock->nAllocSize) {
@@ -777,7 +777,7 @@ static int insertStmtExecute(STscStmt* stmt) {
   STableDataBlocks* pBlock = NULL;
 
   tscGetDataBlockFromList(pCmd->pTableBlockHashList, pTableMeta->id.uid, TSDB_PAYLOAD_SIZE, sizeof(SSubmitBlk),
-                          pTableMeta->tableInfo.rowSize, pTableMetaInfo->name, pTableMeta, &pBlock, NULL);
+                          pTableMeta->tableInfo.rowSize, &pTableMetaInfo->name[0], pTableMeta, &pBlock, NULL);
 
   pBlock->size = sizeof(SSubmitBlk) + pCmd->batchSize * pBlock->rowSize;
   SSubmitBlk* pBlk = (SSubmitBlk*) pBlock->pData;

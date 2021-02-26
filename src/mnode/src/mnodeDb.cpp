@@ -1039,7 +1039,7 @@ int32_t mnodeProcessDropDbMsg(SMnodeMsg *pMsg) {
   SDropDbMsg *pDrop = static_cast<SDropDbMsg *>(pMsg->rpcMsg.pCont);
   mDebug("db:%s, drop db msg is received from thandle:%p", pDrop->db, pMsg->rpcMsg.handle);
 
-  if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(pDrop->db);
+  if (pMsg->pDb == NULL) pMsg->pDb = mnodeGetDb(&pDrop->db[0]);
   if (pMsg->pDb == NULL) {
     if (pDrop->ignoreNotExists) {
       mDebug("db:%s, db is not exist, treat as success", pDrop->db);

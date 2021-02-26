@@ -455,7 +455,7 @@ int tscProcessSql(SSqlObj *pSql) {
 
   if (pQueryInfo != NULL) {
     pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
-    name = (pTableMetaInfo != NULL)? pTableMetaInfo->name:NULL;
+    name = (pTableMetaInfo != NULL)? &pTableMetaInfo->name[0] :NULL;
     type = pQueryInfo->type;
 
     // while numOfTables equals to 0, it must be Heartbeat
@@ -999,7 +999,7 @@ int32_t tscBuildCreateDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
 
   assert(pCmd->numOfClause == 1);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pCreateDbMsg->db, pTableMetaInfo->name, sizeof(pCreateDbMsg->db));
+  tstrncpy(pCreateDbMsg->db, &pTableMetaInfo->name[0], sizeof(pCreateDbMsg->db));
 
   return TSDB_CODE_SUCCESS;
 }
@@ -1094,7 +1094,7 @@ int32_t tscBuildDropDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SDropDbMsg *pDropDbMsg = (SDropDbMsg*)(&pCmd->payload[0]);
 
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pDropDbMsg->db, pTableMetaInfo->name, sizeof(pDropDbMsg->db));
+  pDropDbMsg->db = pTableMetaInfo->name;
   pDropDbMsg->ignoreNotExists = pInfo->pDCLInfo->existsCheck ? 1 : 0;
 
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_DB;
@@ -1106,7 +1106,7 @@ int32_t tscBuildDropTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SCMDropTableMsg));
   SCMDropTableMsg *pDropTableMsg = (SCMDropTableMsg*)(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  strcpy(pDropTableMsg->tableFname, pTableMetaInfo->name);
+  pDropTableMsg->tableFname = pTableMetaInfo->name;
   pDropTableMsg->igNotExists = pInfo->pDCLInfo->existsCheck ? 1 : 0;
 
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_TABLE;
@@ -1118,7 +1118,7 @@ int32_t tscBuildDropDnodeMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SDropDnodeMsg));
   SDropDnodeMsg * pDrop = (SDropDnodeMsg *)(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pDrop->ep, pTableMetaInfo->name, sizeof(pDrop->ep));
+  tstrncpy(pDrop->ep, &pTableMetaInfo->name[0], sizeof(pDrop->ep));
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_DNODE;
 
   return TSDB_CODE_SUCCESS;
@@ -1130,7 +1130,7 @@ int32_t tscBuildDropUserMsg(SSqlObj *pSql, SSqlInfo * UNUSED_PARAM(pInfo)) {
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_USER;
   SDropUserMsg *  pDropMsg = (SDropUserMsg *)(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pDropMsg->user, pTableMetaInfo->name, sizeof(pDropMsg->user));
+  tstrncpy(pDropMsg->user, &pTableMetaInfo->name[0], sizeof(pDropMsg->user));
 
   return TSDB_CODE_SUCCESS;
 }
@@ -1141,7 +1141,7 @@ int32_t tscBuildDropAcctMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->msgType = TSDB_MSG_TYPE_CM_DROP_ACCT;
   SDropUserMsg *  pDropMsg = (SDropUserMsg *)(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pDropMsg->user, pTableMetaInfo->name, sizeof(pDropMsg->user));
+  tstrncpy(pDropMsg->user, &pTableMetaInfo->name[0], sizeof(pDropMsg->user));
 
   return TSDB_CODE_SUCCESS;
 }
@@ -1151,7 +1151,7 @@ int32_t tscBuildUseDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(sizeof(SUseDbMsg));
   SUseDbMsg *pUseDbMsg = (SUseDbMsg *)(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  strcpy(pUseDbMsg->db, pTableMetaInfo->name);
+  pUseDbMsg->db = pTableMetaInfo->name;
   pCmd->msgType = TSDB_MSG_TYPE_CM_USE_DB;
 
   return TSDB_CODE_SUCCESS;
@@ -1165,9 +1165,9 @@ int32_t tscBuildShowMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   SShowMsg *pShowMsg = (SShowMsg *)(&pCmd->payload[0]);
 
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  size_t nameLen = strlen(pTableMetaInfo->name);
+  size_t nameLen = strlen(&pTableMetaInfo->name[0]);
   if (nameLen > 0) {
-    tstrncpy(pShowMsg->db, pTableMetaInfo->name, sizeof(pShowMsg->db));  // prefix is set here
+    tstrncpy(pShowMsg->db, &pTableMetaInfo->name[0], sizeof(pShowMsg->db));  // prefix is set here
   } else {
     tstrncpy(pShowMsg->db, pObj->db, sizeof(pShowMsg->db));
   }
@@ -1263,7 +1263,7 @@ int tscBuildCreateTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
       pMsg += sizeof(SCreateTableMsg);
 
       SCreatedTableInfo* p = (SCreatedTableInfo*)taosArrayGet(list, i);
-      strcpy(pCreate->tableFname, p->fullname);
+      strcpy(&pCreate->tableFname[0], p->fullname);
       pCreate->igExists = (p->igExist)? 1 : 0;
 
       // use dbinfo from table id without modifying current db info
@@ -1276,10 +1276,10 @@ int tscBuildCreateTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   } else {  // create (super) table
     pCreateTableMsg->numOfTables = htonl(1); // only one table will be created
 
-    strcpy(pCreateMsg->tableFname, pTableMetaInfo->name);
+    pCreateMsg->tableFname = pTableMetaInfo->name;
 
     // use dbinfo from table id without modifying current db info
-    tscGetDBInfoFromTableFullName(pTableMetaInfo->name, pCreateMsg->db);
+    tscGetDBInfoFromTableFullName(&pTableMetaInfo->name[0], pCreateMsg->db);
 
     SCreateTableSQL *pCreateTable = pInfo->pCreateTableInfo;
 
@@ -1341,9 +1341,9 @@ int tscBuildAlterTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pCmd->payload.resize(size);
   
   SAlterTableMsg *pAlterTableMsg = (SAlterTableMsg *)(&pCmd->payload[0]);
-  tscGetDBInfoFromTableFullName(pTableMetaInfo->name, pAlterTableMsg->db);
+  tscGetDBInfoFromTableFullName(&pTableMetaInfo->name[0], pAlterTableMsg->db);
 
-  strcpy(pAlterTableMsg->tableFname, pTableMetaInfo->name);
+  pAlterTableMsg->tableFname = pTableMetaInfo->name;
   pAlterTableMsg->type = htons(pAlterInfo->type);
 
   pAlterTableMsg->numOfCols = htons(tscNumOfFields(pQueryInfo));
@@ -1396,7 +1396,7 @@ int tscAlterDbMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
 
   SAlterDbMsg *pAlterDbMsg = (SAlterDbMsg* )(&pCmd->payload[0]);
   const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, 0);
-  tstrncpy(pAlterDbMsg->db, pTableMetaInfo->name, sizeof(pAlterDbMsg->db));
+  tstrncpy(pAlterDbMsg->db, &pTableMetaInfo->name[0], sizeof(pAlterDbMsg->db));
 
   return TSDB_CODE_SUCCESS;
 }
@@ -1528,7 +1528,7 @@ int tscBuildTableMetaMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
 
   STableInfoMsg *pInfoMsg = (STableInfoMsg *)(&pCmd->payload[0]);
-  strcpy(pInfoMsg->tableFname, pTableMetaInfo->name);
+  pInfoMsg->tableFname = pTableMetaInfo->name;
   pInfoMsg->createFlag = htons(pSql->cmd.autoCreated ? 1 : 0);
 
   char *pMsg = (char *)pInfoMsg + sizeof(STableInfoMsg);
@@ -1624,7 +1624,7 @@ int tscBuildSTableVgroupMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   for (int32_t i = 0; i < pQueryInfo->numOfTables; ++i) {
     const STableMetaInfo *pTableMetaInfo = pCmd->getMetaInfo(pCmd->clauseIndex, i);
     size_t size = sizeof(pTableMetaInfo->name);
-    tstrncpy(pMsg, pTableMetaInfo->name, size);
+    tstrncpy(pMsg, &pTableMetaInfo->name[0], size);
     pMsg += size;
   }
 
@@ -1732,23 +1732,22 @@ int tscProcessTableMetaRsp(SSqlObj *pSql) {
 
   if (pTableMeta->tableType == TSDB_CHILD_TABLE) {
     // check if super table hashmap or not
-    int32_t len = (int32_t) strnlen(pTableMeta->sTableName, TSDB_TABLE_FNAME_LEN);
+    int32_t len = (int32_t) strnlen(&pTableMeta->sTableName[0], TSDB_TABLE_FNAME_LEN);
 
     // super tableMeta data alreay exists, create it according to tableMeta and add it to hash map
     STableMeta* pSupTableMeta = createSuperTableMeta(pMetaMsg);
 
     uint32_t size = tscGetTableMetaSize(pSupTableMeta);
-    int32_t code = taosHashPut(tscTableMetaInfo, pTableMeta->sTableName, len, pSupTableMeta, size);
+    int32_t code = taosHashPut(tscTableMetaInfo, &pTableMeta->sTableName[0], len, pSupTableMeta, size);
     assert(code == TSDB_CODE_SUCCESS);
 
     tfree(pSupTableMeta);
 
-    CChildTableMeta* cMeta = tscCreateChildMeta(pTableMeta);
-    taosHashPut(tscTableMetaInfo, pTableMetaInfo->name, strlen(pTableMetaInfo->name), cMeta, sizeof(CChildTableMeta));
-    tfree(cMeta);
+    CChildTableMeta cMeta(*pTableMeta);
+    taosHashPut(tscTableMetaInfo, &pTableMetaInfo->name[0], strlen(&pTableMetaInfo->name[0]), &cMeta, sizeof(CChildTableMeta));
   } else {
     uint32_t s = tscGetTableMetaSize(pTableMeta);
-    taosHashPut(tscTableMetaInfo, pTableMetaInfo->name, strlen(pTableMetaInfo->name), pTableMeta, s);
+    taosHashPut(tscTableMetaInfo, &pTableMetaInfo->name[0], strlen(&pTableMetaInfo->name[0]), pTableMeta, s);
   }
 
   // update the vgroupInfo if needed
@@ -2062,7 +2061,7 @@ int tscProcessUseDbRsp(SSqlObj *pSql) {
   STscObj *       pObj = pSql->pTscObj;
   const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
-  tstrncpy(pObj->db, pTableMetaInfo->name, sizeof(pObj->db));
+  tstrncpy(pObj->db, &pTableMetaInfo->name[0], sizeof(pObj->db));
   return 0;
 }
 
@@ -2076,7 +2075,7 @@ int tscProcessDropTableRsp(SSqlObj *pSql) {
   const STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
   //The cached tableMeta is expired in this case, so clean it in hash table
-  taosHashRemove(tscTableMetaInfo, pTableMetaInfo->name, strnlen(pTableMetaInfo->name, TSDB_TABLE_FNAME_LEN));
+  taosHashRemove(tscTableMetaInfo, &pTableMetaInfo->name[0], strnlen(&pTableMetaInfo->name[0], TSDB_TABLE_FNAME_LEN));
   tscDebug("%p remove table meta after drop table:%s, numOfRemain:%d", pSql, pTableMetaInfo->name,
            (int32_t) taosHashGetSize(tscTableMetaInfo));
 
@@ -2087,7 +2086,7 @@ int tscProcessDropTableRsp(SSqlObj *pSql) {
 int tscProcessAlterTableMsgRsp(SSqlObj *pSql) {
   STableMetaInfo *pTableMetaInfo = pSql->cmd.getMetaInfo(0, 0);
 
-  char* name = pTableMetaInfo->name;
+  char* name = &pTableMetaInfo->name[0];
   tscDebug("%p remove tableMeta in hashMap after alter-table: %s", pSql, name);
 
   bool isSuperTable = UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo);
@@ -2201,7 +2200,7 @@ static int32_t getTableMetaFromMnode(SSqlObj *pSql, STableMetaInfo *pTableMetaIn
   STableMetaInfo *pNewMeterMetaInfo = tscAddEmptyMetaInfo(pNewQueryInfo);
   assert(pNew->cmd.numOfClause == 1 && pNewQueryInfo->numOfTables == 1);
 
-  tstrncpy(pNewMeterMetaInfo->name, pTableMetaInfo->name, sizeof(pNewMeterMetaInfo->name));
+  pNewMeterMetaInfo->name = pTableMetaInfo->name;
 
   if (pSql->cmd.autoCreated) {
     int32_t code = copyTagData(&pNew->cmd.tagData, &pSql->cmd.tagData);
@@ -2232,7 +2231,7 @@ static int32_t getTableMetaFromMnode(SSqlObj *pSql, STableMetaInfo *pTableMetaIn
 }
 
 int32_t tscGetTableMeta(SSqlObj *pSql, STableMetaInfo *pTableMetaInfo) {
-  assert(strlen(pTableMetaInfo->name) != 0);
+  assert(strlen(&pTableMetaInfo->name[0]) != 0);
   tfree(pTableMetaInfo->pTableMeta);
 
   uint32_t size = tscGetTableMetaMaxSize();
@@ -2240,15 +2239,15 @@ int32_t tscGetTableMeta(SSqlObj *pSql, STableMetaInfo *pTableMetaInfo) {
 
   pTableMetaInfo->pTableMeta->tableType = -1;
   pTableMetaInfo->pTableMeta->tableInfo.numOfColumns  = -1;
-  int32_t len = (int32_t) strlen(pTableMetaInfo->name);
+  int32_t len = (int32_t) strlen(&pTableMetaInfo->name[0]);
 
-  taosHashGetClone(tscTableMetaInfo, pTableMetaInfo->name, len, NULL, pTableMetaInfo->pTableMeta, -1);
+  taosHashGetClone(tscTableMetaInfo, &pTableMetaInfo->name[0], len, NULL, pTableMetaInfo->pTableMeta, -1);
 
   // TODO resize the tableMeta
   STableMeta* pMeta = pTableMetaInfo->pTableMeta;
   if (pMeta->id.uid > 0) {
     if (pMeta->tableType == TSDB_CHILD_TABLE) {
-      int32_t code = tscCreateTableMetaFromCChildMeta(pTableMetaInfo->pTableMeta, pTableMetaInfo->name);
+      int32_t code = tscCreateTableMetaFromCChildMeta(pTableMetaInfo->pTableMeta, &pTableMetaInfo->name[0]);
       if (code != TSDB_CODE_SUCCESS) {
         return getTableMetaFromMnode(pSql, pTableMetaInfo);
       }
@@ -2276,7 +2275,7 @@ int tscRenewTableMeta(SSqlObj *pSql, int32_t tableIndex) {
 
   SQueryInfo     *pQueryInfo = tscGetQueryInfoDetail(pCmd, 0);
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, tableIndex);
-  const char* name = pTableMetaInfo->name;
+  const char* name = &pTableMetaInfo->name[0];
 
   STableMeta* pTableMeta = pTableMetaInfo->pTableMeta;
   if (pTableMeta) {
@@ -2326,7 +2325,7 @@ int tscGetSTableVgroupInfo(SSqlObj *pSql, int32_t clauseIndex) {
   for (int32_t i = 0; i < pQueryInfo->numOfTables; ++i) {
     STableMetaInfo *pMInfo = tscGetMetaInfo(pQueryInfo, i);
     STableMeta* pTableMeta = tscTableMetaClone(pMInfo->pTableMeta);
-    tscAddTableMetaInfo(pNewQueryInfo, pMInfo->name, pTableMeta, NULL, pMInfo->tagColList, pMInfo->pVgroupTables);
+    tscAddTableMetaInfo(pNewQueryInfo, &pMInfo->name[0], pTableMeta, NULL, pMInfo->tagColList, pMInfo->pVgroupTables);
   }
 
   pNew->cmd.payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);

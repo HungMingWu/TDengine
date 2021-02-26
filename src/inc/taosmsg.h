@@ -17,11 +17,14 @@
 #define TDENGINE_TAOSMSG_H
 
 #include <stdint.h>
+#include <array>
 
 #include "taosdef.h"
 #include "taoserror.h"
 #include "trpc.h"
 #include "tdataformat.h"
+
+using FixedFrameStr = std::array<char, TSDB_TABLE_FNAME_LEN>;
 
 // message type
 
@@ -266,9 +269,9 @@ struct SMDCreateTableMsg {
   char     data[];
 };
 
-typedef struct {
+struct SCreateTableMsg {
   int32_t len;  // one create table message
-  char    tableFname[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr    tableFname;
   char    db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   int8_t  igExists;
   int8_t  getMeta;
@@ -277,20 +280,20 @@ typedef struct {
   int16_t sqlLen;  // the length of SQL, it starts after schema , sql is a null-terminated string
   int8_t  reserved[16];
   char    schema[];
-} SCreateTableMsg;
+};
 
 typedef struct {
   int32_t numOfTables;
   int32_t contLen;
 } SCMCreateTableMsg;
 
-typedef struct {
-  char   tableFname[TSDB_TABLE_FNAME_LEN];
+struct SCMDropTableMsg {
+  FixedFrameStr tableFname;
   int8_t igNotExists;
-} SCMDropTableMsg;
+};
 
-typedef struct {
-  char    tableFname[TSDB_TABLE_FNAME_LEN];
+struct SAlterTableMsg {
+  FixedFrameStr tableFname;
   char    db[TSDB_ACCT_ID_LEN + TSDB_DB_NAME_LEN];
   int16_t type; /* operation type   */
   int16_t numOfCols; /* number of schema */
@@ -298,7 +301,7 @@ typedef struct {
   SSchema schema[];
   // tagVal is padded after schema
   // char    tagVal[];
-} SAlterTableMsg;
+};
 
 typedef struct {
   SMsgHead  head;
@@ -380,12 +383,12 @@ typedef struct {
   char     tableFname[TSDB_TABLE_FNAME_LEN];
 } SMDDropTableMsg;
 
-typedef struct {
+struct SDropSTableMsg {
   int32_t  contLen;
   int32_t  vgId;
   uint64_t uid;
-  char    tableFname[TSDB_TABLE_FNAME_LEN];
-} SDropSTableMsg;
+  FixedFrameStr tableFname;
+};
 
 typedef struct {
   int32_t vgId;
@@ -566,7 +569,7 @@ typedef struct {
 } SCreateDbMsg, SAlterDbMsg;
 
 typedef struct {
-  char    db[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr db;
   uint8_t ignoreNotExists;
 } SDropDbMsg, SUseDbMsg;
 
@@ -685,11 +688,11 @@ typedef struct {
   SVnodeDesc nodes[TSDB_MAX_REPLICA];
 } SCreateVnodeMsg, SAlterVnodeMsg;
 
-typedef struct {
-  char    tableFname[TSDB_TABLE_FNAME_LEN];
+struct STableInfoMsg {
+  FixedFrameStr tableFname;
   int16_t createFlag;
   char    tags[];
-} STableInfoMsg;
+};
 
 typedef struct {
   int32_t numOfTables;
@@ -722,7 +725,7 @@ typedef struct {
   SVgroupMsg vgroups[];
 } SVgroupsMsg;
 
-typedef struct STableMetaMsg {
+struct STableMetaMsg {
   int32_t       contLen;
   char          tableFname[TSDB_TABLE_FNAME_LEN];   // table id
   uint8_t       numOfTags;
@@ -735,10 +738,10 @@ typedef struct STableMetaMsg {
   uint64_t      uid;
   SVgroupMsg    vgroup;
 
-  char          sTableName[TSDB_TABLE_FNAME_LEN];
+  std::array<char, TSDB_TABLE_FNAME_LEN> sTableName;
   uint64_t      suid;
   SSchema       schema[];
-} STableMetaMsg;
+};
 
 typedef struct SMultiTableMeta {
   int32_t       numOfTables;
@@ -746,11 +749,11 @@ typedef struct SMultiTableMeta {
   char          metas[];
 } SMultiTableMeta;
 
-typedef struct {
+struct STagData {
   int32_t dataLen;
-  char    name[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr name;
   char   *data;
-} STagData;
+};
 
 /*
  * sql: show tables like '%a_%'

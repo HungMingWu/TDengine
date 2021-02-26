@@ -553,7 +553,7 @@ int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, const STableDataBlocks* pDataBl
   // todo refactor
   // set the correct table meta object, the table meta has been locked in pDataBlocks, so it must be in the cache
   if (pTableMetaInfo->pTableMeta != pDataBlock->pTableMeta) {
-    tstrncpy(pTableMetaInfo->name, pDataBlock->tableName, sizeof(pTableMetaInfo->name));
+    tstrncpy(&pTableMetaInfo->name[0], pDataBlock->tableName, sizeof(pTableMetaInfo->name));
 
     if (pTableMetaInfo->pTableMeta != NULL) {
       tfree(pTableMetaInfo->pTableMeta);
@@ -561,7 +561,7 @@ int32_t tscCopyDataBlockToPayload(SSqlObj* pSql, const STableDataBlocks* pDataBl
 
     pTableMetaInfo->pTableMeta = tscTableMetaClone(pDataBlock->pTableMeta);
   } else {
-    assert(strncmp(pTableMetaInfo->name, pDataBlock->tableName, tListLen(pDataBlock->tableName)) == 0);
+    assert(strncmp(&pTableMetaInfo->name[0], pDataBlock->tableName, tListLen(pDataBlock->tableName)) == 0);
   }
 
   assert(pDataBlock->size <= pDataBlock->nAllocSize);
@@ -1657,7 +1657,7 @@ STableMetaInfo* tscAddTableMetaInfo(SQueryInfo* pQueryInfo, const char* name, ST
   pQueryInfo->pTableMetaInfo[pQueryInfo->numOfTables] = pTableMetaInfo;
 
   if (name != NULL) {
-    tstrncpy(pTableMetaInfo->name, name, sizeof(pTableMetaInfo->name));
+    tstrncpy(&pTableMetaInfo->name[0], name, sizeof(pTableMetaInfo->name));
   }
 
   pTableMetaInfo->pTableMeta = pTableMeta;
@@ -1753,7 +1753,7 @@ SSqlObj* createSimpleSubObj(SSqlObj* pSql, __async_cb_func_t fp, void* param, in
   assert(pSql->cmd.clauseIndex == 0);
   const STableMetaInfo* pMasterTableMetaInfo = pSql->cmd.getMetaInfo(pSql->cmd.clauseIndex, 0);
 
-  tscAddTableMetaInfo(pQueryInfo, pMasterTableMetaInfo->name, NULL, NULL, NULL, NULL);
+  tscAddTableMetaInfo(pQueryInfo, &pMasterTableMetaInfo->name[0], NULL, NULL, NULL, NULL);
   registerSqlObj(pNew);
 
   return pNew;
@@ -1899,7 +1899,7 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
   pNew->param   = param;
   pNew->maxRetry = TSDB_MAX_REPLICA;
 
-  const char* name = pTableMetaInfo->name;
+  const char* name = &pTableMetaInfo->name[0];
   STableMetaInfo* pFinalInfo = NULL;
 
   if (pPrevSql == NULL) {
@@ -2373,11 +2373,11 @@ void tscSVgroupInfoCopy(SVgroupInfo* dst, const SVgroupInfo* src) {
 }
 
 char* serializeTagData(STagData* pTagData, char* pMsg) {
-  int32_t n = (int32_t) strlen(pTagData->name);
+  int32_t n = (int32_t) strlen(&pTagData->name[0]);
   *(int32_t*) pMsg = htonl(n);
   pMsg += sizeof(n);
 
-  memcpy(pMsg, pTagData->name, n);
+  memcpy(pMsg, &pTagData->name[0], n);
   pMsg += n;
 
   *(int32_t*)pMsg = htonl(pTagData->dataLen);
@@ -2391,7 +2391,7 @@ char* serializeTagData(STagData* pTagData, char* pMsg) {
 
 int32_t copyTagData(STagData* dst, const STagData* src) {
   dst->dataLen = src->dataLen;
-  tstrncpy(dst->name, src->name, tListLen(dst->name));
+  dst->name = src->name;
 
   if (dst->dataLen > 0) {
     dst->data = (char*)malloc(dst->dataLen);
@@ -2437,25 +2437,13 @@ uint32_t tscGetTableMetaSize(STableMeta* pTableMeta) {
   return sizeof(STableMeta) + totalCols * sizeof(SSchema);
 }
 
-CChildTableMeta* tscCreateChildMeta(STableMeta* pTableMeta) {
-  assert(pTableMeta != NULL);
-
-  auto cMeta = new CChildTableMeta;
-  cMeta->tableType = TSDB_CHILD_TABLE;
-  cMeta->vgId = pTableMeta->vgId;
-  cMeta->id   = pTableMeta->id;
-  tstrncpy(cMeta->sTableName, pTableMeta->sTableName, TSDB_TABLE_FNAME_LEN);
-
-  return cMeta;
-}
-
 int32_t tscCreateTableMetaFromCChildMeta(STableMeta* pChild, const char* name) {
   assert(pChild != NULL);
 
   uint32_t size = tscGetTableMetaMaxSize();
   STableMeta* p = (STableMeta*)calloc(1, size);
 
-  taosHashGetClone(tscTableMetaInfo, pChild->sTableName, strnlen(pChild->sTableName, TSDB_TABLE_FNAME_LEN), NULL, p, -1);
+  taosHashGetClone(tscTableMetaInfo, &pChild->sTableName[0], strnlen(&pChild->sTableName[0], TSDB_TABLE_FNAME_LEN), NULL, p, -1);
   if (p->id.uid > 0) { // tableMeta exists, build child table meta and return
     pChild->sversion = p->sversion;
     pChild->tversion = p->tversion;

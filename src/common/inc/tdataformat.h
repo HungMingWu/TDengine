@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 
 #include "talgo.h"
 #include "ttype.h"
@@ -288,10 +289,10 @@ int        tdMergeDataCols(SDataCols *target, SDataCols *src, int rowsToMerge);
  */
 typedef void *SKVRow;
 
-typedef struct {
+struct SColIdx {
   int16_t colId;
   int16_t offset;
-} SColIdx;
+};
 
 #define TD_KV_ROW_HEAD_SIZE (2 * sizeof(int16_t))
 
@@ -330,14 +331,12 @@ static FORCE_INLINE void *tdGetKVRowValOfCol(SKVRow row, int16_t colId) {
 }
 
 // ----------------- K-V data row builder
-typedef struct {
-  int16_t  tCols;
-  int16_t  nCols;
-  SColIdx *pColIdx;
+struct SKVRowBuilder {
+  std::vector<SColIdx> pColIdx;
   int16_t  alloc;
   int16_t  size;
   void *   buf;
-} SKVRowBuilder;
+};
 
 int    tdInitKVRowBuilder(SKVRowBuilder *pBuilder);
 void   tdDestroyKVRowBuilder(SKVRowBuilder *pBuilder);
@@ -345,16 +344,7 @@ void   tdResetKVRowBuilder(SKVRowBuilder *pBuilder);
 SKVRow tdGetKVRowFromBuilder(SKVRowBuilder *pBuilder);
 
 static FORCE_INLINE int tdAddColToKVRow(SKVRowBuilder *pBuilder, int16_t colId, int8_t type, void *value) {
-  if (pBuilder->nCols >= pBuilder->tCols) {
-    pBuilder->tCols *= 2;
-    pBuilder->pColIdx = (SColIdx *)realloc((void *)(pBuilder->pColIdx), sizeof(SColIdx) * pBuilder->tCols);
-    if (pBuilder->pColIdx == NULL) return -1;
-  }
-
-  pBuilder->pColIdx[pBuilder->nCols].colId = colId;
-  pBuilder->pColIdx[pBuilder->nCols].offset = pBuilder->size;
-
-  pBuilder->nCols++;
+  pBuilder->pColIdx.push_back({colId, pBuilder->size});
 
   int tlen = IS_VAR_DATA_TYPE(type) ? varDataTLen(value) : TYPE_BYTES[type];
   if (tlen > pBuilder->alloc - pBuilder->size) {

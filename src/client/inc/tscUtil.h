@@ -274,7 +274,6 @@ int32_t copyTagData(STagData* dst, const STagData* src);
 
 STableMeta* createSuperTableMeta(STableMetaMsg* pChild);
 uint32_t tscGetTableMetaSize(STableMeta* pTableMeta);
-CChildTableMeta* tscCreateChildMeta(STableMeta* pTableMeta);
 uint32_t tscGetTableMetaMaxSize();
 int32_t tscCreateTableMetaFromCChildMeta(STableMeta* pChild, const char* name);
 STableMeta* tscTableMetaClone(STableMeta* pTableMeta);

@@ -63,18 +63,11 @@ typedef struct SNewVgroupInfo {
   SEpAddrMsg ep[TSDB_MAX_REPLICA];
 } SNewVgroupInfo;
 
-typedef struct CChildTableMeta {
+struct STableMeta {
   int32_t        vgId;
   STableId       id;
   uint8_t        tableType;
-  char           sTableName[TSDB_TABLE_FNAME_LEN];
-} CChildTableMeta;
-
-typedef struct STableMeta {
-  int32_t        vgId;
-  STableId       id;
-  uint8_t        tableType;
-  char           sTableName[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr  sTableName;
   int16_t        sversion;
   int16_t        tversion;
   STableComInfo  tableInfo;
@@ -122,9 +115,19 @@ typedef struct STableMeta {
    * @return
    */
   SSchema *getColumnSchemaById(int16_t colId);
-} STableMeta;
+};
 
-typedef struct STableMetaInfo {
+struct CChildTableMeta {
+  int32_t                                vgId;
+  STableId                               id;
+  uint8_t                                tableType = TSDB_CHILD_TABLE;
+  FixedFrameStr                          sTableName;
+
+ public:
+  CChildTableMeta(const STableMeta &meta) : vgId(meta.vgId), id(meta.id), sTableName(meta.sTableName) {}
+};
+
+struct STableMetaInfo {
   STableMeta   *pTableMeta;      // table meta, cached in client side and acquired by name
   SVgroupsInfo *vgroupList;
   SArray       *pVgroupTables;   // SArray<SVgroupTableInfo>
@@ -134,10 +137,10 @@ typedef struct STableMetaInfo {
    * 2. keep the vgroup index for multi-vnode insertion
    */
   int32_t       vgroupIndex;
-  char          name[TSDB_TABLE_FNAME_LEN];        // (super) table name
+  FixedFrameStr name;                              // (super) table name
   char          aliasName[TSDB_TABLE_NAME_LEN];    // alias name of table specified in query sql
   SArray       *tagColList;                        // SArray<SColumn*>, involved tag columns
-} STableMetaInfo;
+};
 
 /* the structure for sql function in select clause */
 struct SSqlExpr {
@@ -189,11 +192,11 @@ typedef struct SCond {
   std::string cond;
 } SCond;
 
-typedef struct SJoinNode {
-  char     tableId[TSDB_TABLE_FNAME_LEN];
+struct SJoinNode {
+  FixedFrameStr tableId;
   uint64_t uid;
   int16_t  tagColId;
-} SJoinNode;
+};
 
 typedef struct SJoinInfo {
   bool      hasJoin;
