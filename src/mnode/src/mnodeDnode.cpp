@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <mutex>
 #include "os.h"
 #include "tgrant.h"
 #include "tbn.h"
@@ -47,7 +48,7 @@ extern void *  tsVgroupSdb;
 
 static SDnodeEps*tsDnodeEps;
 static int32_t   tsDnodeEpsSize;
-static pthread_mutex_t tsDnodeEpsMutex;
+static std::mutex tsDnodeEpsMutex;
 
 static int32_t mnodeCreateDnode(char *ep, SMnodeMsg *pMsg);
 static void    mnodeUpdateDnodeEps();
@@ -143,7 +144,6 @@ class DnodeTable : public SSdbTable {
 int32_t mnodeInitDnodes() {
   SDnodeObj tObj;
   tsDnodeUpdateSize = (int8_t *)tObj.updateEnd - (int8_t *)&tObj;
-  pthread_mutex_init(&tsDnodeEpsMutex, NULL);
 
   SSdbTableDesc desc;
   desc.id = SDB_TABLE_DNODE;
@@ -164,7 +164,6 @@ int32_t mnodeInitDnodes() {
 
 void mnodeCleanupDnodes() {
   tsDnodeSdb.reset();
-  pthread_mutex_destroy(&tsDnodeEpsMutex);
   free(tsDnodeEps);
   tsDnodeEps = NULL;
 }
@@ -381,22 +380,19 @@ static int32_t mnodeCheckClusterCfgPara(const SClusterCfg *clusterCfg) {
 }
 
 static int32_t mnodeGetDnodeEpsSize() {
-  pthread_mutex_lock(&tsDnodeEpsMutex);
-  int32_t size = tsDnodeEpsSize;
-  pthread_mutex_unlock(&tsDnodeEpsMutex);
-  return size;
+  std::lock_guard<std::mutex> _(tsDnodeEpsMutex);
+  return tsDnodeEpsSize;
 }
 
 static void mnodeGetDnodeEpsData(SDnodeEps *pEps, int32_t epsSize) {
-  pthread_mutex_lock(&tsDnodeEpsMutex);
+  std::lock_guard<std::mutex> _(tsDnodeEpsMutex);
   if (epsSize == tsDnodeEpsSize) {
     memcpy(pEps, tsDnodeEps, tsDnodeEpsSize);
   }
-  pthread_mutex_unlock(&tsDnodeEpsMutex);
 }
 
 static void mnodeUpdateDnodeEps() {
-  pthread_mutex_lock(&tsDnodeEpsMutex);
+  std::lock_guard<std::mutex> _(tsDnodeEpsMutex);
 
   int32_t totalDnodes = mnodeGetDnodesNum();
   tsDnodeEpsSize = sizeof(SDnodeEps) + totalDnodes * sizeof(SDnodeEp);
@@ -422,8 +418,6 @@ static void mnodeUpdateDnodeEps() {
     pEp->dnodePort = htons(pDnode->dnodePort);
     tstrncpy(pEp->dnodeFqdn, pDnode->dnodeFqdn, TSDB_FQDN_LEN);
   }
-
-  pthread_mutex_unlock(&tsDnodeEpsMutex);
 }
 
 int32_t mnodeProcessDnodeStatusMsg(SMnodeMsg *pMsg) {

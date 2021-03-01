@@ -165,7 +165,7 @@ static int32_t vnodeProcessCreateTableMsg(SVnodeObj *pVnode, void *pCont, SRspRe
     ASSERT(code != 0);
   }
 
-  tsdbClearTableCfg(pCfg);
+  delete pCfg;
   return code;
 }
 

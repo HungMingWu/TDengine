@@ -51,7 +51,7 @@ typedef enum {
 struct SSdbTable;
 struct SSdbRow {
   ESdbOper   type;
-  std::atomic<int32_t>    processedCount;  // for sync fwd callback
+  std::atomic<int32_t> processedCount{1};  // for sync fwd callback
   int32_t    code;            // for callback in sdb queue
   int32_t    rowSize;
   void *     rowData;
@@ -68,6 +68,7 @@ struct SSdbRow {
   int32_t Delete();
   int32_t Update();
 };
+using SSdbRowPtr = std::shared_ptr<SSdbRow>;
 
 struct SSdbTableDesc {
   char *    name;
@@ -148,7 +149,7 @@ bool    sdbIsServing();
 void    sdbUpdateMnodeRoles();
 int32_t sdbGetReplicaNum();
 
-int32_t sdbInsertRowToQueue(SSdbRow *pRow);
+int32_t sdbInsertRowToQueue(SSdbRowPtr pRow);
 
 uint64_t sdbGetVersion();
 bool     sdbCheckRowDeleted(objectBase *pRow);

@@ -90,9 +90,9 @@ typedef struct {
 } STableId;
 
 // --------- TSDB TABLE configuration
-typedef struct {
+struct STableCfg {
   ETableType type;
-  char *     name;
+  std::string  name;
   STableId   tableId;
   int32_t    sversion;
   char *     sname;  // super table name
@@ -101,9 +101,10 @@ typedef struct {
   STSchema * tagSchema;
   SDataRow   tagValues;
   char *     sql;
-} STableCfg;
 
-void tsdbClearTableCfg(STableCfg *config);
+ public:
+  ~STableCfg();
+};
 
 void* tsdbGetTableTagVal(const void* pTable, int32_t colId, int16_t type, int16_t bytes);
 char* tsdbGetTableName(void *pTable);

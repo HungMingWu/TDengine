@@ -1444,7 +1444,7 @@ static int32_t mnodeGetSuperTableMeta(SMnodeMsg *pMsg) {
   pMeta->numOfColumns = htons((int16_t)pTable->numOfColumns);
   pMeta->tableType    = pTable->info.type;
   pMeta->contLen      = sizeof(STableMetaMsg) + mnodeSetSchemaFromSuperTable(pMeta->schema, pTable.get());
-  tstrncpy(pMeta->tableFname, pTable->info.tableId, sizeof(pMeta->tableFname));
+  tstrncpy(&pMeta->tableFname[0], pTable->info.tableId, sizeof(pMeta->tableFname));
 
   pMsg->rpcRsp.len = pMeta->contLen;
   pMeta->contLen = htons(pMeta->contLen);
@@ -1582,7 +1582,7 @@ static SMDCreateTableMsg *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCrea
     return NULL;
   }
 
-  mnodeExtractTableName(pTable->info.tableId, pCreate->tableFname);
+  mnodeExtractTableName(pTable->info.tableId, &pCreate->tableFname[0]);
   pCreate->contLen       = htonl(contLen);
   pCreate->vgId          = htonl(pTable->vgId);
   pCreate->tableType     = pTable->info.type;
@@ -1592,7 +1592,7 @@ static SMDCreateTableMsg *mnodeBuildCreateChildTableMsg(SCMCreateTableMsg *pCrea
   pCreate->uid           = htobe64(pTable->uid);
 
   if (pTable->info.type == TSDB_CHILD_TABLE) {
-    mnodeExtractTableName(pTable->superTable->info.tableId, pCreate->stableFname);
+    mnodeExtractTableName(pTable->superTable->info.tableId, &pCreate->stableFname[0]);
     pCreate->numOfColumns  = htons(pTable->superTable->numOfColumns);
     pCreate->numOfTags     = htons(pTable->superTable->numOfTags);
     pCreate->sversion      = htonl(pTable->superTable->sversion);
@@ -1855,7 +1855,7 @@ static int32_t mnodeSendDropChildTableMsg(SMnodeMsg *pMsg, bool needReturn) {
     return TSDB_CODE_MND_OUT_OF_MEMORY;
   }
 
-  tstrncpy(pDrop->tableFname, pTable->info.tableId, TSDB_TABLE_FNAME_LEN);
+  tstrncpy(&pDrop->tableFname[0], pTable->info.tableId, TSDB_TABLE_FNAME_LEN);
   pDrop->vgId    = htonl(pTable->vgId);
   pDrop->contLen = htonl(sizeof(SMDDropTableMsg));
   pDrop->tid     = htonl(pTable->tid);
@@ -2094,7 +2094,7 @@ static int32_t mnodeDoGetChildTableMeta(SMnodeMsg *pMsg, STableMetaMsg *pMeta) {
   pMeta->tid       = htonl(pTable->tid);
   pMeta->precision = pDb->cfg.precision;
   pMeta->tableType = pTable->info.type;
-  tstrncpy(pMeta->tableFname, pTable->info.tableId, TSDB_TABLE_FNAME_LEN);
+  tstrncpy(&pMeta->tableFname[0], pTable->info.tableId, TSDB_TABLE_FNAME_LEN);
 
   if (pTable->info.type == TSDB_CHILD_TABLE) {
     assert(pTable->superTable != NULL);
@@ -2413,15 +2413,14 @@ void mnodeProcessCreateChildTableRsp(SRpcMsg *rpcMsg) {
   }
 
   if (rpcMsg->code == TSDB_CODE_SUCCESS || rpcMsg->code == TSDB_CODE_TDB_TABLE_ALREADY_EXIST) {
-     SSdbRow desc = {
-      .type   = SDB_OPER_GLOBAL,
-      .pObj   = pTable,
-      .pTable = tsChildTableSdb.get(),
-      .pMsg   = pMsg,
-      .fpRsp  = mnodeDoCreateChildTableCb
-    };
+    auto desc = std::make_shared<SSdbRow>();
+    desc->type = SDB_OPER_GLOBAL;
+    desc->pObj = pTable;
+    desc->pTable = tsChildTableSdb.get();
+    desc->pMsg = pMsg;
+    desc->fpRsp = mnodeDoCreateChildTableCb;
 
-    int32_t code = sdbInsertRowToQueue(&desc);
+    int32_t code = sdbInsertRowToQueue(desc);
     if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
       pMsg->pTable.reset();
 

@@ -264,8 +264,8 @@ struct SMDCreateTableMsg {
   uint64_t uid;
   uint64_t superTableUid;
   uint64_t createdTime;
-  char     tableFname[TSDB_TABLE_FNAME_LEN];
-  char     stableFname[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr tableFname;
+  FixedFrameStr stableFname;
   char     data[];
 };
 
@@ -320,7 +320,7 @@ typedef struct {
 typedef struct {
   char    clientVersion[TSDB_VERSION_LEN];
   char    msgVersion[TSDB_VERSION_LEN];
-  char    db[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr    db;
   char    appName[TSDB_APPNAME_LEN];
   int32_t pid;
 } SConnectMsg;
@@ -375,13 +375,13 @@ typedef struct {
   int8_t flag;
 } SCreateUserMsg, SAlterUserMsg;
 
-typedef struct {
+struct SMDDropTableMsg {
   int32_t  contLen;
   int32_t  vgId;
   int32_t  tid;
   uint64_t uid;
-  char     tableFname[TSDB_TABLE_FNAME_LEN];
-} SMDDropTableMsg;
+  FixedFrameStr tableFname;
+};
 
 struct SDropSTableMsg {
   int32_t  contLen;
@@ -727,7 +727,7 @@ typedef struct {
 
 struct STableMetaMsg {
   int32_t       contLen;
-  char          tableFname[TSDB_TABLE_FNAME_LEN];   // table id
+  FixedFrameStr tableFname;  // table id
   uint8_t       numOfTags;
   uint8_t       precision;
   uint8_t       tableType;
@@ -738,7 +738,7 @@ struct STableMetaMsg {
   uint64_t      uid;
   SVgroupMsg    vgroup;
 
-  std::array<char, TSDB_TABLE_FNAME_LEN> sTableName;
+  FixedFrameStr sTableName;
   uint64_t      suid;
   SSchema       schema[];
 };
@@ -848,7 +848,7 @@ typedef struct {
   uint64_t uid;
   uint64_t stime;  // stream starting time
   int32_t  status;
-  char     tableFname[TSDB_TABLE_FNAME_LEN];
+  FixedFrameStr tableFname;
 } SAlterStreamMsg;
 
 typedef struct {

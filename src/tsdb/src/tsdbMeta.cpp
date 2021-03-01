@@ -38,7 +38,6 @@ static int     tsdbAddTableIntoIndex(STsdbMeta *pMeta, STable *pTable, bool refS
 static int     tsdbRemoveTableFromIndex(STsdbMeta *pMeta, STable *pTable);
 static int     tsdbInitTableCfg(STableCfg *config, ETableType type, uint64_t uid, int32_t tid);
 static int     tsdbTableSetSchema(STableCfg *config, STSchema *pSchema, bool dup);
-static int     tsdbTableSetName(STableCfg *config, char *name, bool dup);
 static int     tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema, bool dup);
 static int     tsdbTableSetSName(STableCfg *config, char *sname, bool dup);
 static int     tsdbTableSetSuperUid(STableCfg *config, uint64_t uid);
@@ -254,7 +253,7 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
     }
   }
   if (tsdbTableSetSchema(pCfg, tdGetSchemaFromBuilder(&schemaBuilder), false) < 0) goto _err;
-  if (tsdbTableSetName(pCfg, pMsg->tableFname, true) < 0) goto _err;
+  pCfg->name = std::string(&pMsg->tableFname[0]);
 
   if (numOfTags > 0) {
     // Decode tag schema
@@ -266,7 +265,7 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
       }
     }
     if (tsdbTableSetTagSchema(pCfg, tdGetSchemaFromBuilder(&schemaBuilder), false) < 0) goto _err;
-    if (tsdbTableSetSName(pCfg, pMsg->stableFname, true) < 0) goto _err;
+    if (tsdbTableSetSName(pCfg, &pMsg->stableFname[0], true) < 0) goto _err;
     if (tsdbTableSetSuperUid(pCfg, htobe64(pMsg->superTableUid)) < 0) goto _err;
 
     int32_t tagDataLen = htonl(pMsg->tagDataLen);
@@ -287,7 +286,7 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
 
 _err:
   tdDestroyTSchemaBuilder(&schemaBuilder);
-  tsdbClearTableCfg(pCfg);
+  delete pCfg;
   return NULL;
 }
 
@@ -700,13 +699,13 @@ static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
     }
   } else {
     pTable->type = pCfg->type;
-    tsize = strnlen(pCfg->name, TSDB_TABLE_NAME_LEN - 1);
+    tsize = pCfg->name.length();
     pTable->name = (tstr*)calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
     if (pTable->name == NULL) {
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
       goto _err;
     }
-    STR_WITH_SIZE_TO_VARSTR(pTable->name, pCfg->name, (VarDataLenT)tsize);
+    STR_WITH_SIZE_TO_VARSTR(pTable->name, pCfg->name.c_str(), (VarDataLenT)tsize);
     TABLE_UID(pTable) = pCfg->tableId.uid;
     TABLE_TID(pTable) = pCfg->tableId.tid;
 
@@ -942,20 +941,6 @@ static int tsdbTableSetSchema(STableCfg *config, STSchema *pSchema, bool dup) {
   return 0;
 }
 
-static int tsdbTableSetName(STableCfg *config, char *name, bool dup) {
-  if (dup) {
-    config->name = strdup(name);
-    if (config->name == NULL) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      return -1;
-    }
-  } else {
-    config->name = name;
-  }
-
-  return 0;
-}
-
 static int tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema, bool dup) {
   if (config->type != TSDB_CHILD_TABLE) {
     terrno = TSDB_CODE_TDB_INVALID_CREATE_TB_MSG;
@@ -1040,16 +1025,12 @@ static int tsdbTableSetStreamSql(STableCfg *config, char *sql, bool dup) {
   return 0;
 }
 
-void tsdbClearTableCfg(STableCfg *config) {
-  if (config) {
-    if (config->schema) tdFreeSchema(config->schema);
-    if (config->tagSchema) tdFreeSchema(config->tagSchema);
-    if (config->tagValues) kvRowFree(config->tagValues);
-    tfree(config->name);
-    tfree(config->sname);
-    tfree(config->sql);
-    free(config);
-  }
+STableCfg::~STableCfg() {
+  if (schema) tdFreeSchema(schema);
+  if (tagSchema) tdFreeSchema(tagSchema);
+  if (tagValues) kvRowFree(tagValues);
+  tfree(sname);
+  tfree(sql);
 }
 
 static int tsdbEncodeTableName(void **buf, tstr *name) {

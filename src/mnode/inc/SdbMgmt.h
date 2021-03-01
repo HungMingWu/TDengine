@@ -29,6 +29,39 @@ struct SSdbMgmt {
   bool     isServing() const { return status == SDB_STATUS_SERVING; }
   SSdbTable* getTable(int32_t tableId) { return tableList[tableId]; }
 
+  int32_t update(SWalHead* pHead) 
+  {
+      std::unique_lock<std::mutex> _(mutex);
+
+      if (pHead->version == 0) {
+        // assign version
+        pHead->version = version++;
+      } else {
+        // for data from WAL or forward, version may be smaller
+        if (pHead->version <= version) {
+            #if 0
+          sdbDebug("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64
+                   " too large, mver:%" PRIu64,
+                   pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
+                   version);
+          #endif
+          return TSDB_CODE_SUCCESS;
+        } else if (pHead->version != version + 1) {
+            #if 0
+          sdbError("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64
+                   " too large, mver:%" PRIu64,
+                   pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
+                   version);
+          #endif
+          return TSDB_CODE_SYN_INVALID_VERSION;
+        } else {
+          version = pHead->version;
+        }
+      }
+
+      return wal->write(pHead);
+  }
+
   template <typename T>
   std::shared_ptr<T> openTable(const SSdbTableDesc& desc) 
   {

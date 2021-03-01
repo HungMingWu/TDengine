@@ -882,15 +882,15 @@ void mnodeProcessCreateVnodeRsp(SRpcMsg *rpcMsg) {
   if (mnodeMsg->received != mnodeMsg->expected) return;
 
   if (mnodeMsg->received == mnodeMsg->successed) {
-     SSdbRow row;
-     row.type = SDB_OPER_GLOBAL;
-     row.pTable = tsVgroupSdb.get();
-     row.pObj = pVgroup;
-     row.rowSize = sizeof(SVgObj);
-     row.pMsg = mnodeMsg;
-     row.fpRsp = mnodeCreateVgroupCb;
+    auto row = std::make_shared<SSdbRow>();
+    row->type = SDB_OPER_GLOBAL;
+    row->pTable = tsVgroupSdb.get();
+    row->pObj = pVgroup;
+    row->rowSize = sizeof(SVgObj);
+    row->pMsg = mnodeMsg;
+    row->fpRsp = mnodeCreateVgroupCb;
 
-    int32_t code = sdbInsertRowToQueue(&row);
+    int32_t code = sdbInsertRowToQueue(row);
     if (code != TSDB_CODE_SUCCESS && code != TSDB_CODE_MND_ACTION_IN_PROGRESS) {
       mnodeMsg->pVgroup = nullptr;
 

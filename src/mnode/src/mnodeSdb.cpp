@@ -54,11 +54,10 @@ const char *actStr[] = {
   "invalid"
 };
 
-static void sdbFreeFromQueue(SSdbRow *pRow);
 static void sdbConfirmForward(int32_t vgId, void *wparam, int32_t code);
 static int32_t sdbProcessWrite(void *pRow, SWalHead *pHead, int32_t qtype, void *unused);
 
-using SDBItem = std::pair<int, SSdbRow *>;
+using SDBItem = std::pair<int, SSdbRowPtr>;
 
 class SdbPool : public workpool<SDBItem, SdbPool> {
  public:
@@ -69,7 +68,7 @@ class SdbPool : public workpool<SDBItem, SdbPool> {
       sdbTrace("vgId:1, msg:%p, row:%p hver:%" PRIu64 ", will be processed in sdb queue", pRow->pMsg, pRow->pObj,
                pRow->pHead.version);
 
-      pRow->code = sdbProcessWrite((qtype == TAOS_QTYPE_RPC) ? pRow : NULL, &pRow->pHead, qtype, NULL);
+      pRow->code = sdbProcessWrite((qtype == TAOS_QTYPE_RPC) ? pRow.get() : NULL, &pRow->pHead, qtype, NULL);
       if (pRow->code > 0) pRow->code = 0;
 
       sdbTrace("vgId:1, msg:%p is processed in sdb queue, code:%x", pRow->pMsg, pRow->code);
@@ -83,12 +82,12 @@ class SdbPool : public workpool<SDBItem, SdbPool> {
       const auto pRow = item.second;
 
       if (qtype == TAOS_QTYPE_RPC) {
-        sdbConfirmForward(1, pRow, pRow->code);
+        sdbConfirmForward(1, pRow.get(), pRow->code);
       } else {
         if (qtype == TAOS_QTYPE_FWD) {
           syncConfirmForward(SSdbMgmt::instance().sync, pRow->pHead.version, pRow->code);
         }
-        sdbFreeFromQueue(pRow);
+        --SSdbMgmt::instance().queuedMsg;
       }
     }
   }
@@ -101,7 +100,7 @@ extern void *     tsMnodeTmr;
 static void *     tsSdbTmr;
 
 static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam);
-static int32_t sdbWriteRowToQueue(const SSdbRow *pRow, int32_t action);
+static int32_t sdbWriteRowToQueue(SSdbRowPtr pRow, int32_t action);
 static void    sdbFreeQueue();
 
 int64_t SSdbTable::getNumOfRows() const { return numOfRows.load(); }
@@ -280,7 +279,7 @@ static void sdbConfirmForward(int32_t vgId, void *wparam, int32_t code) {
   }
 
   dnodeSendRpcMWriteRsp(pMsg, pRow->code);
-  sdbFreeFromQueue(pRow);
+  --SSdbMgmt::instance().queuedMsg;
 }
 
 static void sdbUpdateSyncTmrFp(void *tmrId) { sdbUpdateSync(NULL); }
@@ -564,35 +563,10 @@ static int32_t sdbProcessWrite(void *wparam, SWalHead *pHead, int32_t qtype, voi
 
   if (qtype == TAOS_QTYPE_QUERY) return sdbPerformDeleteAction(pHead, pTable);
 
-  std::unique_lock<std::mutex> _(SSdbMgmt::instance().mutex);
-  
-  if (pHead->version == 0) {
-    // assign version
-    SSdbMgmt::instance().version++;
-    pHead->version = SSdbMgmt::instance().version;
-  } else {
-    // for data from WAL or forward, version may be smaller
-    if (pHead->version <= SSdbMgmt::instance().version) {
-      sdbDebug("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
-               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
-               SSdbMgmt::instance().version);
-      return TSDB_CODE_SUCCESS;
-    } else if (pHead->version != SSdbMgmt::instance().version + 1) {
-      sdbError("vgId:1, sdb:%s, failed to restore %s key:%s from source(%d), hver:%" PRIu64 " too large, mver:%" PRIu64,
-               pTable->name, actStr[action], sdbGetKeyStr(pTable, pHead->cont.data()), qtype, pHead->version,
-               SSdbMgmt::instance().version);
-      return TSDB_CODE_SYN_INVALID_VERSION;
-    } else {
-      SSdbMgmt::instance().version = pHead->version;
-    }
-  }
-
-  int32_t code = SSdbMgmt::instance().wal->write(pHead);
+  int32_t code = SSdbMgmt::instance().update(pHead);
   if (code < 0) {
     return code;
   }
-
-  _.unlock();
 
   // from app, row is created
   if (pRow != NULL) {
@@ -669,7 +643,8 @@ int32_t SSdbRow::Insert() {
   if (fpReq) {
     return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(this, SDB_ACTION_INSERT);
+    return 0;
+    //sdbWriteRowToQueue(this, SDB_ACTION_INSERT);
   }
 }
 
@@ -701,7 +676,8 @@ int32_t SSdbRow::Delete() {
   if (fpReq) {
     return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(this, SDB_ACTION_DELETE);
+    return 0;
+    //sdbWriteRowToQueue(this, SDB_ACTION_DELETE);
   }
 }
 
@@ -728,7 +704,8 @@ int32_t SSdbRow::Update() {
   if (fpReq) {
     return (*fpReq)(pMsg);
   } else {
-    return sdbWriteRowToQueue(this, SDB_ACTION_UPDATE);
+    return 0;
+    //sdbWriteRowToQueue(this, SDB_ACTION_UPDATE);
   }
 }
 
@@ -788,12 +765,11 @@ SSdbTable::~SSdbTable() {
   sdbDebug("vgId:1, sdb:%s, is closed, numOfTables:%d", name, SSdbMgmt::instance().numOfTables);
 }
 
-static int32_t sdbWriteToQueue(SSdbRow *pRow, int32_t qtype) {
+static int32_t sdbWriteToQueue(SSdbRowPtr pRow, int32_t qtype) {
   SWalHead *pHead = &pRow->pHead;
 
   if (pHead->len > TSDB_MAX_WAL_SIZE) {
     sdbError("vgId:1, wal len:%d exceeds limit, hver:%" PRIu64, pHead->len, pHead->version);
-    taosFreeQitem(pRow);
     return TSDB_CODE_WAL_SIZE_LIMIT;
   }
 
@@ -818,11 +794,7 @@ static void sdbFreeFromQueue(SSdbRow *pRow) {
 
 static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, void *rparam) {
   int32_t  size = sizeof(SSdbRow) + sizeof(SWalHead) + pHead->len;
-  SSdbRow *pRow = static_cast<SSdbRow *>(taosAllocateQitem(size));
-  if (pRow == NULL) {
-    return TSDB_CODE_VND_OUT_OF_MEMORY;
-  }
-
+  auto pRow = std::make_shared<SSdbRow>();
   memcpy(&pRow->pHead, pHead, sizeof(SWalHead) + pHead->len);
   pRow->rowData = pRow->pHead.cont.data();
 
@@ -832,18 +804,9 @@ static int32_t sdbWriteFwdToQueue(int32_t vgId, SWalHead *pHead, int32_t qtype, 
   return code;
 }
 
-static int32_t sdbWriteRowToQueue(const SSdbRow *pInputRow, int32_t action) {
-  const SSdbTable *pTable = pInputRow->pTable;
+static int32_t sdbWriteRowToQueue(SSdbRowPtr pRow, int32_t action) {
+  const SSdbTable *pTable = pRow->pTable;
   if (pTable == NULL) return TSDB_CODE_MND_SDB_INVALID_TABLE_TYPE;
-
-  int32_t  size = sizeof(SSdbRow) + sizeof(SWalHead) + pTable->maxRowSize;
-  SSdbRow *pRow = static_cast<SSdbRow *>(taosAllocateQitem(size));
-  if (pRow == NULL) {
-    return TSDB_CODE_VND_OUT_OF_MEMORY;
-  }
-
-  memcpy(pRow, pInputRow, sizeof(SSdbRow));
-  pRow->processedCount = 1;
 
   SWalHead *pHead = &pRow->pHead;
   pRow->rowData = pHead->cont.data();
@@ -857,6 +820,6 @@ static int32_t sdbWriteRowToQueue(const SSdbRow *pInputRow, int32_t action) {
   return sdbWriteToQueue(pRow, TAOS_QTYPE_RPC);
 }
 
-int32_t sdbInsertRowToQueue(SSdbRow *pRow) { return sdbWriteRowToQueue(pRow, SDB_ACTION_INSERT); }
+int32_t sdbInsertRowToQueue(SSdbRowPtr pRow) { return sdbWriteRowToQueue(pRow, SDB_ACTION_INSERT); }
 
 int32_t sdbGetReplicaNum() { return SSdbMgmt::instance().cfg.replica; }

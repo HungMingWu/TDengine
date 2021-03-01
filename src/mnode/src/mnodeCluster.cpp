@@ -116,13 +116,13 @@ static int32_t mnodeCreateCluster() {
     mDebug("uid is %s", pCluster->uid);
   }
 
-  SSdbRow row;
-  row.type = SDB_OPER_GLOBAL;
-  row.pTable = tsClusterSdb.get();
-  row.pObj = pCluster;
+  auto row = std::make_shared<SSdbRow>();
+  row->type = SDB_OPER_GLOBAL;
+  row->pTable = tsClusterSdb.get();
+  row->pObj = pCluster;
   int32_t code = tsClusterSdb->insert(pCluster->uid, pCluster);
   if (code != TSDB_CODE_SUCCESS) return code;
-  return sdbInsertRowToQueue(&row);
+  return sdbInsertRowToQueue(row);
 }
 
 const char* mnodeGetClusterId() {
@@ -157,7 +157,7 @@ int32_t mnodeGetClusterMeta(STableMetaMsg *pMeta, SShowObj *pShow, void *pConn) 
   cols++;
 
   pMeta->numOfColumns = htons(cols);
-  strcpy(pMeta->tableFname, "show cluster");
+  strcpy(&pMeta->tableFname[0], "show cluster");
   pShow->numOfColumns = cols;
 
   pShow->offset[0] = 0;

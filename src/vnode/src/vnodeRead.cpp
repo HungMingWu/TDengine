@@ -40,8 +40,7 @@ void vnodeCleanupRead() {}
 // still required, or there will be a deadlock, so we don’t do any check here, but put the check codes before the
 // request enters the queue
 //
-int32_t vnodeProcessRead(void *vparam, SVReadMsg *pRead) {
-  SVnodeObj *pVnode = (SVnodeObj*)vparam;
+int32_t vnodeProcessRead(SVnodeObj *pVnode, SVReadMsg *pRead) {
   int32_t    msgType = pRead->msgType;
 
   if (vnodeProcessReadMsgFp[msgType] == NULL) {
