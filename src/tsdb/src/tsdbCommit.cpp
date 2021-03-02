@@ -60,7 +60,7 @@ _err:
 
 static int tsdbCommitTSData(STsdbRepo *pRepo) {
   SMemTable *  pMem = pRepo->imem;
-  SDataCols *  pDataCols = NULL;
+
   STsdbMeta *  pMeta = pRepo->tsdbMeta;
   SCommitIter *iters = NULL;
   SRWHelper    whelper = {(tsdb_rw_helper_t)0};
@@ -71,7 +71,6 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   iters = tsdbCreateCommitIters(pRepo);
   if (iters == NULL) {
     tsdbError("vgId:%d failed to create commit iterator since %s", REPO_ID(pRepo), tstrerror(terrno));
-    tdFreeDataCols(pDataCols);
     tsdbDestroyCommitIters(iters, pMem->maxTables);
     tsdbDestroyHelper(&whelper);
     return -1;
@@ -79,17 +78,15 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
 
   if (tsdbInitWriteHelper(&whelper, pRepo) < 0) {
     tsdbError("vgId:%d failed to init write helper since %s", REPO_ID(pRepo), tstrerror(terrno));
-    tdFreeDataCols(pDataCols);
     tsdbDestroyCommitIters(iters, pMem->maxTables);
     tsdbDestroyHelper(&whelper);
     return -1;
   }
-
-  if ((pDataCols = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pCfg->maxRowsPerFileBlock)) == NULL) {
+  auto pDataCols = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pCfg->maxRowsPerFileBlock);
+  if (!pDataCols) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     tsdbError("vgId:%d failed to init data cols with maxRowBytes %d maxCols %d maxRowsPerFileBlock %d since %s",
               REPO_ID(pRepo), pMeta->maxCols, pMeta->maxRowBytes, pCfg->maxRowsPerFileBlock, tstrerror(terrno));
-    tdFreeDataCols(pDataCols);
     tsdbDestroyCommitIters(iters, pMem->maxTables);
     tsdbDestroyHelper(&whelper);
     return -1;
@@ -100,16 +97,14 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
 
   // Loop to commit to each file
   for (int fid = sfid; fid <= efid; fid++) {
-    if (tsdbCommitToFile(pRepo, fid, iters, &whelper, pDataCols) < 0) {
+    if (tsdbCommitToFile(pRepo, fid, iters, &whelper, pDataCols.get()) < 0) {
       tsdbError("vgId:%d failed to commit to file %d since %s", REPO_ID(pRepo), fid, tstrerror(terrno));
-      tdFreeDataCols(pDataCols);
       tsdbDestroyCommitIters(iters, pMem->maxTables);
       tsdbDestroyHelper(&whelper);
       return -1;
     }
   }
 
-  tdFreeDataCols(pDataCols);
   tsdbDestroyCommitIters(iters, pMem->maxTables);
   tsdbDestroyHelper(&whelper);
 

@@ -734,8 +734,8 @@ static int tsdbWriteBlockToFile(SRWHelper *pHelper, SFile *pFile, SDataCols *pDa
   }
 
   int nColsNotAllNull = 0;
-  for (int ncol = 1; ncol < pDataCols->numOfCols; ncol++) {  // ncol from 1, we skip the timestamp column
-    SDataCol *pDataCol = pDataCols->cols + ncol;
+  for (int ncol = 1; ncol < pDataCols->cols.size(); ncol++) {  // ncol from 1, we skip the timestamp column
+    SDataCol *pDataCol = &pDataCols->cols[ncol];
     SCompCol *pCompCol = pCompData->cols + nColsNotAllNull;
 
     if (isNEleNull(pDataCol, rowsToWrite)) {  // all data to commit are NULL, just ignore it
@@ -754,7 +754,7 @@ static int tsdbWriteBlockToFile(SRWHelper *pHelper, SFile *pFile, SDataCols *pDa
     nColsNotAllNull++;
   }
 
-  ASSERT(nColsNotAllNull >= 0 && nColsNotAllNull <= pDataCols->numOfCols);
+  ASSERT(nColsNotAllNull >= 0 && nColsNotAllNull <= pDataCols->cols.size());
 
   // Compress the data if neccessary
   int     tcol = 0;
@@ -762,17 +762,17 @@ static int tsdbWriteBlockToFile(SRWHelper *pHelper, SFile *pFile, SDataCols *pDa
   int32_t tsize = TSDB_GET_COMPCOL_LEN(nColsNotAllNull);
   int32_t lsize = tsize;
   int32_t keyLen = 0;
-  for (int ncol = 0; ncol < pDataCols->numOfCols; ncol++) {
+  for (int ncol = 0; ncol < pDataCols->cols.size(); ncol++) {
     if (ncol != 0 && tcol >= nColsNotAllNull) break;
 
-    SDataCol *pDataCol = pDataCols->cols + ncol;
+    SDataCol *pDataCol = &pDataCols->cols[ncol];
     SCompCol *pCompCol = pCompData->cols + tcol;
 
     if (ncol != 0 && (pDataCol->colId != pCompCol->colId)) continue;
     void *tptr = POINTER_SHIFT(pCompData, lsize);
 
     int32_t flen = 0;  // final length
-    int32_t tlen = dataColGetNEleLen(pDataCol, rowsToWrite);
+    int32_t tlen = pDataCol->getNEleLen(rowsToWrite);
 
     if (pCfg->compression) {
       if (pCfg->compression == TWO_STAGE_COMP) {
@@ -1131,8 +1131,8 @@ static int tsdbInitHelperBlock(SRWHelper *pHelper) {
   STsdbRepo *pRepo = helperRepo(pHelper);
   STsdbMeta *pMeta = pHelper->pRepo->tsdbMeta;
 
-  pHelper->pDataCols[0] = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pRepo->config.maxRowsPerFileBlock);
-  pHelper->pDataCols[1] = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pRepo->config.maxRowsPerFileBlock);
+  pHelper->pDataCols[0] = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pRepo->config.maxRowsPerFileBlock).release();
+  pHelper->pDataCols[1] = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pRepo->config.maxRowsPerFileBlock).release();
   if (pHelper->pDataCols[0] == NULL || pHelper->pDataCols[1] == NULL) {
     terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
     return -1;
@@ -1145,8 +1145,8 @@ static int tsdbInitHelperBlock(SRWHelper *pHelper) {
 
 static void tsdbDestroyHelperBlock(SRWHelper *pHelper) {
   taosTZfree(pHelper->pCompData);
-  tdFreeDataCols(pHelper->pDataCols[0]);
-  tdFreeDataCols(pHelper->pDataCols[1]);
+  delete pHelper->pDataCols[0];
+  delete pHelper->pDataCols[1];
 }
 
 static int tsdbInitHelper(SRWHelper *pHelper, STsdbRepo *pRepo, tsdb_rw_helper_t type) {
@@ -1275,7 +1275,7 @@ static int tsdbLoadBlockDataColsImpl(SRWHelper *pHelper, SCompBlock *pCompBlock,
     SCompCol *pCompCol = NULL;
 
     while (true) {
-      if (dcol >= pDataCols->numOfCols) {
+      if (dcol >= pDataCols->cols.size()) {
         pDataCol = NULL;
         break;
       }
@@ -1370,7 +1370,7 @@ static int tsdbLoadBlockDataImpl(SRWHelper *pHelper, SCompBlock *pCompBlock, SDa
   // Recover the data
   int ccol = 0;  // loop iter for SCompCol object
   int dcol = 0;  // loop iter for SDataCols object
-  while (dcol < pDataCols->numOfCols) {
+  while (dcol < pDataCols->cols.size()) {
     SDataCol *pDataCol = &(pDataCols->cols[dcol]);
     if (dcol != 0 && ccol >= pCompData->numOfCols) {
       // Set current column as NULL and forward
@@ -1645,8 +1645,8 @@ static void tsdbLoadAndMergeFromCache(SDataCols *pDataCols, int *iter, SCommitIt
     if (key1 == INT64_MAX && key2 == INT64_MAX) break;
 
     if (key1 < key2) {
-      for (int i = 0; i < pDataCols->numOfCols; i++) {
-        dataColAppendVal(pTarget->cols + i, tdGetColDataOfRow(pDataCols->cols + i, *iter), pTarget->numOfRows,
+      for (int i = 0; i < pDataCols->cols.size(); i++) {
+        pTarget->cols[i].appendVal(pDataCols->cols[i].getDataOfRow(*iter), pTarget->numOfRows,
                          pTarget->maxPoints);
       }
 
@@ -1676,8 +1676,8 @@ static void tsdbLoadAndMergeFromCache(SDataCols *pDataCols, int *iter, SCommitIt
       } else {
         ASSERT(!isRowDel);
 
-        for (int i = 0; i < pDataCols->numOfCols; i++) {
-          dataColAppendVal(pTarget->cols + i, tdGetColDataOfRow(pDataCols->cols + i, *iter), pTarget->numOfRows,
+        for (int i = 0; i < pDataCols->cols.size(); i++) {
+          pTarget->cols[i].appendVal(pDataCols->cols[i].getDataOfRow(*iter), pTarget->numOfRows,
                            pTarget->maxPoints);
         }
 

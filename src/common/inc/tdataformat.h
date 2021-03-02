@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <memory>
 #include <vector>
 
 #include "talgo.h"
@@ -209,7 +210,7 @@ static FORCE_INLINE void *tdGetRowDataOfCol(SDataRow row, int8_t type, int32_t o
 }
 
 // ----------------- Data column structure
-typedef struct SDataCol {
+struct SDataCol {
   int8_t          type;       // column type
   int16_t         colId;      // column ID
   int             bytes;      // column data bytes defined
@@ -218,48 +219,50 @@ typedef struct SDataCol {
   int             len;        // column data length
   VarDataOffsetT *dataOff;    // For binary and nchar data, the offset in the data column
   void *          pData;      // Actual data pointer
-} SDataCol;
+ public:
+  void appendVal(void *value, int numOfRows, int maxPoints);
 
-static FORCE_INLINE void dataColReset(SDataCol *pDataCol) { pDataCol->len = 0; }
+  // Get the data pointer from a column-wised data
+  void *getDataOfRow(int row) {
+    if (IS_VAR_DATA_TYPE(type)) {
+      return POINTER_SHIFT(pData, dataOff[row]);
+    } else {
+      return POINTER_SHIFT(pData, TYPE_BYTES[type] * row);
+    }
+  }
+
+  int32_t getNEleLen(int rows) {
+    ASSERT(rows > 0);
+
+    if (IS_VAR_DATA_TYPE(type)) {
+      return dataOff[rows - 1] + varDataTLen(getDataOfRow(rows - 1));
+    } else {
+      return TYPE_BYTES[type] * rows;
+    }
+  }
+  void reset() { len = 0; }
+};
+
+
 
 void dataColInit(SDataCol *pDataCol, STColumn *pCol, void **pBuf, int maxPoints);
-void dataColAppendVal(SDataCol *pCol, void *value, int numOfRows, int maxPoints);
 void dataColSetOffset(SDataCol *pCol, int nEle);
-
 bool isNEleNull(SDataCol *pCol, int nEle);
 void dataColSetNEleNull(SDataCol *pCol, int nEle, int maxPoints);
 
-// Get the data pointer from a column-wised data
-static FORCE_INLINE void *tdGetColDataOfRow(SDataCol *pCol, int row) {
-  if (IS_VAR_DATA_TYPE(pCol->type)) {
-    return POINTER_SHIFT(pCol->pData, pCol->dataOff[row]);
-  } else {
-    return POINTER_SHIFT(pCol->pData, TYPE_BYTES[pCol->type] * row);
-  }
-}
-
-static FORCE_INLINE int32_t dataColGetNEleLen(SDataCol *pDataCol, int rows) {
-  ASSERT(rows > 0);
-
-  if (IS_VAR_DATA_TYPE(pDataCol->type)) {
-    return pDataCol->dataOff[rows - 1] + varDataTLen(tdGetColDataOfRow(pDataCol, rows - 1));
-  } else {
-    return TYPE_BYTES[pDataCol->type] * rows;
-  }
-}
-
-typedef struct {
+struct SDataCols {
   int maxRowSize;
-  int maxCols;    // max number of columns
   int maxPoints;  // max number of points
   int bufSize;
 
   int       numOfRows;
-  int       numOfCols;  // Total number of cols
   int       sversion;   // TODO: set sversion
   void *    buf;
-  SDataCol *cols;
-} SDataCols;
+  std::vector<SDataCol> cols;
+
+ public:
+  ~SDataCols();
+};
 
 #define keyCol(pCols) (&((pCols)->cols[0]))  // Key column
 #define dataColsTKeyAt(pCols, idx) ((TKEY *)(keyCol(pCols)->pData))[(idx)]
@@ -271,11 +274,10 @@ typedef struct {
 #define dataColsKeyLast(pCols) \
   (((pCols)->numOfRows == 0) ? TSDB_DATA_TIMESTAMP_NULL : dataColsKeyAt(pCols, (pCols)->numOfRows - 1))
 
-SDataCols *tdNewDataCols(int maxRowSize, int maxCols, int maxRows);
+std::unique_ptr<SDataCols> tdNewDataCols(int maxRowSize, int maxCols, int maxRows);
 void       tdResetDataCols(SDataCols *pCols);
 int        tdInitDataCols(SDataCols *pCols, STSchema *pSchema);
-SDataCols *tdDupDataCols(SDataCols *pCols, bool keepData);
-void       tdFreeDataCols(SDataCols *pCols);
+std::unique_ptr<SDataCols> tdDupDataCols(SDataCols *pCols, bool keepData);
 void       tdAppendDataRowToDataCol(SDataRow row, STSchema *pSchema, SDataCols *pCols);
 int        tdMergeDataCols(SDataCols *target, SDataCols *src, int rowsToMerge);
 

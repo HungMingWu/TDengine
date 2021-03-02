@@ -111,7 +111,7 @@ typedef struct STsdbQueryHandle {
   SRWHelper      rhelper;
   STableBlockInfo* pDataBlockInfo;
 
-  SDataCols     *pDataCols;        // in order to hold current file data block
+  std::unique_ptr<SDataCols>     pDataCols;        // in order to hold current file data block
   int32_t        allocSize;        // allocated data block size
   SMemRef       *pMemRef;
   SArray        *defaultLoadColumn;// default load column
@@ -787,7 +787,7 @@ static int32_t doLoadFileDataBlock(STsdbQueryHandle* pQueryHandle, SCompBlock* p
   int64_t st = taosGetTimestampUs();
 
   STSchema *pSchema = tsdbGetTableSchema(pCheckInfo->pTableObj);
-  int32_t   code = tdInitDataCols(pQueryHandle->pDataCols, pSchema);
+  int32_t   code = tdInitDataCols(pQueryHandle->pDataCols.get(), pSchema);
   auto _1 = defer([&] {
     pBlock->numOfRows = 0;
     tsdbError("%p error occurs in loading file block, index:%d, brange:%" PRId64 "-%" PRId64 ", rows:%d, %p",
@@ -943,7 +943,7 @@ static int32_t loadFileDataBlock(STsdbQueryHandle* pQueryHandle, SCompBlock* pBl
       }
 
       SDataCols* pTSCol = pQueryHandle->rhelper.pDataCols[0];
-      assert(pTSCol->cols->type == TSDB_DATA_TYPE_TIMESTAMP && pTSCol->numOfRows == pBlock->numOfRows);
+      assert(pTSCol->cols[0].type == TSDB_DATA_TYPE_TIMESTAMP && pTSCol->numOfRows == pBlock->numOfRows);
 
       if (pCheckInfo->lastKey > pBlock->keyFirst) {
         cur->pos =
@@ -1064,7 +1064,7 @@ int32_t doCopyRowsFromFileBlock(STsdbQueryHandle* pQueryHandle, int32_t capacity
 
   //data in buffer has greater timestamp, copy data in file block
   int32_t i = 0, j = 0;
-  while(i < requiredNumOfCols && j < pCols->numOfCols) {
+  while(i < requiredNumOfCols && j < pCols->cols.size()) {
     SColumnInfoData* pColInfo = (SColumnInfoData*)taosArrayGet(pQueryHandle->pColumns, i);
 
     SDataCol* src = &pCols->cols[j];
@@ -1090,7 +1090,7 @@ int32_t doCopyRowsFromFileBlock(STsdbQueryHandle* pQueryHandle, int32_t capacity
 
         // todo refactor, only copy one-by-one
         for (int32_t k = start; k < num + start; ++k) {
-          char* p = (char*)tdGetColDataOfRow(src, k);
+          char* p = (char*)src->getDataOfRow(k);
           memcpy(dst, p, varDataTLen(p));
           dst += bytes;
         }
@@ -2918,10 +2918,6 @@ void tsdbCleanupQueryHandle(TsdbQueryHandleT queryHandle) {
   tsdbMayUnTakeMemSnapshot(pQueryHandle);
 
   tsdbDestroyHelper(&pQueryHandle->rhelper);
-
-  tdFreeDataCols(pQueryHandle->pDataCols);
-  pQueryHandle->pDataCols = NULL;
-
   SIOCostSummary* pCost = &pQueryHandle->cost;
   tsdbDebug("%p :io-cost summary: statis-info:%"PRId64" us, datablock:%" PRId64" us, check data:%"PRId64" us, %p",
       pQueryHandle, pCost->statisInfoLoadTime, pCost->blockLoadTime, pCost->checkForNextTime, pQueryHandle->qinfo);

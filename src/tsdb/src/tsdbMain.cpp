@@ -734,8 +734,8 @@ static int tsdbRestoreInfo(STsdbRepo *pRepo) { // TODO
           tdInitDataRow(pTable->lastRow, pSchema);
           for (int icol = 0; icol < schemaNCols(pSchema); icol++) {
             STColumn *pCol = schemaColAt(pSchema, icol);
-            SDataCol *pDataCol = rhelper.pDataCols[0]->cols + icol;
-            tdAppendColVal(pTable->lastRow, tdGetColDataOfRow(pDataCol, pBlock->numOfRows - 1), pCol->type, pCol->bytes,
+            auto &pDataCol = rhelper.pDataCols[0]->cols[icol];
+            tdAppendColVal(pTable->lastRow, pDataCol.getDataOfRow(pBlock->numOfRows - 1), pCol->type, pCol->bytes,
                            pCol->offset);
           }
         }
