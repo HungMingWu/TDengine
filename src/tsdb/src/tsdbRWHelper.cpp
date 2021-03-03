@@ -42,7 +42,6 @@ static void tsdbDestroyHelperFile(SRWHelper *pHelper);
 static void tsdbResetHelperTableImpl(SRWHelper *pHelper);
 static void tsdbResetHelperTable(SRWHelper *pHelper);
 static void tsdbInitHelperTable(SRWHelper *pHelper);
-static void tsdbDestroyHelperTable(SRWHelper *pHelper);
 static void tsdbResetHelperBlockImpl(SRWHelper *pHelper);
 static void tsdbResetHelperBlock(SRWHelper *pHelper);
 static int  tsdbInitHelperBlock(SRWHelper *pHelper);
@@ -75,15 +74,12 @@ int tsdbInitWriteHelper(SRWHelper *pHelper, STsdbRepo *pRepo) {
   return tsdbInitHelper(pHelper, pRepo, TSDB_WRITE_HELPER);
 }
 
-void tsdbDestroyHelper(SRWHelper *pHelper) {
-  if (pHelper) {
-    taosTZfree(pHelper->pBuffer);
-    taosTZfree(pHelper->compBuffer);
-    tsdbDestroyHelperFile(pHelper);
-    tsdbDestroyHelperTable(pHelper);
-    tsdbDestroyHelperBlock(pHelper);
-    memset((void *)pHelper, 0, sizeof(*pHelper));
-  }
+SRWHelper::~SRWHelper() {
+  taosTZfree(pBuffer);
+  taosTZfree(compBuffer);
+  tsdbDestroyHelperFile(this);
+  taosTZfree((void *)pCompInfo);
+  tsdbDestroyHelperBlock(this);
 }
 
 void tsdbResetHelper(SRWHelper *pHelper) {
@@ -1114,8 +1110,6 @@ static void tsdbResetHelperTable(SRWHelper *pHelper) {
 
 static void tsdbInitHelperTable(SRWHelper *pHelper) { tsdbResetHelperTableImpl(pHelper); }
 
-static void tsdbDestroyHelperTable(SRWHelper *pHelper) { taosTZfree((void *)pHelper->pCompInfo); }
-
 // ---------- Operations on Helper Block part
 static void tsdbResetHelperBlockImpl(SRWHelper *pHelper) {
   tdResetDataCols(pHelper->pDataCols[0]);
@@ -1153,7 +1147,6 @@ static int tsdbInitHelper(SRWHelper *pHelper, STsdbRepo *pRepo, tsdb_rw_helper_t
   STsdbCfg *pCfg = &pRepo->config;
   memset((void *)pHelper, 0, sizeof(*pHelper));
   STsdbMeta *pMeta = pRepo->tsdbMeta;
-  auto _1 = defer([&] { tsdbDestroyHelper(pHelper); });
   helperType(pHelper) = type;
   helperRepo(pHelper) = pRepo;
   helperState(pHelper) = TSDB_HELPER_CLEAR_STATE;
@@ -1176,7 +1169,6 @@ static int tsdbInitHelper(SRWHelper *pHelper, STsdbRepo *pRepo, tsdb_rw_helper_t
     return -1;
   }
 
-  _1.cancel();
   return 0; 
 }
 
@@ -1201,14 +1193,14 @@ static int tsdbCheckAndDecodeColumnData(SDataCol *pDataCol, char *content, int32
     }
     pDataCol->len = tlen;
     if (pDataCol->type == TSDB_DATA_TYPE_BINARY || pDataCol->type == TSDB_DATA_TYPE_NCHAR) {
-      dataColSetOffset(pDataCol, numOfRows);
+      pDataCol->setOffset(numOfRows);
     }
   } else {
     // No need to decompress, just memcpy it
     pDataCol->len = len - sizeof(TSCKSUM);
     memcpy(pDataCol->pData, content, pDataCol->len);
     if (pDataCol->type == TSDB_DATA_TYPE_BINARY || pDataCol->type == TSDB_DATA_TYPE_NCHAR) {
-      dataColSetOffset(pDataCol, numOfRows);
+      pDataCol->setOffset(numOfRows);
     }
   }
   return 0;

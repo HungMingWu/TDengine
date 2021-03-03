@@ -18,7 +18,7 @@
 
 #include "dnodeInt.h"
 
-void    dnodeReportStep(char *name, char *desc, int8_t finished);
+void    dnodeReportStep(const char *name, const char *desc, int8_t finished);
 void    dnodeSendStartupStep(SRpcMsg *pMsg);
 
 #endif

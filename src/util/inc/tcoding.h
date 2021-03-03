@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 #include <string.h>
-
+#include <string>
 #include "tutil.h"
 
 // TODO: move this to a platform file
@@ -333,7 +333,7 @@ static FORCE_INLINE void *taosDecodeVariantI64(void *buf, int64_t *value) {
 }
 
 // ---- string
-static FORCE_INLINE int taosEncodeString(void **buf, char *value) {
+static FORCE_INLINE int taosEncodeString(void **buf, const char *value) {
   int    tlen = 0;
   size_t size = strlen(value);
 
@@ -347,13 +347,12 @@ static FORCE_INLINE int taosEncodeString(void **buf, char *value) {
   return tlen;
 }
 
-static FORCE_INLINE void *taosDecodeString(void *buf, char **value) {
+static FORCE_INLINE void *taosDecodeString(void *buf, std::string *value) {
   uint64_t size = 0;
 
   buf = taosDecodeVariantU64(buf, &size);
-  *value = (char *)malloc((size_t)size + 1);
-  if (*value == NULL) return NULL;
-  memcpy(*value, buf, (size_t)size);
+  (*value).resize(size + 1);
+  memcpy(&(*value)[0], buf, (size_t)size);
 
   (*value)[size] = '\0';
 

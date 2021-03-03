@@ -739,20 +739,13 @@ static int tsdbCheckTableSchema(STsdbRepo *pRepo, SSubmitBlk *pBlock, STable *pT
       int       numOfCols = pBlock->schemaLen / sizeof(STColumn);
       STColumn *pTCol = (STColumn *)pBlock->data;
 
-      STSchemaBuilder schemaBuilder = {0};
-      if (tdInitTSchemaBuilder(&schemaBuilder, pBlock->sversion) < 0) {
-        terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-        tsdbError("vgId:%d failed to update schema of table %s since %s", REPO_ID(pRepo), TABLE_CHAR_NAME(pTable),
-                  tstrerror(terrno));
-        return -1;
-      }
+      STSchemaBuilder schemaBuilder = {pBlock->sversion};
 
       for (int i = 0; i < numOfCols; i++) {
         if (tdAddColToSchema(&schemaBuilder, pTCol[i].type, htons(pTCol[i].colId), htons(pTCol[i].bytes)) < 0) {
           terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
           tsdbError("vgId:%d failed to update schema of table %s since %s", REPO_ID(pRepo), TABLE_CHAR_NAME(pTable),
                     tstrerror(terrno));
-          tdDestroyTSchemaBuilder(&schemaBuilder);
           return -1;
         }
       }
@@ -760,11 +753,9 @@ static int tsdbCheckTableSchema(STsdbRepo *pRepo, SSubmitBlk *pBlock, STable *pT
       STSchema *pNSchema = tdGetSchemaFromBuilder(&schemaBuilder);
       if (pNSchema == NULL) {
         terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-        tdDestroyTSchemaBuilder(&schemaBuilder);
         return -1;
       }
 
-      tdDestroyTSchemaBuilder(&schemaBuilder);
       tsdbUpdateTableSchema(pRepo, pTable, pNSchema, true);
     } else {
       tsdbDebug(

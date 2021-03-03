@@ -50,14 +50,13 @@ extern int32_t tsdbDebugFlag;
 
 // Definitions
 // ------------------ tsdbMeta.c
-typedef struct STable {
+struct STable {
   STableId       tableId;
   ETableType     type;
   tstr*          name;  // NOTE: there a flexible string here
   uint64_t       suid;
   struct STable* pSuper;  // super table pointer
-  uint8_t        numOfSchemas;
-  STSchema*      schema[TSDB_MAX_TABLE_SCHEMAS];
+  std::vector<STSchema*>      schema;
   STSchema*      tagSchema;
   SKVRow         tagVal;
   SSkipList*     pIndex;         // For TSDB_SUPER_TABLE, it is the skiplist index
@@ -65,13 +64,13 @@ typedef struct STable {
   void*          streamHandler;  // TODO
   TSKEY          lastKey;
   SDataRow       lastRow;
-  char*          sql;
+  std::string    sql;
   void*          cqhandle;
   SRWLatch       latch;  // TODO: implementa latch functions
   T_REF_DECLARE()
-} STable;
+};
 
-typedef struct {
+struct STsdbMeta {
   pthread_rwlock_t rwLock;
 
   int32_t   nTables;
@@ -82,7 +81,10 @@ typedef struct {
   SKVStore* pStore;
   int       maxRowBytes;
   int       maxCols;
-} STsdbMeta;
+
+ public:
+  ~STsdbMeta();
+};
 
 // ------------------ tsdbBuffer.c
 typedef struct {
@@ -309,7 +311,7 @@ typedef struct {
   int       curIdx;
 } SIdxH;
 
-typedef struct {
+struct SRWHelper {
   tsdb_rw_helper_t type;
 
   STsdbRepo* pRepo;
@@ -328,7 +330,9 @@ typedef struct {
   SDataCols* pDataCols[2];
   void*      pBuffer;     // Buffer to hold the whole data block
   void*      compBuffer;  // Buffer for temperary compress/decompress purpose
-} SRWHelper;
+ public:
+  ~SRWHelper();
+};
 
 typedef struct {
   int   rowsInserted;
@@ -365,7 +369,6 @@ typedef struct {
 #define TSDB_WUNLOCK_TABLE(t) taosWUnLockLatch(&((t)->latch))
 
 STsdbMeta* tsdbNewMeta(STsdbCfg* pCfg);
-void       tsdbFreeMeta(STsdbMeta* pMeta);
 int        tsdbOpenMeta(STsdbRepo* pRepo);
 int        tsdbCloseMeta(STsdbRepo* pRepo);
 STable*    tsdbGetTableByUid(STsdbMeta* pMeta, uint64_t uid);
@@ -394,9 +397,9 @@ static FORCE_INLINE STSchema* tsdbGetTableSchemaImpl(STable* pTable, bool lock, 
 
   if (lock) TSDB_RLOCK_TABLE(pDTable);
   if (version < 0) {  // get the latest version of schema
-    pTSchema = pDTable->schema[pDTable->numOfSchemas - 1];
+    pTSchema = pDTable->schema.back();
   } else {  // get the schema with version
-    void* ptr = taosbsearch(&version, pDTable->schema, pDTable->numOfSchemas, sizeof(STSchema*),
+    void* ptr = taosbsearch(&version, &pDTable->schema[0], pDTable->schema.size(), sizeof(STSchema*),
                             tsdbCompareSchemaVersion, TD_EQ);
     if (ptr == NULL) {
       terrno = TSDB_CODE_TDB_IVD_TB_SCHEMA_VERSION;
@@ -545,7 +548,6 @@ void        tsdbGetFidKeyRange(int daysPerFile, int8_t precision, int fileId, TS
 
 int  tsdbInitReadHelper(SRWHelper* pHelper, STsdbRepo* pRepo);
 int  tsdbInitWriteHelper(SRWHelper* pHelper, STsdbRepo* pRepo);
-void tsdbDestroyHelper(SRWHelper* pHelper);
 void tsdbResetHelper(SRWHelper* pHelper);
 int  tsdbSetAndOpenHelperFile(SRWHelper* pHelper, SFileGroup* pGroup);
 int  tsdbCloseHelperFile(SRWHelper* pHelper, bool hasError, SFileGroup* pGroup);

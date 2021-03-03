@@ -58,14 +58,12 @@ int tdEncodeSchema(void **buf, STSchema *pSchema) {
  * Decode a schema from a binary.
  */
 void *tdDecodeSchema(void *buf, STSchema **pRSchema) {
-  int version = 0;
+  int32_t version = 0;
   int numOfCols = 0;
-  STSchemaBuilder schemaBuilder;
+  STSchemaBuilder schemaBuilder{version};
 
   buf = taosDecodeFixedI32(buf, &version);
   buf = taosDecodeFixedI32(buf, &numOfCols);
-
-  if (tdInitTSchemaBuilder(&schemaBuilder, version) < 0) return NULL;
 
   for (int i = 0; i < numOfCols; i++) {
     int8_t  type = 0;
@@ -75,93 +73,55 @@ void *tdDecodeSchema(void *buf, STSchema **pRSchema) {
     buf = taosDecodeFixedI16(buf, &colId);
     buf = taosDecodeFixedI16(buf, &bytes);
     if (tdAddColToSchema(&schemaBuilder, type, colId, bytes) < 0) {
-      tdDestroyTSchemaBuilder(&schemaBuilder);
       return NULL;
     }
   }
 
   *pRSchema = tdGetSchemaFromBuilder(&schemaBuilder);
-  tdDestroyTSchemaBuilder(&schemaBuilder);
   return buf;
-}
-
-int tdInitTSchemaBuilder(STSchemaBuilder *pBuilder, int32_t version) {
-  if (pBuilder == NULL) return -1;
-
-  pBuilder->tCols = 256;
-  pBuilder->columns = (STColumn *)malloc(sizeof(STColumn) * pBuilder->tCols);
-  if (pBuilder->columns == NULL) return -1;
-
-  tdResetTSchemaBuilder(pBuilder, version);
-  return 0;
-}
-
-void tdDestroyTSchemaBuilder(STSchemaBuilder *pBuilder) {
-  if (pBuilder) {
-    tfree(pBuilder->columns);
-  }
-}
-
-void tdResetTSchemaBuilder(STSchemaBuilder *pBuilder, int32_t version) {
-  pBuilder->nCols = 0;
-  pBuilder->tlen = 0;
-  pBuilder->flen = 0;
-  pBuilder->vlen = 0;
-  pBuilder->version = version;
 }
 
 int tdAddColToSchema(STSchemaBuilder *pBuilder, int8_t type, int16_t colId, int16_t bytes) {
   if (!isValidDataType(type)) return -1;
 
-  if (pBuilder->nCols >= pBuilder->tCols) {
-    pBuilder->tCols *= 2;
-    pBuilder->columns = (STColumn *)realloc(pBuilder->columns, sizeof(STColumn) * pBuilder->tCols);
-    if (pBuilder->columns == NULL) return -1;
-  }
-
-  STColumn *pCol = &(pBuilder->columns[pBuilder->nCols]);
-  colSetType(pCol, type);
-  colSetColId(pCol, colId);
-  if (pBuilder->nCols == 0) {
-    colSetOffset(pCol, 0);
-  } else {
-    STColumn *pTCol = &(pBuilder->columns[pBuilder->nCols-1]);
-    colSetOffset(pCol, pTCol->offset + TYPE_BYTES[pTCol->type]);
-  }
+  int16_t offset = [pBuilder]() {
+    if (pBuilder->columns.empty()) return 0;
+    auto last = pBuilder->columns.back();
+    return last.offset + TYPE_BYTES[last.type];
+  }();
+  int16_t newbytes = IS_VAR_DATA_TYPE(type) ? bytes : TYPE_BYTES[type];
+  pBuilder->columns.push_back({type, colId, newbytes, offset});
 
   if (IS_VAR_DATA_TYPE(type)) {
-    colSetBytes(pCol, bytes);
     pBuilder->tlen += (TYPE_BYTES[type] + bytes);
     pBuilder->vlen += bytes - sizeof(VarDataLenT);
   } else {
-    colSetBytes(pCol, TYPE_BYTES[type]);
     pBuilder->tlen += TYPE_BYTES[type];
     pBuilder->vlen += TYPE_BYTES[type];
   }
 
-  pBuilder->nCols++;
   pBuilder->flen += TYPE_BYTES[type];
 
-  ASSERT(pCol->offset < pBuilder->flen);
+  ASSERT(pBuilder->columns.back().offset < pBuilder->flen);
 
   return 0;
 }
 
 STSchema *tdGetSchemaFromBuilder(STSchemaBuilder *pBuilder) {
-  if (pBuilder->nCols <= 0) return NULL;
+  if (pBuilder->columns.empty()) return NULL;
 
-  int tlen = sizeof(STSchema) + sizeof(STColumn) * pBuilder->nCols;
+  int tlen = sizeof(STSchema) + sizeof(STColumn) * pBuilder->columns.size();
 
   STSchema *pSchema = (STSchema *)malloc(tlen);
   if (pSchema == NULL) return NULL;
 
   schemaVersion(pSchema) = pBuilder->version;
-  schemaNCols(pSchema) = pBuilder->nCols;
+  schemaNCols(pSchema) = pBuilder->columns.size();
   schemaTLen(pSchema) = pBuilder->tlen;
   schemaFLen(pSchema) = pBuilder->flen;
   schemaVLen(pSchema) = pBuilder->vlen;
 
-  memcpy(schemaColAt(pSchema, 0), pBuilder->columns, sizeof(STColumn) * pBuilder->nCols);
+  memcpy(schemaColAt(pSchema, 0), &pBuilder->columns[0], sizeof(STColumn) * pBuilder->columns.size());
 
   return pSchema;
 }
@@ -269,15 +229,15 @@ void dataColSetNEleNull(SDataCol *pCol, int nEle, int maxPoints) {
   }
 }
 
-void dataColSetOffset(SDataCol *pCol, int nEle) {
-  ASSERT(((pCol->type == TSDB_DATA_TYPE_BINARY) || (pCol->type == TSDB_DATA_TYPE_NCHAR)));
+void SDataCol::setOffset(int nEle) {
+  ASSERT(((type == TSDB_DATA_TYPE_BINARY) || (type == TSDB_DATA_TYPE_NCHAR)));
 
-  void *tptr = pCol->pData;
+  void *tptr = pData;
   // char *tptr = (char *)(pCol->pData);
 
   VarDataOffsetT offset = 0;
   for (int i = 0; i < nEle; i++) {
-    pCol->dataOff[i] = offset;
+    dataOff[i] = offset;
     offset += varDataTLen(tptr);
     tptr = POINTER_SHIFT(tptr, varDataTLen(tptr));
   }

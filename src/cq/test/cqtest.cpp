@@ -59,15 +59,12 @@ int main(int argc, char *argv[]) {
     exit(-1);
   }
 
-  STSchemaBuilder schemaBuilder = {0};
+  STSchemaBuilder schemaBuilder { 0 };
 
-  tdInitTSchemaBuilder(&schemaBuilder, 0);
   tdAddColToSchema(&schemaBuilder, TSDB_DATA_TYPE_TIMESTAMP, 0, 8);
   tdAddColToSchema(&schemaBuilder, TSDB_DATA_TYPE_INT, 1, 4);
 
   STSchema *pSchema = tdGetSchemaFromBuilder(&schemaBuilder);
-
-  tdDestroyTSchemaBuilder(&schemaBuilder);
 
   for (int sid =1; sid<10; ++sid) {
     cqCreate(pCq, sid, sid, NULL, "select avg(speed) from demo.t1 sliding(1s) interval(5s)", pSchema);

@@ -681,13 +681,13 @@ static void tsdbFreeRepo(STsdbRepo *pRepo) {
   if (pRepo) {
     tsdbFreeFileH(pRepo->tsdbFileH);
     tsdbFreeBufPool(pRepo->pPool);
-    tsdbFreeMeta(pRepo->tsdbMeta);
+    delete pRepo->tsdbMeta;
     // tsdbFreeMemTable(pRepo->mem);
     // tsdbFreeMemTable(pRepo->imem);
     tfree(pRepo->rootDir);
     sem_destroy(&(pRepo->readyToCommit));
     pthread_mutex_destroy(&pRepo->mutex);
-    free(pRepo);
+    delete pRepo;
   }
 }
 
@@ -701,35 +701,34 @@ static int tsdbRestoreInfo(STsdbRepo *pRepo) { // TODO
   SFileGroupIter iter;
   SRWHelper      rhelper = {(tsdb_rw_helper_t)0};
 
-  if (tsdbInitReadHelper(&rhelper, pRepo) < 0) goto _err;
+  if (tsdbInitReadHelper(&rhelper, pRepo) < 0) return -1;
 
   tsdbInitFileGroupIter(pFileH, &iter, TSDB_ORDER_DESC);
   while ((pFGroup = tsdbGetFileGroupNext(&iter)) != NULL) {
     if (pFGroup->state) continue;
-    if (tsdbSetAndOpenHelperFile(&rhelper, pFGroup) < 0) goto _err;
-    if (tsdbLoadCompIdx(&rhelper, NULL) < 0) goto _err;
+    if (tsdbSetAndOpenHelperFile(&rhelper, pFGroup) < 0) return -1;
+    if (tsdbLoadCompIdx(&rhelper, NULL) < 0) return -1;
     for (int i = 1; i < pMeta->maxTables; i++) {
       STable *pTable = pMeta->tables[i];
       if (pTable == NULL) continue;
-      if (tsdbSetHelperTable(&rhelper, pTable, pRepo) < 0) goto _err;
+      if (tsdbSetHelperTable(&rhelper, pTable, pRepo) < 0) return -1;
       SCompIdx *pIdx = &(rhelper.curCompIdx);
 
       TSKEY lastKey = tsdbGetTableLastKeyImpl(pTable);
       if (pIdx->offset > 0 && lastKey < pIdx->maxKey) {
         pTable->lastKey = pIdx->maxKey;
         if (pCfg->cacheLastRow) { // load the block of data
-          if (tsdbLoadCompInfo(&rhelper, NULL) < 0) goto _err;
+          if (tsdbLoadCompInfo(&rhelper, NULL) < 0) return -1;
 
           pBlock = rhelper.pCompInfo->blocks + pIdx->numOfBlocks - 1;
-          if (tsdbLoadBlockData(&rhelper, pBlock, NULL) < 0) goto _err;
+          if (tsdbLoadBlockData(&rhelper, pBlock, NULL) < 0) return -1;
 
           // construct the data row
           ASSERT(pTable->lastRow == NULL);
           STSchema *pSchema = tsdbGetTableSchema(pTable);
           pTable->lastRow = taosTMalloc(schemaTLen(pSchema));
-          if (pTable->lastRow == NULL) {
-            goto _err;
-          }
+          if (pTable->lastRow == NULL)
+            return -1;
 
           tdInitDataRow(pTable->lastRow, pSchema);
           for (int icol = 0; icol < schemaNCols(pSchema); icol++) {
@@ -743,12 +742,7 @@ static int tsdbRestoreInfo(STsdbRepo *pRepo) { // TODO
     }
   }
 
-  tsdbDestroyHelper(&rhelper);
   return 0;
-
-_err:
-  tsdbDestroyHelper(&rhelper);
-  return -1;
 }
 
 static void tsdbAlterCompression(STsdbRepo *pRepo, int8_t compression) {
@@ -900,7 +894,7 @@ static void tsdbStartStream(STsdbRepo *pRepo) {
   for (int i = 0; i < pMeta->maxTables; i++) {
     STable *pTable = pMeta->tables[i];
     if (pTable && pTable->type == TSDB_STREAM_TABLE) {
-      pTable->cqhandle = (*pRepo->appH.cqCreateFunc)(pRepo->appH.cqH, TABLE_UID(pTable), TABLE_TID(pTable), TABLE_NAME(pTable)->data, pTable->sql,
+      pTable->cqhandle = (*pRepo->appH.cqCreateFunc)(pRepo->appH.cqH, TABLE_UID(pTable), TABLE_TID(pTable), TABLE_NAME(pTable)->data, pTable->sql.c_str(),
                                                      tsdbGetTableSchemaImpl(pTable, false, false, -1));
     }
   }

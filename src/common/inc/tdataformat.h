@@ -101,19 +101,18 @@ static FORCE_INLINE STColumn *tdGetColOfID(STSchema *pSchema, int16_t colId) {
 }
 
 // ----------------- SCHEMA BUILDER DEFINITION
-typedef struct {
-  int       tCols;
-  int       nCols;
-  int       tlen;
-  uint16_t  flen;
-  uint16_t  vlen;
-  int       version;
-  STColumn *columns;
-} STSchemaBuilder;
+struct STSchemaBuilder {
+  int       tlen = 0;
+  uint16_t  flen = 0;
+  uint16_t  vlen = 0;
+  int32_t   version;
+  std::vector<STColumn> columns;
 
-int       tdInitTSchemaBuilder(STSchemaBuilder *pBuilder, int32_t version);
-void      tdDestroyTSchemaBuilder(STSchemaBuilder *pBuilder);
-void      tdResetTSchemaBuilder(STSchemaBuilder *pBuilder, int32_t version);
+ public:
+  STSchemaBuilder(int32_t ver) : version(ver) {}
+  ~STSchemaBuilder() = default;
+};
+
 int       tdAddColToSchema(STSchemaBuilder *pBuilder, int8_t type, int16_t colId, int16_t bytes);
 STSchema *tdGetSchemaFromBuilder(STSchemaBuilder *pBuilder);
 
@@ -241,12 +240,12 @@ struct SDataCol {
     }
   }
   void reset() { len = 0; }
+  void setOffset(int nEle);
 };
 
 
 
 void dataColInit(SDataCol *pDataCol, STColumn *pCol, void **pBuf, int maxPoints);
-void dataColSetOffset(SDataCol *pCol, int nEle);
 bool isNEleNull(SDataCol *pCol, int nEle);
 void dataColSetNEleNull(SDataCol *pCol, int nEle, int maxPoints);
 

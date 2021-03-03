@@ -43,7 +43,7 @@ typedef struct {
   void *cqH;
   int (*notifyStatus)(void *, int status, int eno);
   int (*eventCallBack)(void *);
-  void *(*cqCreateFunc)(void *handle, uint64_t uid, int32_t sid, const char* dstTable, char *sqlStr, STSchema *pSchema);
+  void *(*cqCreateFunc)(void *handle, uint64_t uid, int32_t sid, const char* dstTable, const char *sqlStr, STSchema *pSchema);
   void (*cqDropFunc)(void *handle);
 } STsdbAppH;
 
@@ -95,12 +95,12 @@ struct STableCfg {
   std::string  name;
   STableId   tableId;
   int32_t    sversion;
-  char *     sname;  // super table name
+  std::string sname;  // super table name
   uint64_t   superUid;
   STSchema * schema;
   STSchema * tagSchema;
   SDataRow   tagValues;
-  char *     sql;
+  std::string sql;
 
  public:
   ~STableCfg();

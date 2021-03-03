@@ -72,14 +72,12 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
   if (iters == NULL) {
     tsdbError("vgId:%d failed to create commit iterator since %s", REPO_ID(pRepo), tstrerror(terrno));
     tsdbDestroyCommitIters(iters, pMem->maxTables);
-    tsdbDestroyHelper(&whelper);
     return -1;
   }
 
   if (tsdbInitWriteHelper(&whelper, pRepo) < 0) {
     tsdbError("vgId:%d failed to init write helper since %s", REPO_ID(pRepo), tstrerror(terrno));
     tsdbDestroyCommitIters(iters, pMem->maxTables);
-    tsdbDestroyHelper(&whelper);
     return -1;
   }
   auto pDataCols = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pCfg->maxRowsPerFileBlock);
@@ -88,7 +86,6 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
     tsdbError("vgId:%d failed to init data cols with maxRowBytes %d maxCols %d maxRowsPerFileBlock %d since %s",
               REPO_ID(pRepo), pMeta->maxCols, pMeta->maxRowBytes, pCfg->maxRowsPerFileBlock, tstrerror(terrno));
     tsdbDestroyCommitIters(iters, pMem->maxTables);
-    tsdbDestroyHelper(&whelper);
     return -1;
   }
 
@@ -100,13 +97,11 @@ static int tsdbCommitTSData(STsdbRepo *pRepo) {
     if (tsdbCommitToFile(pRepo, fid, iters, &whelper, pDataCols.get()) < 0) {
       tsdbError("vgId:%d failed to commit to file %d since %s", REPO_ID(pRepo), fid, tstrerror(terrno));
       tsdbDestroyCommitIters(iters, pMem->maxTables);
-      tsdbDestroyHelper(&whelper);
       return -1;
     }
   }
 
   tsdbDestroyCommitIters(iters, pMem->maxTables);
-  tsdbDestroyHelper(&whelper);
 
   return 0;
 }

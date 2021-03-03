@@ -172,7 +172,7 @@ void cqStop(void *handle) {
   pContext->dbConn = NULL;
 }
 
-void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, char *sqlStr, STSchema *pSchema) {
+void *cqCreate(void *handle, uint64_t uid, int32_t sid, const char* dstTable, const char *sqlStr, STSchema *pSchema) {
   if (tsEnableStream == 0) {
     return NULL;
   }

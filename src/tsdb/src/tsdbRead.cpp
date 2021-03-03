@@ -2917,12 +2917,11 @@ void tsdbCleanupQueryHandle(TsdbQueryHandleT queryHandle) {
   // todo check error
   tsdbMayUnTakeMemSnapshot(pQueryHandle);
 
-  tsdbDestroyHelper(&pQueryHandle->rhelper);
   SIOCostSummary* pCost = &pQueryHandle->cost;
   tsdbDebug("%p :io-cost summary: statis-info:%"PRId64" us, datablock:%" PRId64" us, check data:%"PRId64" us, %p",
       pQueryHandle, pCost->statisInfoLoadTime, pCost->blockLoadTime, pCost->checkForNextTime, pQueryHandle->qinfo);
 
-  tfree(pQueryHandle);
+  delete pQueryHandle;
 }
 
 void tsdbDestroyTableGroup(STableGroupInfo *pGroupList) {

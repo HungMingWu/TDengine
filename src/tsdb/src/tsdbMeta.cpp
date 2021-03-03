@@ -37,12 +37,11 @@ static void    tsdbRemoveTableFromMeta(STsdbRepo *pRepo, STable *pTable, bool rm
 static int     tsdbAddTableIntoIndex(STsdbMeta *pMeta, STable *pTable, bool refSuper);
 static int     tsdbRemoveTableFromIndex(STsdbMeta *pMeta, STable *pTable);
 static int     tsdbInitTableCfg(STableCfg *config, ETableType type, uint64_t uid, int32_t tid);
-static int     tsdbTableSetSchema(STableCfg *config, STSchema *pSchema, bool dup);
-static int     tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema, bool dup);
+static int     tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema);
 static int     tsdbTableSetSName(STableCfg *config, char *sname, bool dup);
 static int     tsdbTableSetSuperUid(STableCfg *config, uint64_t uid);
 static int     tsdbTableSetTagValue(STableCfg *config, SKVRow row, bool dup);
-static int     tsdbTableSetStreamSql(STableCfg *config, char *sql, bool dup);
+static int     tsdbTableSetStreamSql(STableCfg *config, char *sql);
 static int     tsdbEncodeTableName(void **buf, tstr *name);
 static void *  tsdbDecodeTableName(void *buf, tstr **name);
 static int     tsdbEncodeTable(void **buf, STable *pTable);
@@ -232,7 +231,7 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
   int16_t  numOfCols = htons(pMsg->numOfColumns);
   int16_t  numOfTags = htons(pMsg->numOfTags);
 
-  STSchemaBuilder schemaBuilder = {0};
+  STSchemaBuilder schemaBuilder = { htonl(pMsg->sversion) };
 
   STableCfg *pCfg = (STableCfg *)calloc(1, sizeof(STableCfg));
   if (pCfg == NULL) {
@@ -241,10 +240,6 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
   }
 
   if (tsdbInitTableCfg(pCfg, (ETableType)pMsg->tableType, htobe64(pMsg->uid), htonl(pMsg->tid)) < 0) goto _err;
-  if (tdInitTSchemaBuilder(&schemaBuilder, htonl(pMsg->sversion)) < 0) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
-  }
 
   for (int i = 0; i < numOfCols; i++) {
     if (tdAddColToSchema(&schemaBuilder, pSchema[i].type, htons(pSchema[i].colId), htons(pSchema[i].bytes)) < 0) {
@@ -252,19 +247,19 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
       goto _err;
     }
   }
-  if (tsdbTableSetSchema(pCfg, tdGetSchemaFromBuilder(&schemaBuilder), false) < 0) goto _err;
+  pCfg->schema = tdGetSchemaFromBuilder(&schemaBuilder);
   pCfg->name = std::string(&pMsg->tableFname[0]);
 
   if (numOfTags > 0) {
     // Decode tag schema
-    tdResetTSchemaBuilder(&schemaBuilder, htonl(pMsg->tversion));
+    STSchemaBuilder schemaBuilder = {htonl(pMsg->sversion)};
     for (int i = numOfCols; i < numOfCols + numOfTags; i++) {
       if (tdAddColToSchema(&schemaBuilder, pSchema[i].type, htons(pSchema[i].colId), htons(pSchema[i].bytes)) < 0) {
         terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
         goto _err;
       }
     }
-    if (tsdbTableSetTagSchema(pCfg, tdGetSchemaFromBuilder(&schemaBuilder), false) < 0) goto _err;
+    if (tsdbTableSetTagSchema(pCfg, tdGetSchemaFromBuilder(&schemaBuilder)) < 0) goto _err;
     if (tsdbTableSetSName(pCfg, &pMsg->stableFname[0], true) < 0) goto _err;
     if (tsdbTableSetSuperUid(pCfg, htobe64(pMsg->superTableUid)) < 0) goto _err;
 
@@ -277,15 +272,12 @@ STableCfg *tsdbCreateTableCfgFromMsg(SMDCreateTableMsg *pMsg) {
 
   if (pMsg->tableType == TSDB_STREAM_TABLE) {
     char *sql = pMsg->data + (numOfCols + numOfTags) * sizeof(SSchema);
-    tsdbTableSetStreamSql(pCfg, sql, true);
+    tsdbTableSetStreamSql(pCfg, sql);
   }
-
-  tdDestroyTSchemaBuilder(&schemaBuilder);
 
   return pCfg;
 
 _err:
-  tdDestroyTSchemaBuilder(&schemaBuilder);
   delete pCfg;
   return NULL;
 }
@@ -349,30 +341,22 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
               REPO_ID(pRepo), TABLE_CHAR_NAME(pTable), TABLE_TID(pTable), TABLE_UID(pTable),
               schemaVersion(pTable->pSuper->tagSchema), pMsg->tversion);
 
-    STSchemaBuilder schemaBuilder = {0};
+    STSchemaBuilder schemaBuilder { pMsg->tversion };
 
     STColumn *pTCol = (STColumn *)pMsg->data;
     ASSERT(pMsg->schemaLen % sizeof(STColumn) == 0 && pTCol[0].colId == colColId(schemaColAt(pTable->pSuper->tagSchema, 0)));
-    if (tdInitTSchemaBuilder(&schemaBuilder, pMsg->tversion) < 0) {
-      tsdbDebug("vgId:%d failed to update tag schema of table %s tid %d uid %" PRIu64 " since out of memory",
-                REPO_ID(pRepo), TABLE_CHAR_NAME(pTable), TABLE_TID(pTable), TABLE_UID(pTable));
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      return -1;
-    }
+
     for (int i = 0; i < (pMsg->schemaLen / sizeof(STColumn)); i++) {
       if (tdAddColToSchema(&schemaBuilder, pTCol[i].type, pTCol[i].colId, pTCol[i].bytes) < 0) {
-        tdDestroyTSchemaBuilder(&schemaBuilder);
         terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
         return -1;
       }
     }
     pNewSchema = tdGetSchemaFromBuilder(&schemaBuilder);
     if (pNewSchema == NULL) {
-      tdDestroyTSchemaBuilder(&schemaBuilder);
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
       return -1;
     }
-    tdDestroyTSchemaBuilder(&schemaBuilder);
   }
 
   // Chage in memory
@@ -419,12 +403,7 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
 
 // ------------------ INTERNAL FUNCTIONS ------------------
 STsdbMeta *tsdbNewMeta(STsdbCfg *pCfg) {
-  STsdbMeta *pMeta = (STsdbMeta *)calloc(1, sizeof(*pMeta));
-  auto _1 = defer([&] { tsdbFreeMeta(pMeta); });
-  if (pMeta == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return nullptr;
-  }
+  std::unique_ptr<STsdbMeta> pMeta(new STsdbMeta);
 
   int code = pthread_rwlock_init(&pMeta->rwLock, NULL);
   if (code != 0) {
@@ -447,17 +426,13 @@ STsdbMeta *tsdbNewMeta(STsdbCfg *pCfg) {
     return nullptr;
   }
 
-  _1.cancel();
-  return pMeta;
+  return pMeta.release();
 }
 
-void tsdbFreeMeta(STsdbMeta *pMeta) {
-  if (pMeta) {
-    taosHashCleanup(pMeta->uidMap);
-    tfree(pMeta->tables);
-    pthread_rwlock_destroy(&pMeta->rwLock);
-    delete pMeta;
-  }
+STsdbMeta::~STsdbMeta() {
+  taosHashCleanup(uidMap);
+  tfree(tables);
+  pthread_rwlock_destroy(&rwLock);
 }
 
 int tsdbOpenMeta(STsdbRepo *pRepo) {
@@ -576,16 +551,16 @@ void tsdbUpdateTableSchema(STsdbRepo *pRepo, STable *pTable, STSchema *pSchema, 
   STsdbMeta *pMeta = pRepo->tsdbMeta;
 
   STable *pCTable = (TABLE_TYPE(pTable) == TSDB_CHILD_TABLE) ? pTable->pSuper : pTable;
-  ASSERT(schemaVersion(pSchema) > schemaVersion(pCTable->schema[pCTable->numOfSchemas - 1]));
+  ASSERT(schemaVersion(pSchema) > schemaVersion(pCTable->schema.back()));
 
   TSDB_WLOCK_TABLE(pCTable);
-  if (pCTable->numOfSchemas < TSDB_MAX_TABLE_SCHEMAS) {
-    pCTable->schema[pCTable->numOfSchemas++] = pSchema;
+  if (pCTable->schema.size() < TSDB_MAX_TABLE_SCHEMAS) {
+    pCTable->schema.push_back(pSchema);
   } else {
-    ASSERT(pCTable->numOfSchemas == TSDB_MAX_TABLE_SCHEMAS);
+    ASSERT(pCTable->schema.size() == TSDB_MAX_TABLE_SCHEMAS);
     tdFreeSchema(pCTable->schema[0]);
-    memmove(pCTable->schema, pCTable->schema + 1, sizeof(STSchema *) * (TSDB_MAX_TABLE_SCHEMAS - 1));
-    pCTable->schema[pCTable->numOfSchemas - 1] = pSchema;
+    pCTable->schema.erase(pCTable->schema.begin());
+    pCTable->schema.push_back(pSchema);
   }
 
   if (schemaNCols(pSchema) > pMeta->maxCols) pMeta->maxCols = schemaNCols(pSchema);
@@ -668,23 +643,18 @@ static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
 
   if (isSuper) {
     pTable->type = TSDB_SUPER_TABLE;
-    tsize = strnlen(pCfg->sname, TSDB_TABLE_NAME_LEN - 1);
+    tsize = std::min<size_t>(pCfg->sname.length(), TSDB_TABLE_NAME_LEN - 1);
     pTable->name = (tstr*)calloc(1, tsize + VARSTR_HEADER_SIZE + 1);
     if (pTable->name == NULL) {
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
       goto _err;
     }
-    STR_WITH_SIZE_TO_VARSTR(pTable->name, pCfg->sname, (VarDataLenT)tsize);
+    STR_WITH_SIZE_TO_VARSTR(pTable->name, pCfg->sname.c_str(), (VarDataLenT)tsize);
     TABLE_UID(pTable) = pCfg->superUid;
     TABLE_TID(pTable) = -1;
     TABLE_SUID(pTable) = -1;
     pTable->pSuper = NULL;
-    pTable->numOfSchemas = 1;
-    pTable->schema[0] = tdDupSchema(pCfg->schema);
-    if (pTable->schema[0] == NULL) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      goto _err;
-    }
+    pTable->schema.push_back(tdDupSchema(pCfg->schema));
     pTable->tagSchema = tdDupSchema(pCfg->tagSchema);
     if (pTable->tagSchema == NULL) {
       terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
@@ -718,19 +688,14 @@ static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
       }
     } else {
       TABLE_SUID(pTable) = -1;
-      pTable->numOfSchemas = 1;
-      pTable->schema[0] = tdDupSchema(pCfg->schema);
+      pTable->schema.push_back(tdDupSchema(pCfg->schema));
       if (pTable->schema[0] == NULL) {
         terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
         goto _err;
       }
 
       if (TABLE_TYPE(pTable) == TSDB_STREAM_TABLE) {
-        pTable->sql = strdup(pCfg->sql);
-        if (pTable->sql == NULL) {
-          terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-          goto _err;
-        }
+        pTable->sql = pCfg->sql;
       }
     }
   }
@@ -767,8 +732,7 @@ static void tsdbFreeTable(STable *pTable) {
 
     tSkipListDestroy(pTable->pIndex);
     taosTZfree(pTable->lastRow);
-    tfree(pTable->sql);
-    free(pTable);
+    delete pTable;
   }
 }
 
@@ -815,7 +779,7 @@ static int tsdbAddTableToMeta(STsdbRepo *pRepo, STable *pTable, bool addIdx, boo
 
   if (lock && tsdbUnlockRepoMeta(pRepo) < 0) return -1;
   if (TABLE_TYPE(pTable) == TSDB_STREAM_TABLE && addIdx) {
-    pTable->cqhandle = (*pRepo->appH.cqCreateFunc)(pRepo->appH.cqH, TABLE_UID(pTable), TABLE_TID(pTable), TABLE_NAME(pTable)->data, pTable->sql,
+    pTable->cqhandle = (*pRepo->appH.cqCreateFunc)(pRepo->appH.cqH, TABLE_UID(pTable), TABLE_TID(pTable), TABLE_NAME(pTable)->data, pTable->sql.c_str(),
                                                    tsdbGetTableSchemaImpl(pTable, false, false, -1));
   }
 
@@ -941,21 +905,13 @@ static int tsdbTableSetSchema(STableCfg *config, STSchema *pSchema, bool dup) {
   return 0;
 }
 
-static int tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema, bool dup) {
+static int tsdbTableSetTagSchema(STableCfg *config, STSchema *pSchema) {
   if (config->type != TSDB_CHILD_TABLE) {
     terrno = TSDB_CODE_TDB_INVALID_CREATE_TB_MSG;
     return -1;
   }
 
-  if (dup) {
-    config->tagSchema = tdDupSchema(pSchema);
-    if (config->tagSchema == NULL) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      return -1;
-    }
-  } else {
-    config->tagSchema = pSchema;
-  }
+  config->tagSchema = pSchema;
   return 0;
 }
 
@@ -966,11 +922,7 @@ static int tsdbTableSetSName(STableCfg *config, char *sname, bool dup) {
   }
 
   if (dup) {
-    config->sname = strdup(sname);
-    if (config->sname == NULL) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      return -1;
-    }
+    config->sname = std::string(sname);
   } else {
     config->sname = sname;
   }
@@ -1006,22 +958,13 @@ static int tsdbTableSetTagValue(STableCfg *config, SKVRow row, bool dup) {
   return 0;
 }
 
-static int tsdbTableSetStreamSql(STableCfg *config, char *sql, bool dup) {
+static int tsdbTableSetStreamSql(STableCfg *config, char *sql) {
   if (config->type != TSDB_STREAM_TABLE) {
     terrno = TSDB_CODE_TDB_INVALID_CREATE_TB_MSG;
     return -1;
   }
 
-  if (dup) {
-    config->sql = strdup(sql);
-    if (config->sql == NULL) {
-      terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-      return -1;
-    }
-  } else {
-    config->sql = sql;
-  }
-
+  config->sql = std::string(sql);
   return 0;
 }
 
@@ -1029,8 +972,6 @@ STableCfg::~STableCfg() {
   if (schema) tdFreeSchema(schema);
   if (tagSchema) tdFreeSchema(tagSchema);
   if (tagValues) kvRowFree(tagValues);
-  tfree(sname);
-  tfree(sql);
 }
 
 static int tsdbEncodeTableName(void **buf, tstr *name) {
@@ -1075,17 +1016,16 @@ static int tsdbEncodeTable(void **buf, STable *pTable) {
     tlen += taosEncodeFixedU64(buf, TABLE_SUID(pTable));
     tlen += tdEncodeKVRow(buf, pTable->tagVal);
   } else {
-    tlen += taosEncodeFixedU8(buf, pTable->numOfSchemas);
-    for (int i = 0; i < pTable->numOfSchemas; i++) {
-      tlen += tdEncodeSchema(buf, pTable->schema[i]);
-    }
+    tlen += taosEncodeFixedU8(buf, pTable->schema.size());
+    for (auto &schema : pTable->schema)
+      tlen += tdEncodeSchema(buf, schema);
 
     if (TABLE_TYPE(pTable) == TSDB_SUPER_TABLE) {
       tlen += tdEncodeSchema(buf, pTable->tagSchema);
     }
 
     if (TABLE_TYPE(pTable) == TSDB_STREAM_TABLE) {
-      tlen += taosEncodeString(buf, pTable->sql);
+      tlen += taosEncodeString(buf, pTable->sql.c_str());
     }
   }
 
@@ -1108,8 +1048,10 @@ static void *tsdbDecodeTable(void *buf, STable **pRTable) {
     buf = taosDecodeFixedU64(buf, &TABLE_SUID(pTable));
     buf = tdDecodeKVRow(buf, &(pTable->tagVal));
   } else {
-    buf = taosDecodeFixedU8(buf, &(pTable->numOfSchemas));
-    for (int i = 0; i < pTable->numOfSchemas; i++) {
+    uint8_t numOfSchemas;
+    buf = taosDecodeFixedU8(buf, &numOfSchemas);
+    pTable->schema.resize(numOfSchemas);
+    for (int i = 0; i < pTable->schema.size(); i++) {
       buf = tdDecodeSchema(buf, &(pTable->schema[i]));
     }
 

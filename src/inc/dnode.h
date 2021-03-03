@@ -70,6 +70,6 @@ struct SStep {
 
 int32_t dnodeStepInit(const std::initializer_list<SStep> &steps);
 void    dnodeStepCleanup(const std::initializer_list<SStep> &steps);
-void    dnodeReportStep(char *name, char *desc, int8_t finished);
+void    dnodeReportStep(const char *name, const char *desc, int8_t finished);
 
 #endif
