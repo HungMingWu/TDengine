@@ -30,6 +30,8 @@
 #include "vnodeMain.h"
 #include "vnodeWrite.h"
 #include "tqueue.h"
+#include "filesystem.hpp"
+#include "tulog.h"
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno);
 
@@ -383,7 +385,13 @@ void SVnodeObj::Destroy() {
       vInfo("vgId:%d, vnode backup not enabled", vgId);
     } else {
       taosRemoveDir(newDir);
-      taosRename(rootDir, newDir);
+      std::error_code ec;
+      fs::rename(rootDir, newDir, ec);
+      if (ec) {
+        uError("failed to rename file %s to %s, reason:%s", rootDir, newDir, ec.message().c_str());
+      } else {
+        uInfo("successfully to rename file %s to %s", rootDir, newDir);
+      }
     }
 
     taosRemoveDir(rootDir);

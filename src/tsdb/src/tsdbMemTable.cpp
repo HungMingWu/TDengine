@@ -84,22 +84,16 @@ int tsdbUnRefMemTable(STsdbRepo *pRepo, SMemTable *pMemTable) {
 	int ref = T_REF_DEC(pMemTable);
 	tsdbDebug("vgId:%d unref memtable %p ref %d", REPO_ID(pRepo), pMemTable, ref);
   if (ref == 0) {
-    STsdbBufPool *pBufPool = pRepo->pPool;
+          auto &pool = pRepo->pool;
 
-    if (tsdbLockRepo(pRepo) < 0) return -1;
+    pRepo->mutex.lock();
     while (!pMemTable->bufBlockList.empty()) {
       auto data = pMemTable->bufBlockList.front();
       pMemTable->bufBlockList.pop_front();
-      pBufPool->bufBlockList.push_back(data);
+      pool.bufBlockList.push_back(data);
     }
-    int code = pthread_cond_signal(&pBufPool->poolNotEmpty);
-    if (code != 0) {
-      if (tsdbUnlockRepo(pRepo) < 0) return -1;
-      tsdbError("vgId:%d failed to signal pool not empty since %s", REPO_ID(pRepo), strerror(code));
-      terrno = TAOS_SYSTEM_ERROR(code);
-      return -1;
-    }
-    if (tsdbUnlockRepo(pRepo) < 0) return -1;
+    pool.poolNotEmpty.notify_one();
+    pRepo->mutex.unlock();
 
     for (int i = 0; i < pMemTable->maxTables; i++) {
       if (pMemTable->tData[i] != NULL) {
@@ -114,14 +108,14 @@ int tsdbUnRefMemTable(STsdbRepo *pRepo, SMemTable *pMemTable) {
 }
 
 int tsdbTakeMemSnapshot(STsdbRepo *pRepo, SMemTable **pMem, SMemTable **pIMem) {
-  if (tsdbLockRepo(pRepo) < 0) return -1;
+  pRepo->mutex.lock();
 
   *pMem = pRepo->mem;
   *pIMem = pRepo->imem;
   tsdbRefMemTable(pRepo, *pMem);
   tsdbRefMemTable(pRepo, *pIMem);
 
-  if (tsdbUnlockRepo(pRepo) < 0) return -1;
+  pRepo->mutex.unlock();
 
   if (*pMem != NULL) taosRLockLatch(&((*pMem)->latch));
 
@@ -186,10 +180,10 @@ void *tsdbAllocBytes(STsdbRepo *pRepo, int bytes) {
   } else {  // allocate from TSDB buffer pool
     if (pBufBlock == NULL || pBufBlock->remain < bytes) {
       ASSERT(pRepo->mem->bufBlockList.size() < pCfg->totalBlocks / 3);
-      if (tsdbLockRepo(pRepo) < 0) return NULL;
+      pRepo->mutex.lock();
       auto data = tsdbAllocBufBlockFromPool(pRepo);
       pRepo->mem->bufBlockList.push_back(data);
-      if (tsdbUnlockRepo(pRepo) < 0) return NULL;
+      pRepo->mutex.unlock();
       pBufBlock = tsdbGetCurrBufBlock(pRepo);
     }
 
@@ -216,11 +210,11 @@ int tsdbAsyncCommit(STsdbRepo *pRepo) {
   }
 
   if (pRepo->appH.notifyStatus) pRepo->appH.notifyStatus(pRepo->appH.appH, TSDB_STATUS_COMMIT_START, TSDB_CODE_SUCCESS);
-  if (tsdbLockRepo(pRepo) < 0) return -1;
+  pRepo->mutex.lock();
   pRepo->imem = pRepo->mem;
   pRepo->mem = NULL;
   tsdbScheduleCommit(pRepo);
-  if (tsdbUnlockRepo(pRepo) < 0) return -1;
+  pRepo->mutex.unlock();
 
   return 0;
 }
@@ -839,7 +833,7 @@ static int tsdbInsertDataToTableImpl(STsdbRepo *pRepo, STable *pTable, void **ro
 
 static void tsdbFreeRows(STsdbRepo *pRepo, void **rows, int rowCounter) {
   ASSERT(pRepo->mem != NULL);
-  STsdbBufPool *pBufPool = pRepo->pPool;
+  auto &pool = pRepo->pool;
 
   for (int i = rowCounter - 1; i >= 0; --i) {
     SDataRow row = (SDataRow)rows[i];
@@ -856,11 +850,11 @@ static void tsdbFreeRows(STsdbRepo *pRepo, void **rows, int rowCounter) {
                 pRepo->mem->bufBlockList.size(), pBufBlock->offset, pBufBlock->remain);
 
       if (pBufBlock->offset == 0) {  // return the block to buffer pool
-        if (tsdbLockRepo(pRepo) < 0) return;
+        pRepo->mutex.lock();
         auto data = pRepo->mem->bufBlockList.back();
         pRepo->mem->bufBlockList.pop_back();
         pRepo->mem->bufBlockList.push_front(data);
-        if (tsdbUnlockRepo(pRepo) < 0) return;
+        pRepo->mutex.unlock();
       }
     } else {
       ASSERT(listNEles(pRepo->mem->extraBuffList) > 0);

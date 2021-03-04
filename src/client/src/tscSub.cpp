@@ -25,6 +25,7 @@
 #include "tcache.h"
 #include "tscProfile.h"
 #include "defer.h"
+#include "filesystem.hpp"
 
 typedef struct SSubscriptionProgress {
   int64_t uid;
@@ -357,7 +358,8 @@ void tscSaveSubscriptionProgress(void* sub) {
 
   char path[256];
   sprintf(path, "%s/subscribe", tsDataDir);
-  if (taosMkDir(path, 0777) != 0) {
+  std::error_code ec;
+  if (!createDir(path, ec, fs::perms::all)) {
     tscError("failed to create subscribe dir: %s", path);
   }
 

@@ -111,9 +111,9 @@ int tsdbSetAndOpenHelperFile(SRWHelper *pHelper, SFileGroup *pGroup) {
   // Set the files
   pHelper->files.fGroup = *pGroup;
   if (helperType(pHelper) == TSDB_WRITE_HELPER) {
-    tsdbGetDataFileName(pRepo->rootDir, REPO_ID(pRepo), pGroup->fileId, TSDB_FILE_TYPE_NHEAD,
+    tsdbGetDataFileName(pRepo->rootDir.c_str(), REPO_ID(pRepo), pGroup->fileId, TSDB_FILE_TYPE_NHEAD,
                         helperNewHeadF(pHelper)->fname);
-    tsdbGetDataFileName(pRepo->rootDir, REPO_ID(pRepo), pGroup->fileId, TSDB_FILE_TYPE_NLAST,
+    tsdbGetDataFileName(pRepo->rootDir.c_str(), REPO_ID(pRepo), pGroup->fileId, TSDB_FILE_TYPE_NLAST,
                         helperNewLastF(pHelper)->fname);
   }
 

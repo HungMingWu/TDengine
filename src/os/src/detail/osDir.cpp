@@ -45,22 +45,6 @@ void taosRemoveDir(char *rootDir) {
   uInfo("dir:%s is removed", rootDir);
 }
 
-int taosMkDir(const char *path, mode_t mode) {
-  int code = mkdir(path, 0755);
-  if (code < 0 && errno == EEXIST) code = 0;
-  return code;
-}
-
-void taosRename(char* oldName, char *newName) {
-  // if newName in not empty, rename return fail. 
-  // the newName must be empty or does not exist
-  if (rename(oldName, newName)) {
-    uError("failed to rename file %s to %s, reason:%s", oldName, newName, strerror(errno));
-  } else {
-    uInfo("successfully to rename file %s to %s", oldName, newName);
-  }
-}
-
 void taosRemoveOldLogFiles(char *rootDir, int32_t keepDays) {
   DIR *dir = opendir(rootDir);
   if (dir == NULL) return;

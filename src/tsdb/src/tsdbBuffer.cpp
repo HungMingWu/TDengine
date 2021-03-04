@@ -20,57 +20,31 @@ static STsdbBufBlock *tsdbNewBufBlock(int bufBlockSize);
 static void           tsdbFreeBufBlock(STsdbBufBlock *pBufBlock);
 
 // ---------------- INTERNAL FUNCTIONS ----------------
-STsdbBufPool *tsdbNewBufPool() {
-  auto pBufPool = new (std::nothrow) STsdbBufPool;
-  if (pBufPool == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    tsdbFreeBufPool(pBufPool);
-    return NULL;
-  }
-
-  int code = pthread_cond_init(&(pBufPool->poolNotEmpty), NULL);
-  if (code != 0) {
-    terrno = TAOS_SYSTEM_ERROR(code);
-    tsdbFreeBufPool(pBufPool);
-    return NULL;
-  }
-
-  return pBufPool;
-}
-
-void tsdbFreeBufPool(STsdbBufPool *pBufPool) {
-  if (pBufPool) {
-    ASSERT(pBufPool->bufBlockList.empty());
-
-    pthread_cond_destroy(&pBufPool->poolNotEmpty);
-
-    delete pBufPool;
-  }
+STsdbBufPool::~STsdbBufPool() {
+  ASSERT(bufBlockList.empty());
 }
 
 int tsdbOpenBufPool(STsdbRepo *pRepo) {
   STsdbCfg *    pCfg = &(pRepo->config);
-  STsdbBufPool *pPool = pRepo->pPool;
+  auto &pool = pRepo->pool;
 
-  ASSERT(pPool != NULL);
-
-  pPool->bufBlockSize = pCfg->cacheBlockSize * 1024 * 1024; // MB
-  pPool->tBufBlocks = pCfg->totalBlocks;
-  pPool->nBufBlocks = 0;
-  pPool->index = 0;
+  pool.bufBlockSize = pCfg->cacheBlockSize * 1024 * 1024;  // MB
+  pool.tBufBlocks = pCfg->totalBlocks;
+  pool.nBufBlocks = 0;
+  pool.index = 0;
 
   for (int i = 0; i < pCfg->totalBlocks; i++) {
-    STsdbBufBlock *pBufBlock = tsdbNewBufBlock(pPool->bufBlockSize);
+    STsdbBufBlock *pBufBlock = tsdbNewBufBlock(pool.bufBlockSize);
     if (pBufBlock == NULL) goto _err;
 
-    pPool->bufBlockList.push_back(pBufBlock);
+    pool.bufBlockList.push_back(pBufBlock);
 
 
-    pPool->nBufBlocks++;
+    pool.nBufBlocks++;
   }
 
   tsdbDebug("vgId:%d buffer pool is opened! bufBlockSize:%d tBufBlocks:%d nBufBlocks:%d", REPO_ID(pRepo),
-            pPool->bufBlockSize, pPool->tBufBlocks, pPool->nBufBlocks);
+            pool.bufBlockSize, pool.tBufBlocks, pool.nBufBlocks);
 
   return 0;
 
@@ -82,33 +56,28 @@ _err:
 void tsdbCloseBufPool(STsdbRepo *pRepo) {
   if (pRepo == NULL) return;
 
-  STsdbBufPool * pBufPool = pRepo->pPool;
+  auto &pool = pRepo->pool;
 
-  if (pBufPool) {
-    for (auto &pBufBlock : pBufPool->bufBlockList)
+  for (auto &pBufBlock : pool.bufBlockList)
       tsdbFreeBufBlock(pBufBlock);
-  }
 
   tsdbDebug("vgId:%d, buffer pool is closed", REPO_ID(pRepo));
 }
 
 STsdbBufBlock *tsdbAllocBufBlockFromPool(STsdbRepo *pRepo) {
-  ASSERT(pRepo != NULL && pRepo->pPool != NULL);
-  ASSERT(IS_REPO_LOCKED(pRepo));
+  ASSERT(pRepo != NULL);
 
-  STsdbBufPool *pBufPool = pRepo->pPool;
-
-  while (pBufPool->bufBlockList.empty()) {
-    pRepo->repoLocked = false;
-    pthread_cond_wait(&(pBufPool->poolNotEmpty), &(pRepo->mutex));
-    pRepo->repoLocked = true;
+  auto &pool = pRepo->pool;
+  std::unique_lock<std::mutex> lock(pRepo->mutex);
+  while (pool.bufBlockList.empty()) {
+    pool.poolNotEmpty.wait(lock);
   }
 
-  auto pBufBlock = pBufPool->bufBlockList.front();
-  pBufPool->bufBlockList.pop_front();
-  pBufBlock->blockId = pBufPool->index++;
+  auto pBufBlock = pool.bufBlockList.front();
+  pool.bufBlockList.pop_front();
+  pBufBlock->blockId = pool.index++;
   pBufBlock->offset = 0;
-  pBufBlock->remain = pBufPool->bufBlockSize;
+  pBufBlock->remain = pool.bufBlockSize;
 
   tsdbDebug("vgId:%d, buffer block is allocated, blockId:%" PRId64, REPO_ID(pRepo), pBufBlock->blockId);
   return pBufBlock;

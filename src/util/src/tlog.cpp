@@ -22,7 +22,7 @@
 #include "tlog.h"
 #include "tnote.h"
 #include "tutil.h"
-
+#include "filesystem.hpp"
 #define MAX_LOGLINE_SIZE              (1000)
 #define MAX_LOGLINE_BUFFER_SIZE       (MAX_LOGLINE_SIZE + 10)
 #define MAX_LOGLINE_CONTENT_SIZE      (MAX_LOGLINE_SIZE - 100)
@@ -156,7 +156,14 @@ static void taosKeepOldLog(char *oldName) {
   char    fileName[LOG_FILE_NAME_LEN + 20];
   snprintf(fileName, LOG_FILE_NAME_LEN + 20, "%s.%" PRId64, tsLogObj.logName, fileSec);
 
-  taosRename(oldName, fileName);
+  std::error_code ec;
+  fs::rename(oldName, fileName, ec);
+  if (ec) {
+    uError("failed to rename file %s to %s, reason:%s", oldName, fileName, ec.message().c_str());
+  } else {
+    uInfo("successfully to rename file %s to %s", oldName, fileName);
+  }
+
   if (tsLogKeepDays < 0) {
     char compressFileName[LOG_FILE_NAME_LEN + 20];
     snprintf(compressFileName, LOG_FILE_NAME_LEN + 20, "%s.%" PRId64 ".gz", tsLogObj.logName, fileSec);

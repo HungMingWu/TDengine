@@ -19,6 +19,7 @@
 #include "tref.h"
 #include "tfile.h"
 #include "walInt.h"
+#include "filesystem.hpp"
 
 static int32_t walInitObj(SWal *pWal);
 static void    walFreeObj(void *pWal);
@@ -160,8 +161,9 @@ void SWal::close() {
 }
 
 static int32_t walInitObj(SWal *pWal) {
-  if (taosMkDir(pWal->path, 0755) != 0) {
-    wError("vgId:%d, path:%s, failed to create directory since %s", pWal->vgId, pWal->path, strerror(errno));
+  std::error_code ec;
+  if (!createDir(pWal->path, ec)) {
+    wError("vgId:%d, path:%s, failed to create directory since %s", pWal->vgId, pWal->path, ec.message().c_str());
     return TAOS_SYSTEM_ERROR(errno);
   }
 

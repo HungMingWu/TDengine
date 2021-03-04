@@ -27,7 +27,6 @@
 #include <errno.h>
 #include <float.h>
 #include <ifaddrs.h>
-#include <libgen.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>

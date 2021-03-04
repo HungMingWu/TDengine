@@ -16,6 +16,7 @@
 #define _TD_KVSTORE_H_
 
 #include <stdint.h>
+#include <unordered_map>
 
 #define KVSTORE_FILE_VERSION ((uint32_t)0)
 
@@ -30,30 +31,38 @@ typedef struct {
   uint32_t magic;
 } SStoreInfo;
 
-typedef struct {
-  char *     fname;
+struct SKVRecord {
+  uint64_t uid;
+  int64_t  offset;
+  int64_t  size;
+};
+
+struct SKVStore {
+  std::string fname;
   int        fd;
-  char *     fsnap;
+  std::string fsnap;
   int        sfd;
-  char *     fnew;
+  std::string fnew;
   int        nfd;
-  SHashObj * map;
+  std::unordered_map<uint64_t, SKVRecord> map;
   iterFunc   iFunc;
   afterFunc  aFunc;
   void *     appH;
   SStoreInfo info;
-} SKVStore;
+
+ public:
+  ~SKVStore();
+};
 
 #define KVSTORE_MAGIC(s) (s)->info.magic
 
-int       tdCreateKVStore(char *fname);
+int       tdCreateKVStore(const char *fname);
 int       tdDestroyKVStore(char *fname);
-SKVStore *tdOpenKVStore(char *fname, iterFunc iFunc, afterFunc aFunc, void *appH);
-void      tdCloseKVStore(SKVStore *pStore);
+SKVStore *tdOpenKVStore(const char *fname, iterFunc iFunc, afterFunc aFunc, void *appH);
 int       tdKVStoreStartCommit(SKVStore *pStore);
 int       tdUpdateKVStoreRecord(SKVStore *pStore, uint64_t uid, void *cont, int contLen);
 int       tdDropKVStoreRecord(SKVStore *pStore, uint64_t uid);
 int       tdKVStoreEndCommit(SKVStore *pStore);
-void      tsdbGetStoreInfo(char *fname, uint32_t *magic, int64_t *size);
+void      tsdbGetStoreInfo(const char *fname, uint32_t *magic, int64_t *size);
 
 #endif

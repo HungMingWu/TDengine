@@ -15,7 +15,9 @@
 #ifndef _TD_TSDB_MAIN_H_
 #define _TD_TSDB_MAIN_H_
 
+#include <condition_variable>
 #include <list>
+#include <mutex>
 #include "os.h"
 #include "hash.h"
 #include "tcoding.h"
@@ -94,14 +96,18 @@ typedef struct {
   char    data[];
 } STsdbBufBlock;
 
-typedef struct {
-  pthread_cond_t poolNotEmpty;
-  int            bufBlockSize;
-  int            tBufBlocks;
-  int            nBufBlocks;
-  int64_t        index;
+struct STsdbBufPool {
+  std::condition_variable poolNotEmpty;
+  int                       bufBlockSize{0};
+  int                       tBufBlocks{0};
+  int                       nBufBlocks{0};
+  int64_t                   index{0};
   std::list<STsdbBufBlock*> bufBlockList;
-} STsdbBufPool;
+
+ public:
+  STsdbBufPool() = default;
+  ~STsdbBufPool();
+};
 
 // ------------------ tsdbMemTable.c
 typedef struct {
@@ -220,23 +226,22 @@ typedef struct {
   void *  pMsg;
 } SSubmitMsgIter;
 
-typedef struct {
+struct STsdbRepo {
   int8_t state;
 
-  char*           rootDir;
+  std::string     rootDir;
   STsdbCfg        config;
   STsdbAppH       appH;
   STsdbStat       stat;
   STsdbMeta*      tsdbMeta;
-  STsdbBufPool*   pPool;
+  STsdbBufPool    pool;
   SMemTable*      mem;
   SMemTable*      imem;
   STsdbFileH*     tsdbFileH;
   sem_t           readyToCommit;
-  pthread_mutex_t mutex;
-  bool            repoLocked;
+  std::mutex      mutex;
   int32_t         code; // Commit code
-} STsdbRepo;
+};
 
 // ------------------ tsdbRWHelper.c
 typedef struct {
@@ -445,8 +450,6 @@ static FORCE_INLINE TSKEY tsdbGetTableLastKeyImpl(STable* pTable) {
 // ------------------ tsdbBuffer.c
 #define TSDB_BUFFER_RESERVE 1024  // Reseve 1K as commit threshold
 
-STsdbBufPool* tsdbNewBufPool();
-void          tsdbFreeBufPool(STsdbBufPool* pBufPool);
 int           tsdbOpenBufPool(STsdbRepo* pRepo);
 void          tsdbCloseBufPool(STsdbRepo* pRepo);
 STsdbBufBlock* tsdbAllocBufBlockFromPool(STsdbRepo* pRepo);
@@ -505,7 +508,7 @@ STsdbFileH* tsdbNewFileH(STsdbCfg* pCfg);
 void        tsdbFreeFileH(STsdbFileH* pFileH);
 int         tsdbOpenFileH(STsdbRepo* pRepo);
 void        tsdbCloseFileH(STsdbRepo* pRepo);
-SFileGroup* tsdbCreateFGroupIfNeed(STsdbRepo* pRepo, char* dataDir, int fid);
+SFileGroup* tsdbCreateFGroupIfNeed(STsdbRepo* pRepo, int fid);
 void        tsdbInitFileGroupIter(STsdbFileH* pFileH, SFileGroupIter* pIter, int direction);
 void        tsdbSeekFileGroupIter(SFileGroupIter* pIter, int fid);
 SFileGroup* tsdbGetFileGroupNext(SFileGroupIter* pIter);
@@ -519,7 +522,7 @@ int         tsdbEncodeSFileInfo(void** buf, const STsdbFileInfo* pInfo);
 void*       tsdbDecodeSFileInfo(void* buf, STsdbFileInfo* pInfo);
 void        tsdbRemoveFileGroup(STsdbRepo* pRepo, SFileGroup* pFGroup);
 int         tsdbLoadFileHeader(SFile* pFile, uint32_t* version);
-void        tsdbGetFileInfoImpl(char* fname, uint32_t* magic, int64_t* size);
+void        tsdbGetFileInfoImpl(const char* fname, uint32_t* magic, int64_t* size);
 void        tsdbGetFidKeyRange(int daysPerFile, int8_t precision, int fileId, TSKEY *minKey, TSKEY *maxKey);
 
 // ------------------ tsdbRWHelper.c
@@ -579,14 +582,11 @@ static FORCE_INLINE int compTSKEY(const void* key1, const void* key2) {
 
 // ------------------ tsdbMain.c
 #define REPO_ID(r) (r)->config.tsdbId
-#define IS_REPO_LOCKED(r) (r)->repoLocked
 #define TSDB_SUBMIT_MSG_HEAD_SIZE sizeof(SSubmitMsg)
 
-char*       tsdbGetMetaFileName(char* rootDir);
-void        tsdbGetDataFileName(char* rootDir, int vid, int fid, int type, char* fname);
-int         tsdbLockRepo(STsdbRepo* pRepo);
-int         tsdbUnlockRepo(STsdbRepo* pRepo);
-char*       tsdbGetDataDirName(char* rootDir);
+std::string tsdbGetMetaFileName(const char* rootDir);
+void        tsdbGetDataFileName(const char* rootDir, int vid, int fid, int type, char* fname);
+std::string tsdbGetDataDirName(const char* rootDir);
 int         tsdbGetNextMaxTables(int tid);
 STsdbMeta*  tsdbGetMeta(TSDB_REPO_T* pRepo);
 STsdbFileH* tsdbGetFile(TSDB_REPO_T* pRepo);

@@ -14,6 +14,7 @@
  */
 
 // no test file errors here
+#include <fmt/format.h>
 #include "tsdbMain.h"
 #include "os.h"
 #include "talgo.h"
@@ -23,6 +24,7 @@
 #include "tsdb.h"
 #include "tulog.h"
 #include "defer.h"
+#include "filesystem.hpp"
 
 #define TSDB_CFG_FILE_NAME "config"
 #define TSDB_DATA_DIR_NAME "data"
@@ -36,9 +38,9 @@
 static int32_t     tsdbCheckAndSetDefaultCfg(STsdbCfg *pCfg);
 static int32_t     tsdbSetRepoEnv(char *rootDir, STsdbCfg *pCfg);
 static int32_t     tsdbUnsetRepoEnv(char *rootDir);
-static int32_t     tsdbSaveConfig(char *rootDir, STsdbCfg *pCfg);
+static int32_t     tsdbSaveConfig(const char *rootDir, STsdbCfg *pCfg);
 static int         tsdbLoadConfig(char *rootDir, STsdbCfg *pCfg);
-static char *      tsdbGetCfgFname(char *rootDir);
+static std::string tsdbGetCfgFname(const char *rootDir);
 static STsdbRepo * tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg);
 static void        tsdbFreeRepo(STsdbRepo *pRepo);
 static int         tsdbRestoreInfo(STsdbRepo *pRepo);
@@ -173,24 +175,21 @@ uint32_t tsdbGetFileInfo(TSDB_REPO_T *repo, char *name, uint32_t *index, uint32_
   // STsdbMeta *pMeta = pRepo->tsdbMeta;
   STsdbFileH *pFileH = pRepo->tsdbFileH;
   uint32_t    magic = 0;
-  char *      fname = NULL;
-
+  std::string fname;
   struct stat fState;
 
   tsdbDebug("vgId:%d name:%s index:%d eindex:%d", pRepo->config.tsdbId, name, *index, eindex);
   ASSERT(*index <= eindex);
 
-  char *sdup = strdup(pRepo->rootDir);
-  char *prefix = dirname(sdup);
-  int   prefixLen = (int)strlen(prefix);
+  fs::path sdup(pRepo->rootDir);
+  std::string prefix = sdup.parent_path();
 
   if (name[0] == 0) {  // get the file from index or after, but not larger than eindex
-    tfree(sdup);
     int fid = (*index) / TSDB_FILE_TYPE_MAX;
 
     if (pFileH->nFGroups == 0 || fid > pFileH->pFGroup[pFileH->nFGroups - 1].fileId) {
       if (*index <= TSDB_META_FILE_INDEX && TSDB_META_FILE_INDEX <= eindex) {
-        fname = tsdbGetMetaFileName(pRepo->rootDir);
+        fname = tsdbGetMetaFileName(pRepo->rootDir.c_str());
         *index = TSDB_META_FILE_INDEX;
         magic = TSDB_META_FILE_MAGIC(pRepo->tsdbMeta);
       } else {
@@ -200,11 +199,11 @@ uint32_t tsdbGetFileInfo(TSDB_REPO_T *repo, char *name, uint32_t *index, uint32_
       SFileGroup *pFGroup =
           (SFileGroup *)taosbsearch(&fid, pFileH->pFGroup, pFileH->nFGroups, sizeof(SFileGroup), keyFGroupCompFunc, TD_GE);
       if (pFGroup->fileId == fid) {
-        fname = strdup(pFGroup->files[(*index) % TSDB_FILE_TYPE_MAX].fname);
+        fname = std::string(pFGroup->files[(*index) % TSDB_FILE_TYPE_MAX].fname);
         magic = pFGroup->files[(*index) % TSDB_FILE_TYPE_MAX].info.magic;
       } else {
         if ((pFGroup->fileId + 1) * TSDB_FILE_TYPE_MAX - 1 < (int)eindex) {
-          fname = strdup(pFGroup->files[0].fname);
+          fname = std::string(pFGroup->files[0].fname);
           *index = pFGroup->fileId * TSDB_FILE_TYPE_MAX;
           magic = pFGroup->files[0].info.magic;
         } else {
@@ -212,34 +211,27 @@ uint32_t tsdbGetFileInfo(TSDB_REPO_T *repo, char *name, uint32_t *index, uint32_
         }
       }
     }
-    strcpy(name, fname + prefixLen);
+    strcpy(name, fname.c_str() + prefix.length());
   } else {  // get the named file at the specified index. If not there, return 0
-    fname = (char *)malloc(prefixLen + strlen(name) + 2);
-    sprintf(fname, "%s/%s", prefix, name);
-    if (access(fname, F_OK) != 0) {
-      tfree(fname);
-      tfree(sdup);
+    fname = fmt::format("{}/{}", prefix, name);
+    if (access(fname.c_str(), F_OK) != 0) {
       return 0;
     }
     if (*index == TSDB_META_FILE_INDEX) {  // get meta file
-      tsdbGetStoreInfo(fname, &magic, size);
+      tsdbGetStoreInfo(fname.c_str(), &magic, size);
     } else {
-      tsdbGetFileInfoImpl(fname, &magic, size);
+      tsdbGetFileInfoImpl(fname.c_str(), &magic, size);
     }
-    tfree(fname);
-    tfree(sdup);
     return magic;
   }
 
-  if (stat(fname, &fState) < 0) {
-    tfree(fname);
+  if (stat(fname.c_str(), &fState) < 0) {
     return 0;
   }
 
   *size = fState.st_size;
   // magic = *size;
 
-  tfree(fname);
   return magic;
 }
 
@@ -288,7 +280,7 @@ int32_t tsdbConfigRepo(TSDB_REPO_T *repo, STsdbCfg *pCfg) {
   }
 
   if (configChanged) {
-    if (tsdbSaveConfig(pRepo->rootDir, &config) < 0) {
+    if (tsdbSaveConfig(pRepo->rootDir.c_str(), &config) < 0) {
       tsdbError("vgId:%d failed to configure repository while save config since %s", REPO_ID(pRepo), tstrerror(terrno));
       return -1;
     }
@@ -310,55 +302,16 @@ int tsdbGetState(TSDB_REPO_T *repo) {
 }
 
 // ----------------- INTERNAL FUNCTIONS -----------------
-char *tsdbGetMetaFileName(char *rootDir) {
-  int   tlen = (int)(strlen(rootDir) + strlen(TSDB_META_FILE_NAME) + 2);
-  char *fname = (char *)calloc(1, tlen);
-  if (fname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return NULL;
-  }
-
-  snprintf(fname, tlen, "%s/%s", rootDir, TSDB_META_FILE_NAME);
-  return fname;
+std::string tsdbGetMetaFileName(const char *rootDir) {
+  return fmt::format("{}/{}", rootDir, TSDB_META_FILE_NAME);
 }
 
-void tsdbGetDataFileName(char *rootDir, int vid, int fid, int type, char *fname) {
+void tsdbGetDataFileName(const char *rootDir, int vid, int fid, int type, char *fname) {
   snprintf(fname, TSDB_FILENAME_LEN, "%s/%s/v%df%d%s", rootDir, TSDB_DATA_DIR_NAME, vid, fid, tsdbFileSuffix[type]);
 }
 
-int tsdbLockRepo(STsdbRepo *pRepo) {
-  int code = pthread_mutex_lock(&pRepo->mutex);
-  if (code != 0) {
-    tsdbError("vgId:%d failed to lock tsdb since %s", REPO_ID(pRepo), strerror(errno));
-    terrno = TAOS_SYSTEM_ERROR(code);
-    return -1;
-  }
-  pRepo->repoLocked = true;
-  return 0;
-}
-
-int tsdbUnlockRepo(STsdbRepo *pRepo) {
-  ASSERT(IS_REPO_LOCKED(pRepo));
-  pRepo->repoLocked = false;
-  int code = pthread_mutex_unlock(&pRepo->mutex);
-  if (code != 0) {
-    tsdbError("vgId:%d failed to unlock tsdb since %s", REPO_ID(pRepo), strerror(errno));
-    terrno = TAOS_SYSTEM_ERROR(code);
-    return -1;
-  }
-  return 0;
-}
-
-char *tsdbGetDataDirName(char *rootDir) {
-  int   tlen = (int)(strlen(rootDir) + strlen(TSDB_DATA_DIR_NAME) + 2);
-  char *fname = (char *)calloc(1, tlen);
-  if (fname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return NULL;
-  }
-
-  snprintf(fname, tlen, "%s/%s", rootDir, TSDB_DATA_DIR_NAME);
-  return fname;
+std::string tsdbGetDataDirName(const char *rootDir) {
+  return fmt::format("{}/{}", rootDir, TSDB_DATA_DIR_NAME);
 }
 
 int tsdbGetNextMaxTables(int tid) {
@@ -496,27 +449,21 @@ static int32_t tsdbSetRepoEnv(char *rootDir, STsdbCfg *pCfg) {
     return -1;
   }
 
-  char *dirName = tsdbGetDataDirName(rootDir);
-  if (dirName == NULL) return -1;
+  auto dirName = tsdbGetDataDirName(rootDir);
+  if (dirName.empty()) return -1;
 
-  if (mkdir(dirName, 0755) < 0) {
+  if (mkdir(dirName.c_str(), 0755) < 0) {
     tsdbError("vgId:%d failed to create directory %s since %s", pCfg->tsdbId, dirName, strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
-    free(dirName);
     return -1;
   }
 
-  free(dirName);
-
-  char *fname = tsdbGetMetaFileName(rootDir);
-  if (fname == NULL) return -1;
-  if (tdCreateKVStore(fname) < 0) {
+  auto fname = tsdbGetMetaFileName(rootDir);
+  if (tdCreateKVStore(fname.c_str()) < 0) {
     tsdbError("vgId:%d failed to open KV store since %s", pCfg->tsdbId, tstrerror(terrno));
-    free(fname);
     return -1;
   }
 
-  free(fname);
   return 0;
 }
 
@@ -526,20 +473,14 @@ static int32_t tsdbUnsetRepoEnv(char *rootDir) {
   return 0;
 }
 
-static int32_t tsdbSaveConfig(char *rootDir, STsdbCfg *pCfg) {
+static int32_t tsdbSaveConfig(const char *rootDir, STsdbCfg *pCfg) {
   int   fd = -1;
-  char *fname = NULL;
   char  buf[TSDB_FILE_HEAD_SIZE] = "\0";
   char *pBuf = buf;
-  auto _1 = defer([&] {   free(fname);});
   auto _2 = defer([&] { if (fd != -1) close(fd); });
-  fname = tsdbGetCfgFname(rootDir);
-  if (fname == NULL) {
-    tsdbError("vgId:%d failed to save configuration since %s", pCfg->tsdbId, tstrerror(terrno));
-    return -1;
-  }
+  auto fname = tsdbGetCfgFname(rootDir);
 
-  fd = open(fname, O_WRONLY | O_CREAT, 0755);
+  fd = open(fname.c_str(), O_WRONLY | O_CREAT, 0755);
   if (fd < 0) {
     tsdbError("vgId:%d failed to open file %s since %s", pCfg->tsdbId, fname, strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
@@ -569,58 +510,42 @@ static int32_t tsdbSaveConfig(char *rootDir, STsdbCfg *pCfg) {
 }
 
 static int tsdbLoadConfig(char *rootDir, STsdbCfg *pCfg) {
-  char *fname = NULL;
   int   fd = -1;
   char  buf[TSDB_FILE_HEAD_SIZE] = "\0";
 
-  fname = tsdbGetCfgFname(rootDir);
-  if (fname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
-  }
-
-  fd = open(fname, O_RDONLY);
+  auto fname = tsdbGetCfgFname(rootDir);
+  fd = open(fname.c_str(), O_RDONLY);
   if (fd < 0) {
-    tsdbError("failed to open file %s since %s", fname, strerror(errno));
+    tsdbError("failed to open file %s since %s", fname.c_str(), strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
     goto _err;
   }
 
   if (taosRead(fd, (void *)buf, TSDB_FILE_HEAD_SIZE) < TSDB_FILE_HEAD_SIZE) {
-    tsdbError("failed to read %d bytes from file %s since %s", TSDB_FILE_HEAD_SIZE, fname, strerror(errno));
+    tsdbError("failed to read %d bytes from file %s since %s", TSDB_FILE_HEAD_SIZE, fname.c_str(), strerror(errno));
     terrno = TAOS_SYSTEM_ERROR(errno);
     goto _err;
   }
 
   if (!taosCheckChecksumWhole((uint8_t *)buf, TSDB_FILE_HEAD_SIZE)) {
-    tsdbError("file %s is corrupted", fname);
+    tsdbError("file %s is corrupted", fname.c_str());
     terrno = TSDB_CODE_TDB_FILE_CORRUPTED;
     goto _err;
   }
 
   tsdbDecodeCfg(buf, pCfg);
 
-  tfree(fname);
   close(fd);
 
   return 0;
 
 _err:
-  tfree(fname);
   if (fd >= 0) close(fd);
   return -1;
 }
 
-static char *tsdbGetCfgFname(char *rootDir) {
-  int   tlen = (int)(strlen(rootDir) + strlen(TSDB_CFG_FILE_NAME) + 2);
-  char *fname = (char *)calloc(1, tlen);
-  if (fname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return NULL;
-  }
-
-  snprintf(fname, tlen, "%s/%s", rootDir, TSDB_CFG_FILE_NAME);
-  return fname;
+static std::string tsdbGetCfgFname(const char *rootDir) {
+  return fmt::format("{}/{}", rootDir, TSDB_CFG_FILE_NAME);
 }
 
 static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
@@ -633,38 +558,19 @@ static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
   pRepo->state = TSDB_STATE_OK;
   pRepo->code = TSDB_CODE_SUCCESS;
 
-  int code = pthread_mutex_init(&pRepo->mutex, NULL);
+  int code = sem_init(&(pRepo->readyToCommit), 0, 1);
   if (code != 0) {
     terrno = TAOS_SYSTEM_ERROR(code);
     return nullptr;
   }
 
-  code = sem_init(&(pRepo->readyToCommit), 0, 1);
-  if (code != 0) {
-    terrno = TAOS_SYSTEM_ERROR(code);
-    return nullptr;
-  }
-
-  pRepo->repoLocked = false;
-
-  pRepo->rootDir = strdup(rootDir);
-  if (pRepo->rootDir == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return nullptr;
-  }
-
+  pRepo->rootDir = std::string(rootDir);
   pRepo->config = *pCfg;
   if (pAppH) pRepo->appH = *pAppH;
 
   pRepo->tsdbMeta = tsdbNewMeta(pCfg);
   if (pRepo->tsdbMeta == NULL) {
     tsdbError("vgId:%d failed to create meta since %s", REPO_ID(pRepo), tstrerror(terrno));
-    return nullptr;
-  }
-
-  pRepo->pPool = tsdbNewBufPool();
-  if (pRepo->pPool == NULL) {
-    tsdbError("vgId:%d failed to create buffer pool since %s", REPO_ID(pRepo), tstrerror(terrno));
     return nullptr;
   }
 
@@ -680,13 +586,10 @@ static STsdbRepo *tsdbNewRepo(char *rootDir, STsdbAppH *pAppH, STsdbCfg *pCfg) {
 static void tsdbFreeRepo(STsdbRepo *pRepo) {
   if (pRepo) {
     tsdbFreeFileH(pRepo->tsdbFileH);
-    tsdbFreeBufPool(pRepo->pPool);
     delete pRepo->tsdbMeta;
     // tsdbFreeMemTable(pRepo->mem);
     // tsdbFreeMemTable(pRepo->imem);
-    tfree(pRepo->rootDir);
     sem_destroy(&(pRepo->readyToCommit));
-    pthread_mutex_destroy(&pRepo->mutex);
     delete pRepo;
   }
 }

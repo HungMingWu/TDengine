@@ -22,6 +22,7 @@
 #include "tulog.h"
 #include "tsystem.h"
 #include "tutil.h"
+#include "filesystem.hpp"
 
 std::vector<SGlobalCfg> tsGlobalConfig;
 
@@ -132,11 +133,11 @@ static void taosReadDirectoryConfig(SGlobalCfg *cfg, char *input_value) {
       
       wordfree(&full_path);
 
-      int code = taosMkDir(option, 0755);
-      if (code != 0) {
+      std::error_code ec;
+      if (!createDir(option, ec)) {
         terrno = TAOS_SYSTEM_ERROR(errno);
-        uError("config option:%s, input value:%s, directory not exist, create fail:%s",
-             cfg->option, input_value, strerror(errno)); 
+        uError("config option:%s, input value:%s, directory not exist, create fail:%s", cfg->option, input_value,
+               ec.message().c_str()); 
       }
       cfg->cfgStatus = TAOS_CFG_CSTATUS_FILE;
     } else {

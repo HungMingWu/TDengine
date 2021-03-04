@@ -436,29 +436,18 @@ STsdbMeta::~STsdbMeta() {
 }
 
 int tsdbOpenMeta(STsdbRepo *pRepo) {
-  char *     fname = NULL;
   STsdbMeta *pMeta = pRepo->tsdbMeta;
   ASSERT(pMeta != NULL);
 
-  fname = tsdbGetMetaFileName(pRepo->rootDir);
-  if (fname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    goto _err;
-  }
-
-  pMeta->pStore = tdOpenKVStore(fname, tsdbRestoreTable, tsdbOrgMeta, (void *)pRepo);
+  auto fname = tsdbGetMetaFileName(pRepo->rootDir.c_str());
+  pMeta->pStore = tdOpenKVStore(fname.c_str(), tsdbRestoreTable, tsdbOrgMeta, (void *)pRepo);
   if (pMeta->pStore == NULL) {
     tsdbError("vgId:%d failed to open TSDB meta while open the kv store since %s", REPO_ID(pRepo), tstrerror(terrno));
-    goto _err;
+    return -1;
   }
 
   tsdbDebug("vgId:%d open TSDB meta succeed", REPO_ID(pRepo));
-  tfree(fname);
   return 0;
-
-_err:
-  tfree(fname);
-  return -1;
 }
 
 int tsdbCloseMeta(STsdbRepo *pRepo) {
@@ -466,7 +455,7 @@ int tsdbCloseMeta(STsdbRepo *pRepo) {
   STable *   pTable = NULL;
 
   if (pMeta == NULL) return 0;
-  tdCloseKVStore(pMeta->pStore);
+  delete pMeta->pStore;
   for (int i = 1; i < pMeta->maxTables; i++) {
     tsdbFreeTable(pMeta->tables[i]);
   }

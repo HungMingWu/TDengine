@@ -154,9 +154,9 @@ static int tsdbCommitMeta(STsdbRepo *pRepo) {
 static void tsdbEndCommit(STsdbRepo *pRepo, int eno) {
   if (pRepo->appH.notifyStatus) pRepo->appH.notifyStatus(pRepo->appH.appH, TSDB_STATUS_COMMIT_OVER, eno);
   SMemTable *pIMem = pRepo->imem;
-  tsdbLockRepo(pRepo);
+  pRepo->mutex.lock();
   pRepo->imem = NULL;
-  tsdbUnlockRepo(pRepo);
+  pRepo->mutex.unlock();
   tsdbUnRefMemTable(pRepo, pIMem);
   sem_post(&(pRepo->readyToCommit));
 }
@@ -170,7 +170,6 @@ static int tsdbHasDataToCommit(SCommitIter *iters, int nIters, TSKEY minKey, TSK
 }
 
 static int tsdbCommitToFile(STsdbRepo *pRepo, int fid, SCommitIter *iters, SRWHelper *pHelper, SDataCols *pDataCols) {
-  char *      dataDir = NULL;
   STsdbCfg *  pCfg = &pRepo->config;
   STsdbFileH *pFileH = pRepo->tsdbFileH;
   SFileGroup *pGroup = NULL;
@@ -188,13 +187,9 @@ static int tsdbCommitToFile(STsdbRepo *pRepo, int fid, SCommitIter *iters, SRWHe
   }
 
   // Create and open files for commit
-  dataDir = tsdbGetDataDirName(pRepo->rootDir);
-  if (dataDir == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return -1;
-  }
+  auto dataDir = tsdbGetDataDirName(pRepo->rootDir.c_str());
 
-  if ((pGroup = tsdbCreateFGroupIfNeed(pRepo, dataDir, fid)) == NULL) {
+  if ((pGroup = tsdbCreateFGroupIfNeed(pRepo, fid)) == NULL) {
     tsdbError("vgId:%d failed to create file group %d since %s", REPO_ID(pRepo), fid, tstrerror(terrno));
     goto _err;
   }
@@ -256,7 +251,6 @@ static int tsdbCommitToFile(STsdbRepo *pRepo, int fid, SCommitIter *iters, SRWHe
     goto _err;
   }
 
-  tfree(dataDir);
   tsdbCloseHelperFile(pHelper, 0, pGroup);
 
   pthread_rwlock_wrlock(&(pFileH->fhlock));
@@ -278,7 +272,6 @@ static int tsdbCommitToFile(STsdbRepo *pRepo, int fid, SCommitIter *iters, SRWHe
   return 0;
 
 _err:
-  tfree(dataDir);
   tsdbCloseHelperFile(pHelper, 1, pGroup);
   return -1;
 }

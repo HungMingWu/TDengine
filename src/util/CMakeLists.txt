@@ -3,7 +3,7 @@ PROJECT(TDengine)
 
 AUX_SOURCE_DIRECTORY(src SRC)
 ADD_LIBRARY(tutil ${SRC})
-TARGET_LINK_LIBRARIES(tutil pthread osdetail lz4 z)
+TARGET_LINK_LIBRARIES(tutil pthread osdetail lz4 z fmt::fmt-header-only ghc_filesystem)
 target_include_directories(tutil
 PUBLIC
     inc

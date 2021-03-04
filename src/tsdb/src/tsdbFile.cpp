@@ -12,15 +12,17 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-#define _DEFAULT_SOURCE
+
 #define TAOS_RANDOM_FILE_FAIL_TEST
 #include <regex.h>
+#include <fmt/format.h>
 #include "os.h"
 #include "talgo.h"
 #include "tchecksum.h"
 #include "tsdbMain.h"
 #include "tutil.h"
 #include "defer.h"
+#include "filesystem.hpp"
 
 const char *tsdbFileSuffix[] = {".head", ".data", ".last", ".stat", ".h", ".d", ".l", ".s"};
 
@@ -72,7 +74,6 @@ void tsdbFreeFileH(STsdbFileH *pFileH) {
 int tsdbOpenFileH(STsdbRepo *pRepo) {
   ASSERT(pRepo != NULL && pRepo->tsdbFileH != NULL);
 
-  char *  tDataDir = NULL;
   DIR *   dir = NULL;
   int     fid = 0;
   int     vid = 0;
@@ -80,7 +81,6 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
   SFileGroup fileGroup = {0};
   auto _1 = defer([&] { regfree(&regex1); });
   auto _2 = defer([&] { regfree(&regex2); });
-  auto _3 = defer([&] { tfree(tDataDir); });
   auto    _4 = defer([&] {
     if (dir != NULL) closedir(dir);
   });
@@ -94,26 +94,22 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
   STsdbFileH *pFileH = pRepo->tsdbFileH;
   STsdbCfg *  pCfg = &(pRepo->config);
 
-  tDataDir = tsdbGetDataDirName(pRepo->rootDir);
-  if (tDataDir == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-    return -1;
-  }
-
-  dir = opendir(tDataDir);
+  auto tDataDir = tsdbGetDataDirName(pRepo->rootDir.c_str());
+  dir = opendir(tDataDir.c_str());
 
   if (dir == NULL) {
     if (errno == ENOENT) {
       tsdbError("vgId:%d directory %s not exist", REPO_ID(pRepo), tDataDir);
       terrno = TAOS_SYSTEM_ERROR(errno);
 
-      if (taosMkDir(tDataDir, 0755) < 0) {
-        tsdbError("vgId:%d failed to create directory %s since %s", REPO_ID(pRepo), tDataDir, strerror(errno));
+      std::error_code ec;
+      if (!createDir(tDataDir, ec)) {
+        tsdbError("vgId:%d failed to create directory %s since %s", REPO_ID(pRepo), tDataDir, ec.message().c_str());
         terrno = TAOS_SYSTEM_ERROR(errno);
         return -1;
       }
 
-      dir = opendir(tDataDir);
+      dir = opendir(tDataDir.c_str());
       if (dir == NULL) {
         tsdbError("vgId:%d failed to open directory %s since %s", REPO_ID(pRepo), tDataDir, strerror(errno));
         terrno = TAOS_SYSTEM_ERROR(errno);
@@ -154,7 +150,7 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
 
       if (fid < mfid) {
         for (int type = 0; type < TSDB_FILE_TYPE_MAX; type++) {
-          tsdbGetDataFileName(pRepo->rootDir, pCfg->tsdbId, fid, type, fname);
+          tsdbGetDataFileName(pRepo->rootDir.c_str(), pCfg->tsdbId, fid, type, fname);
           (void)remove(fname);
         }
         continue;
@@ -168,29 +164,10 @@ int tsdbOpenFileH(STsdbRepo *pRepo) {
     } else if (code == REG_NOMATCH) {
       code = regexec(&regex2, dp->d_name, 0, NULL, 0);
       if (code == 0) {
-        size_t tsize = strlen(tDataDir) + strlen(dp->d_name) + 2;
-        char * fname1 = (char *)malloc(tsize);
-        if (fname1 == NULL) {
-          terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-          return -1;
-        }
-        sprintf(fname1, "%s/%s", tDataDir, dp->d_name);
-
-        tsize = tsize + 64;
-        char *fname2 = (char *)malloc(tsize);
-        if (fname2 == NULL) {
-          free(fname1);
-          terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
-          return -1;
-        }
-        sprintf(fname2, "%s/%s_back_%" PRId64, tDataDir, dp->d_name, taosGetTimestamp(TSDB_TIME_PRECISION_MILLI));
-
-        (void)rename(fname1, fname2);
-
-        tsdbDebug("vgId:%d file %s exists, backup it as %s", REPO_ID(pRepo), fname1, fname2);
-
-        free(fname1);
-        free(fname2);
+        auto fname1 = fmt::format("{}/{}", tDataDir, dp->d_name);
+        auto fname2 = fmt::format("{}/{}_back_{}", tDataDir, dp->d_name, taosGetTimestamp(TSDB_TIME_PRECISION_MILLI));
+        (void)rename(fname1.c_str(), fname2.c_str());
+        tsdbDebug("vgId:%d file %s exists, backup it as %s", REPO_ID(pRepo), fname1.c_str(), fname2.c_str());
         continue;
       } else if (code == REG_NOMATCH) {
         tsdbError("vgId:%d invalid file %s exists, ignore it", REPO_ID(pRepo), dp->d_name);
@@ -222,7 +199,7 @@ void tsdbCloseFileH(STsdbRepo *pRepo) {
   }
 }
 
-SFileGroup *tsdbCreateFGroupIfNeed(STsdbRepo *pRepo, char *dataDir, int fid) {
+SFileGroup *tsdbCreateFGroupIfNeed(STsdbRepo *pRepo, int fid) {
   STsdbFileH *pFileH = pRepo->tsdbFileH;
   STsdbCfg *  pCfg = &(pRepo->config);
 
@@ -359,7 +336,7 @@ int tsdbCreateFile(SFile *pFile, STsdbRepo *pRepo, int fid, int type) {
   memset((void *)pFile, 0, sizeof(SFile));
   pFile->fd = -1;
 
-  tsdbGetDataFileName(pRepo->rootDir, REPO_ID(pRepo), fid, type, pFile->fname);
+  tsdbGetDataFileName(pRepo->rootDir.c_str(), REPO_ID(pRepo), fid, type, pFile->fname);
 
   if (access(pFile->fname, F_OK) == 0) {
     tsdbError("vgId:%d file %s already exists", REPO_ID(pRepo), pFile->fname);
@@ -509,7 +486,7 @@ int tsdbLoadFileHeader(SFile *pFile, uint32_t *version) {
   return 0;
 }
 
-void tsdbGetFileInfoImpl(char *fname, uint32_t *magic, int64_t *size) {
+void tsdbGetFileInfoImpl(const char *fname, uint32_t *magic, int64_t *size) {
   uint32_t      version = 0;
   SFile         file;
   SFile *       pFile = &file;
@@ -545,7 +522,7 @@ void tsdbGetFileInfoImpl(char *fname, uint32_t *magic, int64_t *size) {
 static int tsdbInitFile(SFile *pFile, STsdbRepo *pRepo, int fid, int type) {
   uint32_t version;
 
-  tsdbGetDataFileName(pRepo->rootDir, REPO_ID(pRepo), fid, type, pFile->fname);
+  tsdbGetDataFileName(pRepo->rootDir.c_str(), REPO_ID(pRepo), fid, type, pFile->fname);
 
   pFile->fd = -1;
   if (tsdbOpenFile(pFile, O_RDONLY) < 0) goto _err;
