@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include "os.h"
 #include "taoserror.h"
 #include "taosmsg.h"
@@ -45,8 +44,9 @@ int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
     return TSDB_CODE_SUCCESS;
   }
 
-  if (mkdir(tsVnodeDir, 0755) != 0 && errno != EEXIST) {
-    vError("vgId:%d, failed to create vnode, reason:%s dir:%s", pVnodeCfg->cfg.vgId, strerror(errno), tsVnodeDir);
+  std::error_code ec;
+  if (!createDir(tsVnodeDir, ec)) {
+    vError("vgId:%d, failed to create vnode, reason:%s dir:%s", pVnodeCfg->cfg.vgId, ec.message().c_str(), tsVnodeDir);
     if (errno == EACCES) {
       return TSDB_CODE_VND_NO_DISK_PERMISSIONS;
     } else if (errno == ENOSPC) {
@@ -60,8 +60,8 @@ int32_t vnodeCreate(SCreateVnodeMsg *pVnodeCfg) {
 
   char rootDir[TSDB_FILENAME_LEN] = {0};
   sprintf(rootDir, "%s/vnode%d", tsVnodeDir, pVnodeCfg->cfg.vgId);
-  if (mkdir(rootDir, 0755) != 0 && errno != EEXIST) {
-    vError("vgId:%d, failed to create vnode, reason:%s dir:%s", pVnodeCfg->cfg.vgId, strerror(errno), rootDir);
+  if (!createDir(rootDir, ec)) {
+    vError("vgId:%d, failed to create vnode, reason:%s dir:%s", pVnodeCfg->cfg.vgId, ec.message().c_str(), rootDir);
     if (errno == EACCES) {
       return TSDB_CODE_VND_NO_DISK_PERMISSIONS;
     } else if (errno == ENOSPC) {

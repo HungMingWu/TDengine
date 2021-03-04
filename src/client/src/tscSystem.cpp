@@ -30,6 +30,7 @@
 #include "tconfig.h"
 #include "ttimezone.h"
 #include "tlocale.h"
+#include "filesystem.hpp"
 
 // global, not configurable
 #define TSC_VAR_NOT_RELEASE 1
@@ -95,7 +96,8 @@ void taos_init_imp() {
     taosReadGlobalLogCfg();
 
     // For log directory
-    if (mkdir(tsLogDir, 0755) != 0 && errno != EEXIST) {
+    std::error_code ec;
+    if (!createDir(tsLogDir, ec)) {
       printf("failed to create log dir:%s\n", tsLogDir);
     }
 

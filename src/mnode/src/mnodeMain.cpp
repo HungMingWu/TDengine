@@ -13,7 +13,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
 #include <initializer_list>
 #include "os.h"
 #include "taosdef.h"
@@ -37,6 +36,7 @@
 #include "mnodeCluster.h"
 #include "mnodeShow.h"
 #include "mnodeProfile.h"
+#include "filesystem.hpp"
 
 void *tsMnodeTmr = NULL;
 static bool tsMgmtIsRunning = false;
@@ -76,8 +76,9 @@ int32_t mnodeStartSystem() {
   }
 
   mInfo("starting to initialize mnode ...");
-  if (mkdir(tsMnodeDir, 0755) != 0 && errno != EEXIST) {
-    mError("failed to init mnode dir:%s, reason:%s", tsMnodeDir, strerror(errno));
+  std::error_code ec;
+  if (!createDir(tsMnodeDir, ec)) {
+    mError("failed to init mnode dir:%s, reason:%s", tsMnodeDir, ec.message().c_str());
     return TSDB_CODE_MND_FAILED_TO_CREATE_DIR;
   }
 

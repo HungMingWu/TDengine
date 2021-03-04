@@ -68,8 +68,9 @@ int32_t tsdbCreateRepo(char *rootDir, STsdbCfg *pCfg) {
     }
   }
 
-  if (mkdir(rootDir, 0755) < 0) {
-    tsdbError("vgId:%d failed to create rootDir %s since %s", pCfg->tsdbId, rootDir, strerror(errno));
+  std::error_code ec;
+  if (!createDir(rootDir, ec)) {
+    tsdbError("vgId:%d failed to create rootDir %s since %s", pCfg->tsdbId, rootDir, ec.message().c_str());
     terrno = TAOS_SYSTEM_ERROR(errno);
     return -1;
   }
@@ -452,8 +453,9 @@ static int32_t tsdbSetRepoEnv(char *rootDir, STsdbCfg *pCfg) {
   auto dirName = tsdbGetDataDirName(rootDir);
   if (dirName.empty()) return -1;
 
-  if (mkdir(dirName.c_str(), 0755) < 0) {
-    tsdbError("vgId:%d failed to create directory %s since %s", pCfg->tsdbId, dirName, strerror(errno));
+  std::error_code ec;
+  if (!createDir(dirName, ec)) {
+    tsdbError("vgId:%d failed to create directory %s since %s", pCfg->tsdbId, dirName, ec.message().c_str());
     terrno = TAOS_SYSTEM_ERROR(errno);
     return -1;
   }
