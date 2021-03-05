@@ -25,6 +25,7 @@
 #include "vnode.h"
 #include "syncInt.h"
 #include "walInt.h"
+#include "tsdbMain.h"
 
 extern int32_t vDebugFlag;
 
@@ -69,7 +70,7 @@ struct SVnodeObj {
   std::unique_ptr<STaosQueue> qqueue;        // read query queue
   std::unique_ptr<STaosQueue> fqueue;        // read fetch/cancel queue
   SWal*      wal;
-  void*      tsdb;
+  STsdbRepo* tsdb;
   SSyncNodePtr sync;
   void*      events;
   void*      cq;  // continuous query

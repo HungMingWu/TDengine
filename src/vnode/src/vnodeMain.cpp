@@ -31,6 +31,7 @@
 #include "tqueue.h"
 #include "filesystem.hpp"
 #include "tulog.h"
+#include "tsdbMain.h"
 
 static int32_t vnodeProcessTsdbStatus(void *arg, int32_t status, int32_t eno);
 

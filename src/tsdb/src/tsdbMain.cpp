@@ -37,7 +37,6 @@
 
 static int32_t     tsdbCheckAndSetDefaultCfg(STsdbCfg *pCfg);
 static int32_t     tsdbSetRepoEnv(char *rootDir, STsdbCfg *pCfg);
-static int32_t     tsdbUnsetRepoEnv(char *rootDir);
 static int32_t     tsdbSaveConfig(const char *rootDir, STsdbCfg *pCfg);
 static int         tsdbLoadConfig(char *rootDir, STsdbCfg *pCfg);
 static std::string tsdbGetCfgFname(const char *rootDir);
@@ -87,9 +86,7 @@ int32_t tsdbCreateRepo(char *rootDir, STsdbCfg *pCfg) {
   return 0;
 }
 
-int32_t tsdbDropRepo(char *rootDir) { return tsdbUnsetRepoEnv(rootDir); }
-
-TSDB_REPO_T *tsdbOpenRepo(char *rootDir, STsdbAppH *pAppH) {
+STsdbRepo *tsdbOpenRepo(char *rootDir, STsdbAppH *pAppH) {
   STsdbCfg   config = {0};
   STsdbRepo *pRepo = NULL;
 
@@ -130,7 +127,7 @@ TSDB_REPO_T *tsdbOpenRepo(char *rootDir, STsdbAppH *pAppH) {
 
   tsdbDebug("vgId:%d open tsdb repository succeed!", REPO_ID(pRepo));
 
-  return (TSDB_REPO_T *)pRepo;
+  return pRepo;
 
 _err:
   tsdbCloseRepo(pRepo, false);
@@ -298,8 +295,8 @@ void tsdbReportStat(void *repo, int64_t *totalPoints, int64_t *totalStorage, int
   *compStorage = pRepo->stat.compStorage;
 }
 
-int tsdbGetState(TSDB_REPO_T *repo) {
-  return ((STsdbRepo *)repo)->state;
+int STsdbRepo::getState() const {
+  return state;
 }
 
 // ----------------- INTERNAL FUNCTIONS -----------------
@@ -342,8 +339,8 @@ int tsdbCheckCommit(STsdbRepo *pRepo) {
   return 0;
 }
 
-STsdbMeta *    tsdbGetMeta(TSDB_REPO_T *pRepo) { return ((STsdbRepo *)pRepo)->tsdbMeta; }
-STsdbFileH *   tsdbGetFile(TSDB_REPO_T *pRepo) { return ((STsdbRepo *)pRepo)->tsdbFileH; }
+STsdbMeta *    STsdbRepo::getMeta() { return tsdbMeta; }
+STsdbFileH *   STsdbRepo::getFile() { return tsdbFileH; }
 STsdbRepoInfo *tsdbGetStatus(TSDB_REPO_T *pRepo) { return NULL; }
 
 // ----------------- LOCAL FUNCTIONS -----------------
@@ -466,12 +463,6 @@ static int32_t tsdbSetRepoEnv(char *rootDir, STsdbCfg *pCfg) {
     return -1;
   }
 
-  return 0;
-}
-
-static int32_t tsdbUnsetRepoEnv(char *rootDir) {
-  taosRemoveDir(rootDir);
-  tsdbDebug("repository %s is removed", rootDir);
   return 0;
 }
 

@@ -160,7 +160,7 @@ static int32_t vnodeProcessCreateTableMsg(SVnodeObj *pVnode, void *pCont, SRspRe
     return terrno;
   }
 
-  if (tsdbCreateTable(pVnode->tsdb, pCfg) < 0) {
+  if (pVnode->tsdb->createTable(pCfg) < 0) {
     code = terrno;
     ASSERT(code != 0);
   }
@@ -176,7 +176,7 @@ static int32_t vnodeProcessDropTableMsg(SVnodeObj *pVnode, void *pCont, SRspRet 
   vDebug("vgId:%d, table:%s, start to drop", pVnode->vgId, pTable->tableFname);
   STableId tableId = {.uid = htobe64(pTable->uid), .tid = htonl(pTable->tid)};
 
-  if (tsdbDropTable(pVnode->tsdb, tableId) < 0) code = terrno;
+  if (pVnode->tsdb->dropTable(tableId) < 0) code = terrno;
 
   return code;
 }
@@ -200,7 +200,7 @@ static int32_t vnodeProcessDropStableMsg(SVnodeObj *pVnode, void *pCont, SRspRet
 
   STableId stableId = {.uid = htobe64(pTable->uid), .tid = -1};
 
-  if (tsdbDropTable(pVnode->tsdb, stableId) < 0) code = terrno;
+  if (pVnode->tsdb->dropTable(stableId) < 0) code = terrno;
 
   vDebug("vgId:%d, stable:%s, drop stable result:%s", pVnode->vgId, pTable->tableFname, tstrerror(code));
 
@@ -208,7 +208,7 @@ static int32_t vnodeProcessDropStableMsg(SVnodeObj *pVnode, void *pCont, SRspRet
 }
 
 static int32_t vnodeProcessUpdateTagValMsg(SVnodeObj *pVnode, void *pCont, SRspRet *pRet) {
-  if (tsdbUpdateTableTagValue(pVnode->tsdb, (SUpdateTableTagValMsg *)pCont) < 0) {
+  if (pVnode->tsdb->update((SUpdateTableTagValMsg *)pCont) < 0) {
     return terrno;
   }
   return TSDB_CODE_SUCCESS;

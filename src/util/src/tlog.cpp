@@ -13,7 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define _DEFAULT_SOURCE
+#include <atomic>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -62,7 +62,7 @@ struct SLogBuff {
 struct SLogObj {
   int32_t fileNum = 1;
   int32_t maxLines;
-  int32_t lines;
+  std::atomic<int32_t> lines;
   int32_t flag;
   int32_t openInProgress;
   pid_t   pid;
@@ -408,7 +408,7 @@ void taosPrintLog(const char *flags, int32_t dflag, const char *format, ...) {
     }
 
     if (tsLogObj.maxLines > 0) {
-      atomic_add_fetch_32(&tsLogObj.lines, 1);
+      tsLogObj.lines++;
 
       if ((tsLogObj.lines > tsLogObj.maxLines) && (tsLogObj.openInProgress == 0)) taosOpenNewLogFile();
     }
@@ -484,7 +484,7 @@ void taosPrintLongString(const char *flags, int32_t dflag, const char *format, .
     }
     
     if (tsLogObj.maxLines > 0) {
-      atomic_add_fetch_32(&tsLogObj.lines, 1);
+      tsLogObj.lines++;
 
       if ((tsLogObj.lines > tsLogObj.maxLines) && (tsLogObj.openInProgress == 0)) taosOpenNewLogFile();
     }

@@ -30,7 +30,7 @@ static int     tsdbRestoreTable(void *pHandle, void *cont, int contLen);
 static void    tsdbOrgMeta(void *pHandle);
 static char *  getTagIndexKey(const void *pData);
 static STable *tsdbNewTable();
-static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper);
+static STable *tsdbCreateTableFromCfg(const STableCfg *pCfg, bool isSuper);
 static void    tsdbFreeTable(STable *pTable);
 static int     tsdbAddTableToMeta(STsdbRepo *pRepo, STable *pTable, bool addIdx, bool lock);
 static void    tsdbRemoveTableFromMeta(STsdbRepo *pRepo, STable *pTable, bool rmFromIdx, bool lock);
@@ -53,9 +53,7 @@ static int     tsdbRmTableFromMeta(STsdbRepo *pRepo, STable *pTable);
 static int     tsdbAdjustMetaTables(STsdbRepo *pRepo, int tid);
 
 // ------------------ OUTER FUNCTIONS ------------------
-int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
-  STsdbRepo *pRepo = (STsdbRepo *)repo;
-  STsdbMeta *pMeta = pRepo->tsdbMeta;
+int STsdbRepo::createTable(const STableCfg *pCfg) {
   STable *   super = NULL;
   STable *   table = NULL;
   int        newSuper = 0;
@@ -64,37 +62,37 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
   auto _1 = defer([&] { tsdbFreeTable(super); });
   auto _2 = defer([&] { tsdbFreeTable(table); });
   if (tid < 1 || tid > TSDB_MAX_TABLES) {
-    tsdbError("vgId:%d failed to create table since invalid tid %d", REPO_ID(pRepo), tid);
+    tsdbError("vgId:%d failed to create table since invalid tid %d", REPO_ID(this), tid);
     terrno = TSDB_CODE_TDB_IVD_CREATE_TABLE_INFO;
     return -1;
   }
 
-  if (tid < pMeta->maxTables && pMeta->tables[tid] != NULL) {
-    if (TABLE_UID(pMeta->tables[tid]) == pCfg->tableId.uid) {
-      tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(pRepo),
-                TABLE_CHAR_NAME(pMeta->tables[tid]), TABLE_TID(pMeta->tables[tid]), TABLE_UID(pMeta->tables[tid]));
+  if (tid < tsdbMeta->maxTables && tsdbMeta->tables[tid] != NULL) {
+    if (TABLE_UID(tsdbMeta->tables[tid]) == pCfg->tableId.uid) {
+      tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(this),
+                TABLE_CHAR_NAME(tsdbMeta->tables[tid]), TABLE_TID(tsdbMeta->tables[tid]), TABLE_UID(tsdbMeta->tables[tid]));
       _1.cancel();
       _2.cancel();
       return 0;
     } else {
       tsdbError("vgId:%d table %s at tid %d uid %" PRIu64
                 " exists, replace it with new table, this can be not reasonable",
-                REPO_ID(pRepo), TABLE_CHAR_NAME(pMeta->tables[tid]), TABLE_TID(pMeta->tables[tid]),
-                TABLE_UID(pMeta->tables[tid]));
-      tsdbDropTable(pRepo, pMeta->tables[tid]->tableId);
+                REPO_ID(this), TABLE_CHAR_NAME(tsdbMeta->tables[tid]), TABLE_TID(tsdbMeta->tables[tid]),
+                TABLE_UID(tsdbMeta->tables[tid]));
+      dropTable(tsdbMeta->tables[tid]->tableId);
     }
   }
 
-  pTable = tsdbGetTableByUid(pMeta, pCfg->tableId.uid);
+  pTable = tsdbGetTableByUid(tsdbMeta, pCfg->tableId.uid);
   if (pTable != NULL) {
-    tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(pRepo), TABLE_CHAR_NAME(pTable),
+    tsdbError("vgId:%d table %s already exists, tid %d uid %" PRId64, REPO_ID(this), TABLE_CHAR_NAME(pTable),
               TABLE_TID(pTable), TABLE_UID(pTable));
     terrno = TSDB_CODE_TDB_TABLE_ALREADY_EXIST;
     return -1;
   }
 
   if (pCfg->type == TSDB_CHILD_TABLE) {
-    super = tsdbGetTableByUid(pMeta, pCfg->superUid);
+    super = tsdbGetTableByUid(tsdbMeta, pCfg->superUid);
     if (super == NULL) {  // super table not exists, try to create it
       newSuper = 1;
       super = tsdbCreateTableFromCfg(pCfg, true);
@@ -111,18 +109,18 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
   if (table == NULL) return -1;
 
   // Register to meta
-  tsdbWLockRepoMeta(pRepo);
+  tsdbWLockRepoMeta(this);
   if (newSuper) {
-    if (tsdbAddTableToMeta(pRepo, super, true, false) < 0) {
-      tsdbUnlockRepoMeta(pRepo);
+    if (tsdbAddTableToMeta(this, super, true, false) < 0) {
+      tsdbUnlockRepoMeta(this);
       return -1;
     }
   }
-  if (tsdbAddTableToMeta(pRepo, table, true, false) < 0) {
-    tsdbUnlockRepoMeta(pRepo);
+  if (tsdbAddTableToMeta(this, table, true, false) < 0) {
+    tsdbUnlockRepoMeta(this);
     return -1;
   }
-  tsdbUnlockRepoMeta(pRepo);
+  tsdbUnlockRepoMeta(this);
 
   // Write to memtable action
   // TODO: refactor duplicate codes
@@ -130,69 +128,57 @@ int tsdbCreateTable(TSDB_REPO_T *repo, STableCfg *pCfg) {
   void *pBuf = NULL;
   if (newSuper) {
     tlen = tsdbGetTableEncodeSize(TSDB_UPDATE_META, super);
-    pBuf = tsdbAllocBytes(pRepo, tlen);
+    pBuf = tsdbAllocBytes(this, tlen);
     if (pBuf == NULL) return -1;
-    void *tBuf = tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, pBuf, super);
+    void *tBuf = tsdbInsertTableAct(this, TSDB_UPDATE_META, pBuf, super);
     ASSERT(POINTER_DISTANCE(tBuf, pBuf) == tlen);
   }
   tlen = tsdbGetTableEncodeSize(TSDB_UPDATE_META, table);
-  pBuf = tsdbAllocBytes(pRepo, tlen);
+  pBuf = tsdbAllocBytes(this, tlen);
   if (pBuf == NULL) return -1;
-  void *tBuf = tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, pBuf, table);
+  void *tBuf = tsdbInsertTableAct(this, TSDB_UPDATE_META, pBuf, table);
   ASSERT(POINTER_DISTANCE(tBuf, pBuf) == tlen);
 
-  if (tsdbCheckCommit(pRepo) < 0) return -1;
+  if (tsdbCheckCommit(this) < 0) return -1;
   _1.cancel();
   _2.cancel();
   return 0;
 }
 
-int tsdbDropTable(TSDB_REPO_T *repo, STableId tableId) {
-  STsdbRepo *pRepo = (STsdbRepo *)repo;
-  STsdbMeta *pMeta = pRepo->tsdbMeta;
+int STsdbRepo::dropTable(STableId tableId) {
   uint64_t   uid = tableId.uid;
   int        tid = 0;
-  char *     tbname = NULL;
 
-  STable *pTable = tsdbGetTableByUid(pMeta, uid);
+  STable *pTable = tsdbGetTableByUid(tsdbMeta, uid);
   if (pTable == NULL) {
-    tsdbError("vgId:%d failed to drop table since table not exists! tid:%d uid %" PRIu64, REPO_ID(pRepo), tableId.tid,
+    tsdbError("vgId:%d failed to drop table since table not exists! tid:%d uid %" PRIu64, REPO_ID(this), tableId.tid,
               uid);
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
     return -1;
   }
 
-  tsdbDebug("vgId:%d try to drop table %s type %d", REPO_ID(pRepo), TABLE_CHAR_NAME(pTable), TABLE_TYPE(pTable));
+  tsdbDebug("vgId:%d try to drop table %s type %d", REPO_ID(this), TABLE_CHAR_NAME(pTable), TABLE_TYPE(pTable));
 
   tid = TABLE_TID(pTable);
-  tbname = strdup(TABLE_CHAR_NAME(pTable));
-  if (tbname == NULL) {
-    terrno = TSDB_CODE_TDB_OUT_OF_MEMORY;
+  std::string tbname(TABLE_CHAR_NAME(pTable));
+
+  // Write to KV store first
+  if (tsdbRemoveTableFromStore(this, pTable) < 0) {
+    tsdbError("vgId:%d failed to drop table %s since %s", REPO_ID(this), tbname, tstrerror(terrno));
     return -1;
   }
 
-  // Write to KV store first
-  if (tsdbRemoveTableFromStore(pRepo, pTable) < 0) {
-    tsdbError("vgId:%d failed to drop table %s since %s", REPO_ID(pRepo), tbname, tstrerror(terrno));
-    goto _err;
-  }
-
   // Remove table from Meta
-  if (tsdbRmTableFromMeta(pRepo, pTable) < 0) {
-    tsdbError("vgId:%d failed to drop table %s since %s", REPO_ID(pRepo), tbname, tstrerror(terrno));
-    goto _err;
+  if (tsdbRmTableFromMeta(this, pTable) < 0) {
+    tsdbError("vgId:%d failed to drop table %s since %s", REPO_ID(this), tbname, tstrerror(terrno));
+    return - 1;
   }
 
-  tsdbDebug("vgId:%d, table %s is dropped! tid:%d, uid:%" PRId64, pRepo->config.tsdbId, tbname, tid, uid);
-  free(tbname);
+  tsdbDebug("vgId:%d, table %s is dropped! tid:%d, uid:%" PRId64, config.tsdbId, tbname, tid, uid);
 
-  if (tsdbCheckCommit(pRepo) < 0) goto _err;
+  if (tsdbCheckCommit(this) < 0) return -1;
 
   return 0;
-
-_err:
-  tfree(tbname);
-  return -1;
 }
 
 void *tsdbGetTableTagVal(const void* pTable, int32_t colId, int16_t type, int16_t bytes) {
@@ -293,9 +279,8 @@ static UNUSED_FUNC int32_t colIdCompar(const void* left, const void* right) {
   return (colId < p2->colId)? -1:1;
 }
 
-int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
-  STsdbRepo *pRepo = (STsdbRepo *)repo;
-  STsdbMeta *pMeta = pRepo->tsdbMeta;
+int STsdbRepo::update(SUpdateTableTagValMsg *pMsg) {
+  STsdbMeta *pMeta = tsdbMeta;
   STSchema * pNewSchema = NULL;
 
   pMsg->uid = htobe64(pMsg->uid);
@@ -314,14 +299,14 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
 
   STable *pTable = tsdbGetTableByUid(pMeta, pMsg->uid);
   if (pTable == NULL || TABLE_TID(pTable) != pMsg->tid) {
-    tsdbError("vgId:%d failed to update table tag value since invalid table id %d uid %" PRIu64, REPO_ID(pRepo),
+    tsdbError("vgId:%d failed to update table tag value since invalid table id %d uid %" PRIu64, REPO_ID(this),
               pMsg->tid, pMsg->uid);
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
     return -1;
   }
 
   if (TABLE_TYPE(pTable) != TSDB_CHILD_TABLE) {
-    tsdbError("vgId:%d try to update tag value of a non-child table, invalid action", REPO_ID(pRepo));
+    tsdbError("vgId:%d try to update tag value of a non-child table, invalid action", REPO_ID(this));
     terrno = TSDB_CODE_TDB_INVALID_ACTION;
     return -1;
   }
@@ -330,7 +315,7 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
     tsdbError(
         "vgId:%d failed to update tag value of table %s since version out of date, client tag version %d server tag "
         "version %d",
-        REPO_ID(pRepo), TABLE_CHAR_NAME(pTable), pMsg->tversion, schemaVersion(pTable->tagSchema));
+        REPO_ID(this), TABLE_CHAR_NAME(pTable), pMsg->tversion, schemaVersion(pTable->tagSchema));
     terrno = TSDB_CODE_TDB_TAG_VER_OUT_OF_DATE;
     return -1;
   }
@@ -338,7 +323,7 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
   if (schemaVersion(pTable->pSuper->tagSchema) < pMsg->tversion) {  // tag schema out of data,
     tsdbDebug("vgId:%d need to update tag schema of table %s tid %d uid %" PRIu64
               " since out of date, current version %d new version %d",
-              REPO_ID(pRepo), TABLE_CHAR_NAME(pTable), TABLE_TID(pTable), TABLE_UID(pTable),
+              REPO_ID(this), TABLE_CHAR_NAME(pTable), TABLE_TID(pTable), TABLE_UID(pTable),
               schemaVersion(pTable->pSuper->tagSchema), pMsg->tversion);
 
     STSchemaBuilder schemaBuilder { pMsg->tversion };
@@ -373,7 +358,7 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
   // ASSERT(pCol != NULL);
 
   if (isChangeIndexCol) {
-    tsdbWLockRepoMeta(pRepo);
+    tsdbWLockRepoMeta(this);
     tsdbRemoveTableFromIndex(pMeta, pTable);
   }
   TSDB_WLOCK_TABLE(pTable);
@@ -381,22 +366,22 @@ int tsdbUpdateTableTagValue(TSDB_REPO_T *repo, SUpdateTableTagValMsg *pMsg) {
   TSDB_WUNLOCK_TABLE(pTable);
   if (isChangeIndexCol) {
     tsdbAddTableIntoIndex(pMeta, pTable, false);
-    tsdbUnlockRepoMeta(pRepo);
+    tsdbUnlockRepoMeta(this);
   }
 
   // Update on file
   int tlen1 = (pNewSchema) ? tsdbGetTableEncodeSize(TSDB_UPDATE_META, pTable->pSuper) : 0;
   int tlen2 = tsdbGetTableEncodeSize(TSDB_UPDATE_META, pTable);
-  void *buf = tsdbAllocBytes(pRepo, tlen1+tlen2);
+  void *buf = tsdbAllocBytes(this, tlen1+tlen2);
   ASSERT(buf != NULL);
   if (pNewSchema) {
-    void *pBuf = tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, buf, pTable->pSuper);
+    void *pBuf = tsdbInsertTableAct(this, TSDB_UPDATE_META, buf, pTable->pSuper);
     ASSERT(POINTER_DISTANCE(pBuf, buf) == tlen1);
     buf = pBuf;
   }
-  tsdbInsertTableAct(pRepo, TSDB_UPDATE_META, buf, pTable);
+  tsdbInsertTableAct(this, TSDB_UPDATE_META, buf, pTable);
 
-  if (tsdbCheckCommit(pRepo) < 0) return -1;
+  if (tsdbCheckCommit(this) < 0) return -1;
 
   return 0;
 }
@@ -623,7 +608,7 @@ static STable *tsdbNewTable() {
   return pTable;
 }
 
-static STable *tsdbCreateTableFromCfg(STableCfg *pCfg, bool isSuper) {
+static STable *tsdbCreateTableFromCfg(const STableCfg *pCfg, bool isSuper) {
   STable *pTable = NULL;
   size_t  tsize = 0;
 

@@ -215,10 +215,12 @@ enum {
   QUERY_RESULT_READY     = 2,
 };
 
+struct STsdbRepo;
+
 struct SQInfo {
   int32_t          code;   // error code to returned to client
   int64_t          owner;  // if it is in execution
-  void*            tsdb;
+  STsdbRepo*       tsdb;
   SMemRef          memRef; 
   int32_t          vgId;
   STableGroupInfo  tableGroupInfo;       // table <tid, last_key> list  SArray<STableKeyInfo>

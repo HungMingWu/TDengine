@@ -241,6 +241,55 @@ struct STsdbRepo {
   sem_t           readyToCommit;
   std::mutex      mutex;
   int32_t         code; // Commit code
+ public:
+  int getState() const;
+  int createTable(const STableCfg* pCfg);
+  int dropTable(STableId tableId);
+  int update(SUpdateTableTagValMsg* pMsg);
+  STsdbFileH* getFile();
+  STsdbMeta*  getMeta();
+
+  /**
+   *
+   * @param pTableIdList
+   * @param pGroupInfo
+   * @return
+   */
+  int32_t getTableGroup(SArray* pTableIdList, STableGroupInfo* pGroupInfo);
+
+  /**
+   * Get the qualified table id for a super table according to the tag query expression.
+   * @param stableid. super table sid
+   * @param pTagCond. tag query condition
+   */
+  int32_t querySTable(uint64_t uid, TSKEY key, const char* pTagCond, size_t len,
+      int16_t tagNameRelType, const char* tbnameCond, STableGroupInfo* pGroupList,
+      SColIndex* pColIndex, int32_t numOfCols);
+
+  /**
+   * Get the data block iterator, starting from position according to the query condition
+   *
+   * @param pCond      query condition, including time window, result set order, and basic required columns for each
+   * block
+   * @param tableInfoGroup  table object list in the form of set, grouped into different sets according to the
+   *                        group by condition
+   * @param qinfo      query info handle from query processor
+   * @return
+   */
+  TsdbQueryHandleT* queryTables(STsdbQueryCond* pCond, STableGroupInfo* tableInfoGroup,
+                                    void* qinfo, SMemRef* pRef);
+
+  /**
+   * Get the last row of the given query time window for all the tables in STableGroupInfo object.
+   * Note that only one data block with only row will be returned while invoking retrieve data block function for
+   * all tables in this group.
+   *
+   * @param pCond  query condition, including time window, result set order, and basic required columns for each block
+   * @param tableInfo  table list.
+   * @return
+   */
+  TsdbQueryHandleT queryLastRow(STsdbQueryCond* pCond, STableGroupInfo* tableInfo, void* qinfo,
+                                    SMemRef* pRef);
 };
 
 // ------------------ tsdbRWHelper.c
@@ -588,8 +637,6 @@ std::string tsdbGetMetaFileName(const char* rootDir);
 void        tsdbGetDataFileName(const char* rootDir, int vid, int fid, int type, char* fname);
 std::string tsdbGetDataDirName(const char* rootDir);
 int         tsdbGetNextMaxTables(int tid);
-STsdbMeta*  tsdbGetMeta(TSDB_REPO_T* pRepo);
-STsdbFileH* tsdbGetFile(TSDB_REPO_T* pRepo);
 int         tsdbCheckCommit(STsdbRepo* pRepo);
 
 // ------------------ tsdbScan.c
@@ -605,4 +652,5 @@ void             tsdbFreeScanHandle(STsdbScanHandle* pScanHandle);
 // ------------------ tsdbCommitQueue.c
 int tsdbScheduleCommit(STsdbRepo *pRepo);
 
+STsdbRepo* tsdbOpenRepo(char* rootDir, STsdbAppH* pAppH);
 #endif

@@ -340,7 +340,7 @@ static STsdbQueryHandle* tsdbQueryTablesImpl(TSDB_REPO_T* tsdb, STsdbQueryCond* 
 
   pQueryHandle->defaultLoadColumn = getDefaultLoadColumns(pQueryHandle, true);
 
-  STsdbMeta* pMeta = (STsdbMeta*)tsdbGetMeta(tsdb);
+  STsdbMeta* pMeta = ((STsdbRepo*)tsdb)->getMeta();
   assert(pMeta != NULL);
 
   pQueryHandle->pDataCols = tdNewDataCols(pMeta->maxRowBytes, pMeta->maxCols, pQueryHandle->pTsdb->config.maxRowsPerFileBlock);
@@ -356,10 +356,11 @@ static STsdbQueryHandle* tsdbQueryTablesImpl(TSDB_REPO_T* tsdb, STsdbQueryCond* 
   return pQueryHandle;
 }
 
-TsdbQueryHandleT* tsdbQueryTables(TSDB_REPO_T* tsdb, STsdbQueryCond* pCond, STableGroupInfo* groupList, void* qinfo, SMemRef* pRef) {
-  STsdbQueryHandle* pQueryHandle = tsdbQueryTablesImpl(tsdb, pCond, qinfo, pRef);
+TsdbQueryHandleT* STsdbRepo::queryTables(STsdbQueryCond* pCond, STableGroupInfo* groupList,
+                                           void* qinfo, SMemRef* pRef) {
+  STsdbQueryHandle* pQueryHandle = tsdbQueryTablesImpl(this, pCond, qinfo, pRef);
 
-  STsdbMeta* pMeta = tsdbGetMeta(tsdb);
+  STsdbMeta* pMeta = getMeta();
   assert(pMeta != NULL);
 
   // todo apply the lastkey of table check to avoid to load header file
@@ -374,7 +375,8 @@ TsdbQueryHandleT* tsdbQueryTables(TSDB_REPO_T* tsdb, STsdbQueryCond* pCond, STab
   return (TsdbQueryHandleT*) pQueryHandle;
 }
 
-TsdbQueryHandleT tsdbQueryLastRow(TSDB_REPO_T *tsdb, STsdbQueryCond *pCond, STableGroupInfo *groupList, void* qinfo, SMemRef* pMemRef) {
+TsdbQueryHandleT STsdbRepo::queryLastRow(STsdbQueryCond* pCond, STableGroupInfo* groupList,
+                                           void* qinfo, SMemRef* pMemRef) {
   pCond->twindow = updateLastrowForEachGroup(groupList);
 
   // no qualified table
@@ -382,7 +384,7 @@ TsdbQueryHandleT tsdbQueryLastRow(TSDB_REPO_T *tsdb, STsdbQueryCond *pCond, STab
     return NULL;
   }
 
-  STsdbQueryHandle *pQueryHandle = (STsdbQueryHandle*) tsdbQueryTables(tsdb, pCond, groupList, qinfo, pMemRef);
+  STsdbQueryHandle *pQueryHandle = (STsdbQueryHandle*) queryTables(pCond, groupList, qinfo, pMemRef);
   int32_t code = checkForCachedLastRow(pQueryHandle, groupList);
   if (code != TSDB_CODE_SUCCESS) { // set the numOfTables to be 0
     terrno = code;
@@ -411,7 +413,7 @@ SArray* tsdbGetQueriedTableList(TsdbQueryHandleT *pHandle) {
 }
 
 TsdbQueryHandleT tsdbQueryRowsInExternalWindow(TSDB_REPO_T *tsdb, STsdbQueryCond* pCond, STableGroupInfo *groupList, void* qinfo, SMemRef* pRef) {
-  STsdbQueryHandle *pQueryHandle = (STsdbQueryHandle*) tsdbQueryTables(tsdb, pCond, groupList, qinfo, pRef);
+  STsdbQueryHandle *pQueryHandle = (STsdbQueryHandle*) ((STsdbRepo*)tsdb)->queryTables(pCond, groupList, qinfo, pRef);
   if (pQueryHandle != NULL) {
     pQueryHandle->type = TSDB_QUERY_TYPE_EXTERNAL;
     changeQueryHandleForInterpQuery(pQueryHandle);
@@ -1843,7 +1845,7 @@ static void moveToNextDataBlockInCurrentFile(STsdbQueryHandle* pQueryHandle) {
 }
 
 static int32_t getDataBlocksInFiles(STsdbQueryHandle* pQueryHandle, bool* exists) {
-  STsdbFileH*    pFileHandle = tsdbGetFile(pQueryHandle->pTsdb);
+  STsdbFileH*    pFileHandle = pQueryHandle->pTsdb->getFile();
   SQueryFilePos* cur = &pQueryHandle->cur;
 
   // find the start data block in file
@@ -2720,26 +2722,26 @@ static int32_t doQueryTableList(STable* pSTable, SArray* pRes, tExprNode* pExpr)
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, const char* pTagCond, size_t len,
+int32_t STsdbRepo::querySTable(uint64_t uid, TSKEY skey, const char* pTagCond, size_t len,
                                  int16_t tagNameRelType, const char* tbnameCond, STableGroupInfo* pGroupInfo,
                                  SColIndex* pColIndex, int32_t numOfCols) {
-  if (tsdbRLockRepoMeta((STsdbRepo*)tsdb) < 0) return terrno;
+  if (tsdbRLockRepoMeta(this) < 0) return terrno;
 
-  STable* pTable = tsdbGetTableByUid(tsdbGetMeta(tsdb), uid);
+  STable* pTable = tsdbGetTableByUid(getMeta(), uid);
   if (pTable == NULL) {
-    tsdbError("%p failed to get stable, uid:%" PRIu64, tsdb, uid);
+    tsdbError("%p failed to get stable, uid:%" PRIu64, this, uid);
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
-    tsdbUnlockRepoMeta((STsdbRepo*)tsdb);
+    tsdbUnlockRepoMeta(this);
 
     return terrno;
   }
 
   if (pTable->type != TSDB_SUPER_TABLE) {
-    tsdbError("%p query normal tag not allowed, uid:%" PRIu64 ", tid:%d, name:%s", tsdb, uid, pTable->tableId.tid,
+    tsdbError("%p query normal tag not allowed, uid:%" PRIu64 ", tid:%d, name:%s", this, uid, pTable->tableId.tid,
         pTable->name->data);
     terrno = TSDB_CODE_COM_OPS_NOT_SUPPORT; //basically, this error is caused by invalid sql issued by client
 
-    tsdbUnlockRepoMeta((STsdbRepo*)tsdb);
+    tsdbUnlockRepoMeta(this);
     return terrno;
   }
 
@@ -2751,17 +2753,17 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
   if (tbnameCond == NULL && (pTagCond == NULL || len == 0)) {
     int32_t ret = getAllTableList(pTable, res);
     if (ret != TSDB_CODE_SUCCESS) {
-      tsdbUnlockRepoMeta((STsdbRepo*)tsdb);
+      tsdbUnlockRepoMeta(this);
       return terrno;
     }
 
     pGroupInfo->numOfTables = taosArrayGetSize(res);
     pGroupInfo->pGroupList  = createTableGroup(res, pTagSchema, pColIndex, numOfCols, skey);
 
-    tsdbDebug("%p no table name/tag condition, all tables belong to one group, numOfTables:%" PRIzu "", tsdb, pGroupInfo->numOfTables);
+    tsdbDebug("%p no table name/tag condition, all tables belong to one group, numOfTables:%" PRIzu "", this, pGroupInfo->numOfTables);
     taosArrayDestroy(res);
 
-    if (tsdbUnlockRepoMeta((STsdbRepo*)tsdb) < 0) return terrno;
+    if (tsdbUnlockRepoMeta(this) < 0) return terrno;
     return ret;
   }
 
@@ -2793,7 +2795,7 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
   } CATCH( code ) {
     CLEANUP_EXECUTE();
     terrno = code;
-    tsdbUnlockRepoMeta((STsdbRepo*)tsdb);     // unlock tsdb in any cases
+    tsdbUnlockRepoMeta(this);     // unlock tsdb in any cases
 
     return terrno;
     // TODO: more error handling
@@ -2803,19 +2805,19 @@ int32_t tsdbQuerySTableByTagCond(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY skey, co
   pGroupInfo->numOfTables = taosArrayGetSize(res);
   pGroupInfo->pGroupList  = createTableGroup(res, pTagSchema, pColIndex, numOfCols, skey);
 
-  tsdbDebug("%p stable tid:%d, uid:%"PRIu64" query, numOfTables:%" PRIzu ", belong to %" PRIzu " groups", tsdb, pTable->tableId.tid,
+  tsdbDebug("%p stable tid:%d, uid:%"PRIu64" query, numOfTables:%" PRIzu ", belong to %" PRIzu " groups", this, pTable->tableId.tid,
       pTable->tableId.uid, pGroupInfo->numOfTables, taosArrayGetSize(pGroupInfo->pGroupList));
 
   taosArrayDestroy(res);
 
-  if (tsdbUnlockRepoMeta((STsdbRepo*)tsdb) < 0) return terrno;
+  if (tsdbUnlockRepoMeta(this) < 0) return terrno;
   return ret;
 }
 
 int32_t tsdbGetOneTableGroup(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY startKey, STableGroupInfo* pGroupInfo) {
   if (tsdbRLockRepoMeta((STsdbRepo*)tsdb) < 0) return terrno;
 
-  STable* pTable = tsdbGetTableByUid(tsdbGetMeta(tsdb), uid);
+  STable* pTable = tsdbGetTableByUid(((STsdbRepo*)tsdb)->getMeta(), uid);
   if (pTable == NULL) {
     terrno = TSDB_CODE_TDB_INVALID_TABLE_ID;
     tsdbUnlockRepoMeta((STsdbRepo*)tsdb);
@@ -2839,8 +2841,8 @@ int32_t tsdbGetOneTableGroup(TSDB_REPO_T* tsdb, uint64_t uid, TSKEY startKey, ST
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t tsdbGetTableGroupFromIdList(TSDB_REPO_T* tsdb, SArray* pTableIdList, STableGroupInfo* pGroupInfo) {
-  if (tsdbRLockRepoMeta((STsdbRepo*)tsdb) < 0) {
+int32_t STsdbRepo::getTableGroup(SArray* pTableIdList, STableGroupInfo* pGroupInfo) {
+  if (tsdbRLockRepoMeta(this) < 0) {
     return terrno;
   }
 
@@ -2852,7 +2854,7 @@ int32_t tsdbGetTableGroupFromIdList(TSDB_REPO_T* tsdb, SArray* pTableIdList, STa
   for(int32_t i = 0; i < size; ++i) {
     STableIdInfo *id = (STableIdInfo *)taosArrayGet(pTableIdList, i);
 
-    STable* pTable = tsdbGetTableByUid(tsdbGetMeta(tsdb), id->uid);
+    STable* pTable = tsdbGetTableByUid(getMeta(), id->uid);
     if (pTable == NULL) {
       tsdbWarn("table uid:%"PRIu64", tid:%d has been drop already", id->uid, id->tid);
       continue;
@@ -2869,7 +2871,7 @@ int32_t tsdbGetTableGroupFromIdList(TSDB_REPO_T* tsdb, SArray* pTableIdList, STa
     taosArrayPush(group, &info);
   }
 
-  if (tsdbUnlockRepoMeta((STsdbRepo*)tsdb) < 0) {
+  if (tsdbUnlockRepoMeta(this) < 0) {
     taosArrayDestroy(group);
     return terrno;
   }

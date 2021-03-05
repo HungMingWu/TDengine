@@ -31,6 +31,7 @@
 #include "tlosertree.h"
 #include "ttype.h"
 #include "defer.h"
+#include "tsdbMain.h"
 
 #define MAX_ROWS_PER_RESBUF_PAGE  ((1u<<12) - 1)
 
@@ -3648,7 +3649,7 @@ static void setEnvBeforeReverseScan(SQueryRuntimeEnv *pRuntimeEnv, SQueryStatusI
     tsdbCleanupQueryHandle(pRuntimeEnv->pSecQueryHandle);
   }
 
-  pRuntimeEnv->pSecQueryHandle = tsdbQueryTables(pQInfo->tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+  pRuntimeEnv->pSecQueryHandle = pQInfo->tsdb->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   if (pRuntimeEnv->pSecQueryHandle == NULL) {
     longjmp(pRuntimeEnv->env, terrno);
   }
@@ -3725,7 +3726,7 @@ void scanOneTableDataBlocks(SQueryRuntimeEnv *pRuntimeEnv, TSKEY start) {
 
     STsdbQueryCond cond = createTsdbQueryCond(pQuery, &pQuery->window);
     restoreTimeWindow(&pQInfo->tableGroupInfo, &cond);
-    pRuntimeEnv->pSecQueryHandle = tsdbQueryTables(pQInfo->tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+    pRuntimeEnv->pSecQueryHandle = pQInfo->tsdb->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
     if (pRuntimeEnv->pSecQueryHandle == NULL) {
       longjmp(pRuntimeEnv->env, terrno);
     }
@@ -4612,7 +4613,7 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
 
   terrno = TSDB_CODE_SUCCESS;
   if (isFirstLastRowQuery(pQuery)) {
-    pRuntimeEnv->pQueryHandle = tsdbQueryLastRow(tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+    pRuntimeEnv->pQueryHandle = ((STsdbRepo*)tsdb)->queryLastRow(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
 
     // update the query time window
     pQuery->window = cond.twindow;
@@ -4635,7 +4636,7 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
   } else if (isPointInterpoQuery(pQuery)) {
     pRuntimeEnv->pQueryHandle = tsdbQueryRowsInExternalWindow(tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   } else {
-    pRuntimeEnv->pQueryHandle = tsdbQueryTables(tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+    pRuntimeEnv->pQueryHandle = ((STsdbRepo*)tsdb)->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   }
 
   return terrno;
@@ -4681,7 +4682,7 @@ int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bo
     return code;
   }
 
-  pQInfo->tsdb = tsdb;
+  pQInfo->tsdb = (STsdbRepo*)tsdb;
   pQInfo->vgId = vgId;
 
   pRuntimeEnv->pQuery = pQuery;
@@ -4912,7 +4913,7 @@ static bool multiTableMultioutputHelper(SQInfo *pQInfo, int32_t index) {
     pRuntimeEnv->pQueryHandle = NULL;
   }
 
-  pRuntimeEnv->pQueryHandle = tsdbQueryTables(pQInfo->tsdb, &cond, &gp, pQInfo, &pQInfo->memRef);
+  pRuntimeEnv->pQueryHandle = pQInfo->tsdb->queryTables(&cond, &gp, pQInfo, &pQInfo->memRef);
   taosArrayDestroy(tx);
   taosArrayDestroy(g1);
   if (pRuntimeEnv->pQueryHandle == NULL) {
@@ -5115,7 +5116,7 @@ static void sequentialTableProcess(SQInfo *pQInfo) {
       }
 
       // no need to update the lastkey for each table
-      pRuntimeEnv->pQueryHandle = tsdbQueryTables(pQInfo->tsdb, &cond, &gp, pQInfo, &pQInfo->memRef);
+      pRuntimeEnv->pQueryHandle = pQInfo->tsdb->queryTables(&cond, &gp, pQInfo, &pQInfo->memRef);
 
       taosArrayDestroy(g1);
       taosArrayDestroy(tx);
@@ -5177,7 +5178,7 @@ static void sequentialTableProcess(SQInfo *pQInfo) {
     void *pQueryHandle = pRuntimeEnv->pQueryHandle;
     if (pQueryHandle == NULL) {
       STsdbQueryCond con = createTsdbQueryCond(pQuery, &pQuery->window);
-      pRuntimeEnv->pQueryHandle = tsdbQueryTables(pQInfo->tsdb, &con, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+      pRuntimeEnv->pQueryHandle = pQInfo->tsdb->queryTables(&con, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
       pQueryHandle = pRuntimeEnv->pQueryHandle;
     }
 
@@ -5448,7 +5449,7 @@ static int32_t doSaveContext(SQInfo *pQInfo) {
   setupQueryRangeForReverseScan(pQInfo);
 
   pRuntimeEnv->prevGroupId = INT32_MIN;
-  pRuntimeEnv->pSecQueryHandle = tsdbQueryTables(pQInfo->tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+  pRuntimeEnv->pSecQueryHandle = pQInfo->tsdb->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   return (pRuntimeEnv->pSecQueryHandle == NULL)? -1:0;
 }
 
@@ -7069,7 +7070,7 @@ int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qi
       }
 
       qDebug("qmsg:%p query stable, uid:%"PRId64", tid:%d", pQueryMsg, id->uid, id->tid);
-      code = tsdbQuerySTableByTagCond(tsdb, id->uid, pQueryMsg->window.skey, tagCond, pQueryMsg->tagCondLen,
+      code = ((STsdbRepo*)tsdb)->querySTable(id->uid, pQueryMsg->window.skey, tagCond, pQueryMsg->tagCondLen,
           pQueryMsg->tagNameRelType, tbnameCond, &tableGroupInfo, pGroupColIndex, numOfGroupByCols);
 
       if (code != TSDB_CODE_SUCCESS) {
@@ -7077,7 +7078,7 @@ int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qi
         return code;
       }
     } else {
-      code = tsdbGetTableGroupFromIdList(tsdb, pTableIdList, &tableGroupInfo);
+      code = ((STsdbRepo *)tsdb)->getTableGroup(pTableIdList, &tableGroupInfo);
       if (code != TSDB_CODE_SUCCESS) {
         return code;
       }
