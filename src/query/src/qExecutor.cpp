@@ -297,17 +297,12 @@ static UNUSED_FUNC int32_t getMergeResultGroupId(int32_t groupIndex) {
   return base + (groupIndex * 10000);
 }
 
-bool isGroupbyNormalCol(SSqlGroupbyExpr *pGroupbyExpr) {
-  if (pGroupbyExpr == NULL || pGroupbyExpr->numOfGroupCols == 0) {
-    return false;
-  }
-
-  for (int32_t i = 0; i < pGroupbyExpr->numOfGroupCols; ++i) {
-    SColIndex *pColIndex = (SColIndex *)taosArrayGet(pGroupbyExpr->columnInfo, i);
-    if (TSDB_COL_IS_NORMAL_COL(pColIndex->flag)) {
+bool SSqlGroupbyExpr::isGroupbyNormalCol() {
+  for (const auto &col : columnInfo) {
+    if (TSDB_COL_IS_NORMAL_COL(col.flag)) {
       //make sure the normal column locates at the second position if tbname exists in group by clause
-      if (pGroupbyExpr->numOfGroupCols > 1) {
-        assert(pColIndex->colIndex > 0);
+      if (columnInfo.size() > 1) {
+        assert(col.colIndex > 0);
       }
 
       return true;
@@ -323,10 +318,9 @@ int16_t getGroupbyColumnType(SQuery *pQuery, SSqlGroupbyExpr *pGroupbyExpr) {
   int32_t colId = -2;
   int16_t type = TSDB_DATA_TYPE_NULL;
 
-  for (int32_t i = 0; i < pGroupbyExpr->numOfGroupCols; ++i) {
-    SColIndex *pColIndex = (SColIndex *)taosArrayGet(pGroupbyExpr->columnInfo, i);
-    if (TSDB_COL_IS_NORMAL_COL(pColIndex->flag)) {
-      colId = pColIndex->colId;
+  for (const auto &col : pGroupbyExpr->columnInfo) {
+    if (TSDB_COL_IS_NORMAL_COL(col.flag)) {
+      colId = col.colId;
       break;
     }
   }
@@ -1322,14 +1316,13 @@ static int32_t setGroupResultOutputBuf(SQueryRuntimeEnv *pRuntimeEnv, char *pDat
 static char *getGroupbyColumnData(SQuery *pQuery, int16_t *type, int16_t *bytes, SArray* pDataBlock) {
   SSqlGroupbyExpr *pGroupbyExpr = pQuery->pGroupbyExpr;
 
-  for (int32_t k = 0; k < pGroupbyExpr->numOfGroupCols; ++k) {
-    SColIndex* pColIndex = (SColIndex*)taosArrayGet(pGroupbyExpr->columnInfo, k);
-    if (TSDB_COL_IS_TAG(pColIndex->flag)) {
+  for (const auto &col : pGroupbyExpr->columnInfo) {
+    if (TSDB_COL_IS_TAG(col.flag)) {
       continue;
     }
 
     int16_t colIndex = -1;
-    int32_t colId = pColIndex->colId;
+    int32_t colId = col.colId;
 
     for (int32_t i = 0; i < pQuery->numOfCols; ++i) {
       if (pQuery->colList[i].colId == colId) {
@@ -1351,7 +1344,7 @@ static char *getGroupbyColumnData(SQuery *pQuery, int16_t *type, int16_t *bytes,
 
     for (int32_t i = 0; i < numOfCols; ++i) {
       SColumnInfoData *p = (SColumnInfoData *)taosArrayGet(pDataBlock, i);
-      if (pColIndex->colId == p->info.colId) {
+      if (col.colId == p->info.colId) {
         return (char*)p->pData;
       }
     }
@@ -2242,7 +2235,7 @@ void getAlignQueryTimeWindow(SQuery *pQuery, int64_t key, int64_t keyFirst, int6
 static void setScanLimitationByResultBuffer(SQuery *pQuery) {
   if (isTopBottomQuery(pQuery)) {
     pQuery->checkResultBuf = 0;
-  } else if (isGroupbyNormalCol(pQuery->pGroupbyExpr)) {
+  } else if (pQuery->pGroupbyExpr->isGroupbyNormalCol()) {
     pQuery->checkResultBuf = 0;
   } else {
     bool hasMultioutput = false;
@@ -2338,7 +2331,7 @@ static void changeExecuteScanOrder(SQInfo *pQInfo, SQueryTableMsg* pQueryMsg, bo
     return;
   }
 
-  if (isGroupbyNormalCol(pQuery->pGroupbyExpr) && pQuery->order.order == TSDB_ORDER_DESC) {
+  if (pQuery->pGroupbyExpr->isGroupbyNormalCol() && pQuery->order.order == TSDB_ORDER_DESC) {
     pQuery->order.order = TSDB_ORDER_ASC;
     if (pQuery->window.skey > pQuery->window.ekey) {
       SWAP(pQuery->window.skey, pQuery->window.ekey, TSKEY);
@@ -2415,7 +2408,7 @@ static int32_t getInitialPageNum(SQInfo *pQInfo) {
 
   int32_t num = 0;
 
-  if (isGroupbyNormalCol(pQuery->pGroupbyExpr)) {
+  if (pQuery->pGroupbyExpr->isGroupbyNormalCol()) {
     num = 128;
   } else if (QUERY_IS_INTERVAL_QUERY(pQuery)) {  // time window query, allocate one page for each table
     size_t s = pQInfo->tableqinfoGroupInfo.numOfTables;
@@ -4585,7 +4578,7 @@ static bool skipTimeInterval(SQueryRuntimeEnv *pRuntimeEnv, TSKEY* start) {
 
 static void doDestroyTableQueryInfo(STableGroupInfo* pTableqinfoGroupInfo);
 
-static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) {
+static int32_t setupQueryHandle(STsdbRepo *tsdb, SQInfo *pQInfo, bool isSTableQuery) {
   SQueryRuntimeEnv *pRuntimeEnv = &pQInfo->runtimeEnv;
   SQuery *pQuery = pQInfo->runtimeEnv.pQuery;
 
@@ -4603,7 +4596,7 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
     && (pQInfo->tableqinfoGroupInfo.numOfTables == 1)
     && (cond.order == TSDB_ORDER_ASC)
     && (!QUERY_IS_INTERVAL_QUERY(pQuery))
-    && (!isGroupbyNormalCol(pQuery->pGroupbyExpr))
+    && (!pQuery->pGroupbyExpr->isGroupbyNormalCol())
     && (!isFixedOutputQuery(pRuntimeEnv))
   ) {
     SArray* pa = GET_TABLEGROUP(pQInfo, 0);
@@ -4613,7 +4606,7 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
 
   terrno = TSDB_CODE_SUCCESS;
   if (isFirstLastRowQuery(pQuery)) {
-    pRuntimeEnv->pQueryHandle = ((STsdbRepo*)tsdb)->queryLastRow(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+    pRuntimeEnv->pQueryHandle = tsdb->queryLastRow(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
 
     // update the query time window
     pQuery->window = cond.twindow;
@@ -4636,7 +4629,7 @@ static int32_t setupQueryHandle(void* tsdb, SQInfo* pQInfo, bool isSTableQuery) 
   } else if (isPointInterpoQuery(pQuery)) {
     pRuntimeEnv->pQueryHandle = tsdbQueryRowsInExternalWindow(tsdb, &cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   } else {
-    pRuntimeEnv->pQueryHandle = ((STsdbRepo*)tsdb)->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
+    pRuntimeEnv->pQueryHandle = tsdb->queryTables(&cond, &pQInfo->tableGroupInfo, pQInfo, &pQInfo->memRef);
   }
 
   return terrno;
@@ -4666,7 +4659,7 @@ static std::vector<SFillColInfo> createFillColInfo(SQuery* pQuery) {
   return pFillCol;
 }
 
-int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bool isSTableQuery) {
+int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, STsdbRepo *tsdb, int32_t vgId, bool isSTableQuery) {
   SQueryRuntimeEnv *pRuntimeEnv = &pQInfo->runtimeEnv;
 
   SQuery *pQuery = pQInfo->runtimeEnv.pQuery;
@@ -4677,7 +4670,7 @@ int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bo
 
   setScanLimitationByResultBuffer(pQuery);
 
-  int32_t code = setupQueryHandle(tsdb, pQInfo, isSTableQuery);
+  int32_t code = setupQueryHandle((STsdbRepo*)tsdb, pQInfo, isSTableQuery);
   if (code != TSDB_CODE_SUCCESS) {
     return code;
   }
@@ -4690,7 +4683,7 @@ int32_t doInitQInfo(SQInfo *pQInfo, STSBuf *pTsBuf, void *tsdb, int32_t vgId, bo
   pRuntimeEnv->cur.vgroupIndex = -1;
   pRuntimeEnv->stableQuery = isSTableQuery;
   pRuntimeEnv->prevGroupId = INT32_MIN;
-  pRuntimeEnv->groupbyColumn = isGroupbyNormalCol(pQuery->pGroupbyExpr);
+  pRuntimeEnv->groupbyColumn = pQuery->pGroupbyExpr->isGroupbyNormalCol();
 
   if (pTsBuf != NULL) {
     int16_t order = (pQuery->order.order == pRuntimeEnv->pTsBuf->tsOrder) ? TSDB_ORDER_ASC : TSDB_ORDER_DESC;
@@ -5973,7 +5966,7 @@ static char *createTableIdList(SQueryTableMsg *pQueryMsg, char *pMsg, SArray **p
  * @return
  */
 static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList, SSqlFuncMsg ***pExpr,
-                               SSqlFuncMsg ***pSecStageExpr, char **tagCond, char **tbnameCond, SColIndex **groupbyCols,
+                               SSqlFuncMsg ***pSecStageExpr, std::string *tagCond, std::string *tbnameCond, SColIndex **groupbyCols,
                                SColumnInfo **tagCols, char **sql) {
   int32_t code = TSDB_CODE_SUCCESS;
 
@@ -6013,10 +6006,8 @@ static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList,
     tfree(*pExpr);
     taosArrayDestroy(*pTableIdList);
     *pTableIdList = NULL;
-    tfree(*tbnameCond);
     tfree(*groupbyCols);
     tfree(*tagCols);
-    tfree(*tagCond);
     tfree(*sql);
   });
   // query msg safety check
@@ -6221,25 +6212,12 @@ static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList,
 
   // the tag query condition expression string is located at the end of query msg
   if (pQueryMsg->tagCondLen > 0) {
-    *tagCond = (char*)calloc(1, pQueryMsg->tagCondLen);
-
-    if (*tagCond == NULL) {
-      code = TSDB_CODE_QRY_OUT_OF_MEMORY;
-      return code;
-
-    }
-    memcpy(*tagCond, pMsg, pQueryMsg->tagCondLen);
+    *tagCond = std::string(pMsg, pQueryMsg->tagCondLen);
     pMsg += pQueryMsg->tagCondLen;
   }
 
   if (pQueryMsg->tbnameCondLen > 0) {
-    *tbnameCond = (char*)calloc(1, pQueryMsg->tbnameCondLen + 1);
-    if (*tbnameCond == NULL) {
-      code = TSDB_CODE_QRY_OUT_OF_MEMORY;
-      return code;
-    }
-
-    strncpy(*tbnameCond, pMsg, pQueryMsg->tbnameCondLen);
+    *tbnameCond = std::string(pMsg, pQueryMsg->tbnameCondLen);
     pMsg += pQueryMsg->tbnameCondLen;
   }
 
@@ -6399,13 +6377,11 @@ static SSqlGroupbyExpr *createGroupbyExprFromMsg(SQueryTableMsg *pQueryMsg, SCol
     return NULL;
   }
 
-  pGroupbyExpr->numOfGroupCols = pQueryMsg->numOfGroupCols;
   pGroupbyExpr->orderType = pQueryMsg->orderType;
   pGroupbyExpr->orderIndex = pQueryMsg->orderByIdx;
 
-  pGroupbyExpr->columnInfo = (SArray*)taosArrayInit(pQueryMsg->numOfGroupCols, sizeof(SColIndex));
-  for(int32_t i = 0; i < pQueryMsg->numOfGroupCols; ++i) {
-    taosArrayPush(pGroupbyExpr->columnInfo, &pColIndex[i]);
+  for (int32_t i = 0; i < pQueryMsg->numOfGroupCols; ++i) {
+    pGroupbyExpr->columnInfo.push_back(pColIndex[i]);
   }
 
   return pGroupbyExpr;
@@ -6542,8 +6518,7 @@ static SQInfo *createQInfoImpl(SQueryTableMsg *pQueryMsg, SSqlGroupbyExpr *pGrou
   SQuery *pQuery = (SQuery*)calloc(1, sizeof(SQuery));
   auto _2 = defer([&] {
     if (pGroupbyExpr != NULL) {
-      taosArrayDestroy(pGroupbyExpr->columnInfo);
-      free(pGroupbyExpr);
+      delete pGroupbyExpr;
     }
 
     tfree(pTagCols);
@@ -6727,7 +6702,7 @@ static SQInfo *createQInfoImpl(SQueryTableMsg *pQueryMsg, SSqlGroupbyExpr *pGrou
   return pQInfo;
 }
 
-static int32_t initQInfo(SQueryTableMsg *pQueryMsg, void *tsdb, int32_t vgId, SQInfo *pQInfo, bool isSTable) {
+static int32_t initQInfo(SQueryTableMsg *pQueryMsg, STsdbRepo *tsdb, int32_t vgId, SQInfo *pQInfo, bool isSTable) {
   int32_t code = TSDB_CODE_SUCCESS;
   SQuery *pQuery = pQInfo->runtimeEnv.pQuery;
 
@@ -6868,8 +6843,7 @@ static void freeQInfo(SQInfo *pQInfo) {
     }
 
     if (pQuery->pGroupbyExpr != NULL) {
-      taosArrayDestroy(pQuery->pGroupbyExpr->columnInfo);
-      tfree(pQuery->pGroupbyExpr);
+      delete pQuery->pGroupbyExpr;
     }
 
     tfree(pQuery);
@@ -6966,14 +6940,14 @@ struct SQueryMgmt {
   std::mutex      lock;
 };
 
-int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qinfo_t* pQInfo) {
+int32_t qCreateQueryInfo(STsdbRepo *tsdb, int32_t vgId, SQueryTableMsg *pQueryMsg, qinfo_t *pQInfo) {
   assert(pQueryMsg != NULL && tsdb != NULL);
 
   int32_t code = TSDB_CODE_SUCCESS;
 
   char            *sql          = NULL;
-  char            *tagCond      = NULL;
-  char            *tbnameCond   = NULL;
+  std::string      tagCond;
+  std::string      tbnameCond;
   SArray          *pTableIdList = NULL;
   SSqlFuncMsg    **pExprMsg     = NULL;
   SSqlFuncMsg    **pSecExprMsg  = NULL;
@@ -6984,13 +6958,10 @@ int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qi
   SColumnInfo     *pTagColumnInfo = NULL;
   SSqlGroupbyExpr *pGroupbyExpr   = NULL;
   auto _1 = defer([&] {
-    free(tagCond);
-    free(tbnameCond);
     free(pGroupColIndex);
 
     if (pGroupbyExpr != NULL) {
-      taosArrayDestroy(pGroupbyExpr->columnInfo);
-      free(pGroupbyExpr);
+      delete pGroupbyExpr;
     }
 
     free(pTagColumnInfo);
@@ -7070,15 +7041,15 @@ int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryMsg, qi
       }
 
       qDebug("qmsg:%p query stable, uid:%"PRId64", tid:%d", pQueryMsg, id->uid, id->tid);
-      code = ((STsdbRepo*)tsdb)->querySTable(id->uid, pQueryMsg->window.skey, tagCond, pQueryMsg->tagCondLen,
-          pQueryMsg->tagNameRelType, tbnameCond, &tableGroupInfo, pGroupColIndex, numOfGroupByCols);
+      code = tsdb->querySTable(id->uid, pQueryMsg->window.skey, tagCond.c_str(), pQueryMsg->tagCondLen,
+          pQueryMsg->tagNameRelType, tbnameCond.c_str(), &tableGroupInfo, pGroupColIndex, numOfGroupByCols);
 
       if (code != TSDB_CODE_SUCCESS) {
         qError("qmsg:%p failed to query stable, reason: %s", pQueryMsg, tstrerror(code));
         return code;
       }
     } else {
-      code = ((STsdbRepo *)tsdb)->getTableGroup(pTableIdList, &tableGroupInfo);
+      code = tsdb->getTableGroup(pTableIdList, &tableGroupInfo);
       if (code != TSDB_CODE_SUCCESS) {
         return code;
       }

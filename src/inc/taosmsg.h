@@ -188,10 +188,10 @@ typedef struct {
   uint16_t port;
 } SEpAddrMsg;
 
-typedef struct {
-  char*    fqdn;
+struct SEpAddr1 {
+  std::string fqdn;
   uint16_t port;
-} SEpAddr1;
+};
 
 typedef struct {
   int32_t numOfVnodes;
@@ -703,11 +703,11 @@ typedef struct SSTableVgroupMsg {
   int32_t numOfTables;
 } SSTableVgroupMsg, SSTableVgroupRspMsg;
 
-typedef struct {
+struct SVgroupInfo {
   int32_t       vgId;
   int8_t        numOfEps;
   SEpAddr1      epAddr[TSDB_MAX_REPLICA];
-} SVgroupInfo;
+};
 
 typedef struct {
   int32_t    vgId;
@@ -715,10 +715,10 @@ typedef struct {
   SEpAddrMsg epAddr[TSDB_MAX_REPLICA];
 } SVgroupMsg;
 
-typedef struct {
+struct SVgroupsInfo {
   int32_t numOfVgroups;
-  SVgroupInfo vgroups[];
-} SVgroupsInfo;
+  std::vector<SVgroupInfo> vgroups;
+};
 
 typedef struct {
   int32_t numOfVgroups;

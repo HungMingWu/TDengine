@@ -1543,14 +1543,7 @@ static void freeQueryInfoImpl(SQueryInfo* pQueryInfo) {
   pQueryInfo->exprList = NULL;
 
   tscColumnListDestroy(pQueryInfo->colList);
-  pQueryInfo->colList = NULL;
-
-  if (pQueryInfo->groupbyExpr.columnInfo != NULL) {
-    taosArrayDestroy(pQueryInfo->groupbyExpr.columnInfo);
-    pQueryInfo->groupbyExpr.columnInfo = NULL;
-    pQueryInfo->groupbyExpr.numOfGroupCols = 0;
-  }
-  
+  pQueryInfo->colList = NULL;  
   pQueryInfo->tsBuf = (STSBuf*)tsBufDestroy(pQueryInfo->tsBuf);
 
   tfree(pQueryInfo->fillVal);
@@ -1572,9 +1565,8 @@ void tscFreeVgroupTableInfo(SArray* pVgroupTables) {
   for (size_t i = 0; i < num; i++) {
     SVgroupTableInfo* pInfo = (SVgroupTableInfo*)taosArrayGet(pVgroupTables, i);
 
-    for(int32_t j = 0; j < pInfo->vgInfo.numOfEps; ++j) {
-      tfree(pInfo->vgInfo.epAddr[j].fqdn);
-    }
+    for(int32_t j = 0; j < pInfo->vgInfo.numOfEps; ++j)
+      pInfo->vgInfo.epAddr[j].fqdn.clear();
 
     taosArrayDestroy(pInfo->itemList);
   }
@@ -1590,7 +1582,7 @@ void tscRemoveVgroupTableGroup(SArray* pVgroupTable, int32_t index) {
 
   SVgroupTableInfo* pInfo = (SVgroupTableInfo*)taosArrayGet(pVgroupTable, index);
   for(int32_t j = 0; j < pInfo->vgInfo.numOfEps; ++j) {
-    tfree(pInfo->vgInfo.epAddr[j].fqdn);
+    pInfo->vgInfo.epAddr[j].fqdn.clear();
   }
 
   taosArrayDestroy(pInfo->itemList);
@@ -1602,7 +1594,7 @@ void tscVgroupTableCopy(SVgroupTableInfo* info, SVgroupTableInfo* pInfo) {
 
   info->vgInfo = pInfo->vgInfo;
   for(int32_t j = 0; j < pInfo->vgInfo.numOfEps; ++j) {
-    info->vgInfo.epAddr[j].fqdn = strdup(pInfo->vgInfo.epAddr[j].fqdn);
+    info->vgInfo.epAddr[j].fqdn = pInfo->vgInfo.epAddr[j].fqdn;
   }
 
   info->itemList = taosArrayClone(pInfo->itemList);
@@ -1854,13 +1846,7 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
   pNewQueryInfo->pTableMetaInfo = NULL;
   
   pNewQueryInfo->groupbyExpr = pQueryInfo->groupbyExpr;
-  if (pQueryInfo->groupbyExpr.columnInfo != NULL) {
-    pNewQueryInfo->groupbyExpr.columnInfo = taosArrayClone(pQueryInfo->groupbyExpr.columnInfo);
-    if (pNewQueryInfo->groupbyExpr.columnInfo == NULL) {
-      terrno = TSDB_CODE_TSC_OUT_OF_MEMORY;
-      return NULL;
-    }
-  }
+  pNewQueryInfo->groupbyExpr.columnInfo = pQueryInfo->groupbyExpr.columnInfo;
   
   pNewQueryInfo->tagCond = pQueryInfo->tagCond;
 
@@ -2331,7 +2317,7 @@ SVgroupsInfo* tscVgroupInfoClone(SVgroupsInfo *vgroupList) {
     pNewVInfo->numOfEps = pvInfo->numOfEps;
 
     for(int32_t j = 0; j < pvInfo->numOfEps; ++j) {
-      pNewVInfo->epAddr[j].fqdn = strdup(pvInfo->epAddr[j].fqdn);
+      pNewVInfo->epAddr[j].fqdn = pvInfo->epAddr[j].fqdn;
       pNewVInfo->epAddr[j].port = pvInfo->epAddr[j].port;
     }
   }
@@ -2344,32 +2330,8 @@ void* tscVgroupInfoClear(SVgroupsInfo *vgroupList) {
     return NULL;
   }
 
-  for(int32_t i = 0; i < vgroupList->numOfVgroups; ++i) {
-    SVgroupInfo* pVgroupInfo = &vgroupList->vgroups[i];
-
-    for(int32_t j = 0; j < pVgroupInfo->numOfEps; ++j) {
-      tfree(pVgroupInfo->epAddr[j].fqdn);
-    }
-
-    for(int32_t j = pVgroupInfo->numOfEps; j < TSDB_MAX_REPLICA; j++) {
-      assert( pVgroupInfo->epAddr[j].fqdn == NULL );
-    }
-  }
-
-  tfree(vgroupList);
+  delete vgroupList;
   return NULL;
-}
-
-void tscSVgroupInfoCopy(SVgroupInfo* dst, const SVgroupInfo* src) {
-  dst->vgId = src->vgId;
-  dst->numOfEps = src->numOfEps;
-  for(int32_t i = 0; i < dst->numOfEps; ++i) {
-    tfree(dst->epAddr[i].fqdn);
-    dst->epAddr[i].port = src->epAddr[i].port;
-    assert(dst->epAddr[i].fqdn == NULL);
-
-    dst->epAddr[i].fqdn = strdup(src->epAddr[i].fqdn);
-  }
 }
 
 char* serializeTagData(STagData* pTagData, char* pMsg) {

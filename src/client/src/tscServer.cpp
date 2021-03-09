@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <fmt/format.h>
 #include "os.h"
 #include "tcmdtype.h"
 #include "trpc.h"
@@ -59,9 +60,8 @@ static void tscSetDnodeEpSet(SRpcEpSet* pEpSet, SVgroupInfo* pVgroupInfo) {
   for(int32_t i = 0; i < pVgroupInfo->numOfEps; ++i) {
     pEpSet->port[i] = pVgroupInfo->epAddr[i].port;
 
-    int32_t len = (int32_t) strnlen(pVgroupInfo->epAddr[i].fqdn, TSDB_FQDN_LEN);
-    if (len > 0) {
-      tstrncpy(pEpSet->fqdn[i], pVgroupInfo->epAddr[i].fqdn, tListLen(pEpSet->fqdn[i]));
+    if (!pVgroupInfo->epAddr[i].fqdn.empty()) {
+      fmt::format_to_n(pEpSet->fqdn[i], std::size_t(pEpSet->fqdn[i]) - 1, "{}", pVgroupInfo->epAddr[i].fqdn);
       existed = true;
     }
   }
@@ -683,8 +683,8 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
     return TSDB_CODE_TSC_INVALID_SQL;
   }
   
-  if (pQueryInfo->groupbyExpr.numOfGroupCols < 0) {
-    tscError("%p illegal value of numOfGroupCols in query msg: %d", pSql, pQueryInfo->groupbyExpr.numOfGroupCols);
+  if (pQueryInfo->groupbyExpr.columnInfo.empty()) {
+    tscError("%p illegal value of columnInfo size in query msg: ", pSql);
     return TSDB_CODE_TSC_INVALID_SQL;
   }
 
@@ -714,7 +714,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pQueryMsg->interval.intervalUnit = pQueryInfo->interval.intervalUnit;
   pQueryMsg->interval.slidingUnit  = pQueryInfo->interval.slidingUnit;
   pQueryMsg->interval.offsetUnit   = pQueryInfo->interval.offsetUnit;
-  pQueryMsg->numOfGroupCols = htons(pQueryInfo->groupbyExpr.numOfGroupCols);
+  pQueryMsg->numOfGroupCols = htons(pQueryInfo->groupbyExpr.columnInfo.size());
   pQueryMsg->tagNameRelType = htons(pQueryInfo->tagCond.relType);
   pQueryMsg->tbnameCondLen  = htonl(pQueryInfo->tagCond.tbnameCond.len);
   pQueryMsg->numOfTags      = htonl(numOfTags);
@@ -881,24 +881,22 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pMsg = doSerializeTableInfo(pQueryMsg, pSql, pMsg);
   
   SSqlGroupbyExpr *pGroupbyExpr = &pQueryInfo->groupbyExpr;
-  if (pGroupbyExpr->numOfGroupCols > 0) {
+  if (!pGroupbyExpr->columnInfo.empty()) {
     pQueryMsg->orderByIdx = htons(pGroupbyExpr->orderIndex);
     pQueryMsg->orderType = htons(pGroupbyExpr->orderType);
 
-    for (int32_t j = 0; j < pGroupbyExpr->numOfGroupCols; ++j) {
-      SColIndex* pCol = (SColIndex*)taosArrayGet(pGroupbyExpr->columnInfo, j);
-  
-      *((int16_t *)pMsg) = htons(pCol->colId);
-      pMsg += sizeof(pCol->colId);
+    for (const auto &col : pGroupbyExpr->columnInfo) {
+      *((int16_t *)pMsg) = htons(col.colId);
+      pMsg += sizeof(col.colId);
 
-      *((int16_t *)pMsg) += htons(pCol->colIndex);
-      pMsg += sizeof(pCol->colIndex);
+      *((int16_t *)pMsg) += htons(col.colIndex);
+      pMsg += sizeof(col.colIndex);
 
-      *((int16_t *)pMsg) += htons(pCol->flag);
-      pMsg += sizeof(pCol->flag);
+      *((int16_t *)pMsg) += htons(col.flag);
+      pMsg += sizeof(col.flag);
       
-      memcpy(pMsg, pCol->name, tListLen(pCol->name));
-      pMsg += tListLen(pCol->name);
+      memcpy(pMsg, col.name, tListLen(col.name));
+      pMsg += tListLen(col.name);
     }
   }
 

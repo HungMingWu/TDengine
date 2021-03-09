@@ -384,7 +384,7 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
   
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {
     auto pFillCol = createFillColInfo(pQueryInfo);
-    pReducer->pFillInfo.reset(new SFillInfo(pQueryInfo->order.order, revisedSTime, pQueryInfo->groupbyExpr.numOfGroupCols,
+    pReducer->pFillInfo.reset(new SFillInfo(pQueryInfo->order.order, revisedSTime, pQueryInfo->groupbyExpr.columnInfo.size(),
                                            4096, (int32_t)pQueryInfo->fieldsInfo.numOfOutput, pQueryInfo->interval.sliding, pQueryInfo->interval.slidingUnit,
                                            tinfo.precision, pQueryInfo->fillType, std::move(pFillCol), pSql));
   }
@@ -545,8 +545,8 @@ static int32_t createOrderDescriptor(tOrderDescriptor **pOrderDesc, SSqlCmd *pCm
   int32_t     numOfGroupByCols = 0;
   SQueryInfo *pQueryInfo = tscGetQueryInfoDetail(pCmd, pCmd->clauseIndex);
 
-  if (pQueryInfo->groupbyExpr.numOfGroupCols > 0) {
-    numOfGroupByCols = pQueryInfo->groupbyExpr.numOfGroupCols;
+  if (pQueryInfo->groupbyExpr.columnInfo.size() > 0) {
+    numOfGroupByCols = pQueryInfo->groupbyExpr.columnInfo.size();
   }
 
   // primary timestamp column is involved in final result
@@ -561,12 +561,12 @@ static int32_t createOrderDescriptor(tOrderDescriptor **pOrderDesc, SSqlCmd *pCm
 
   if (numOfGroupByCols > 0) {
 
-    if (pQueryInfo->groupbyExpr.numOfGroupCols > 0) {
+    if (pQueryInfo->groupbyExpr.columnInfo.size() > 0) {
       int32_t numOfInternalOutput = (int32_t) tscSqlExprNumOfExprs(pQueryInfo);
-      int32_t startCols = numOfInternalOutput - pQueryInfo->groupbyExpr.numOfGroupCols;
+      int32_t startCols = numOfInternalOutput - pQueryInfo->groupbyExpr.columnInfo.size();
 
       // the last "pQueryInfo->groupbyExpr.numOfGroupCols" columns are order-by columns
-      for (int32_t i = 0; i < pQueryInfo->groupbyExpr.numOfGroupCols; ++i) {
+      for (int32_t i = 0; i < pQueryInfo->groupbyExpr.columnInfo.size(); ++i) {
         orderColIndexList[i] = startCols++;
       }
 

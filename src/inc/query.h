@@ -17,6 +17,8 @@
 
 typedef void* qinfo_t;
 
+struct STsdbRepo;
+
 /**
  * create the qinfo object according to QueryTableMsg
  * @param tsdb
@@ -24,7 +26,7 @@ typedef void* qinfo_t;
  * @param qinfo
  * @return
  */
-int32_t qCreateQueryInfo(void* tsdb, int32_t vgId, SQueryTableMsg* pQueryTableMsg, qinfo_t* qinfo);
+int32_t qCreateQueryInfo(STsdbRepo* tsdb, int32_t vgId, SQueryTableMsg* pQueryTableMsg, qinfo_t* qinfo);
 
 
 /**

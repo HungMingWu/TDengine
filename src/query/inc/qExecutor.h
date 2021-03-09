@@ -48,13 +48,14 @@ typedef struct SResultRowPool {
   SArray* pData;    // SArray<void*>
 } SResultRowPool;
 
-typedef struct SSqlGroupbyExpr {
+struct SSqlGroupbyExpr {
   int16_t tableIndex;
-  SArray* columnInfo;  // SArray<SColIndex>, group by columns information
-  int16_t numOfGroupCols;
+  std::vector<SColIndex> columnInfo;  // SArray<SColIndex>, group by columns information
   int16_t orderIndex;  // order by column index
   int16_t orderType;   // order by type: asc/desc
-} SSqlGroupbyExpr;
+ public:
+  bool isGroupbyNormalCol();
+};
 
 typedef struct SResultRow {
   int32_t       pageId;      // pageId & rowId is the position of current result in disk-based output buffer
