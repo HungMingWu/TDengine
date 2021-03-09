@@ -58,13 +58,13 @@ typedef struct STidTags {
 } STidTags;
 #pragma pack(pop)
 
-typedef struct SJoinSupporter {
+struct SJoinSupporter {
   SSqlObj*        pObj;           // parent SqlObj
   int32_t         subqueryIndex;  // index of sub query
   SInterval       interval;
   SLimitVal       limit;          // limit info
   uint64_t        uid;            // query table uid
-  SArray*         colList;        // previous query information, no need to use this attribute, and the corresponding attribution
+  std::vector<SColumn> colList;        // previous query information, no need to use this attribute, and the corresponding attribution
   SArray*         exprList;
   SFieldInfo      fieldsInfo;
   STagCond        tagCond;
@@ -77,7 +77,10 @@ typedef struct SJoinSupporter {
   int32_t         totalLen;
   int32_t         num;
   SArray*         pVgroupTables;
-} SJoinSupporter;
+
+ public:
+  ~SJoinSupporter();
+};
 
 typedef struct SVgroupTableInfo {
   SVgroupInfo vgInfo;
@@ -173,10 +176,8 @@ size_t   tscSqlExprNumOfExprs(SQueryInfo* pQueryInfo);
 int32_t   tscSqlExprCopy(SArray* dst, const SArray* src, uint64_t uid, bool deepcopy);
 void      tscSqlExprInfoDestroy(SArray* pExprInfo);
 
-SColumn* tscColumnClone(const SColumn* src);
-SColumn* tscColumnListInsert(SArray* pColList, SColumnIndex* colIndex);
+SColumn* tscColumnListInsert(std::vector<SColumn> &pColList, SColumnIndex* colIndex);
 SArray* tscColumnListClone(const SArray* src, int16_t tableIndex);
-void tscColumnListDestroy(SArray* pColList);
 
 void tscDequoteAndTrimToken(SStrToken* pToken);
 int32_t tscValidateName(SStrToken* pToken);
@@ -201,7 +202,7 @@ SQueryInfo *tscGetQueryInfoDetailSafely(SSqlCmd *pCmd, int32_t subClauseIndex);
 void tscClearTableMetaInfo(STableMetaInfo* pTableMetaInfo);
 
 STableMetaInfo* tscAddTableMetaInfo(SQueryInfo* pQueryInfo, const char* name, STableMeta* pTableMeta,
-    SVgroupsInfo* vgroupList, SArray* pTagCols, SArray* pVgroupTables);
+    SVgroupsInfo* vgroupList, const std::vector<SColumn> *pTagCols, SArray* pVgroupTables);
 
 STableMetaInfo* tscAddEmptyMetaInfo(SQueryInfo *pQueryInfo);
 int32_t tscAddSubqueryInfo(SSqlCmd *pCmd);

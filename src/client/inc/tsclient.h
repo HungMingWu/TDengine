@@ -71,7 +71,7 @@ struct STableMeta {
   int16_t        sversion;
   int16_t        tversion;
   STableComInfo  tableInfo;
-  SSchema        schema[];  // if the table is TSDB_CHILD_TABLE, schema is acquired by super table meta info
+  std::vector<SSchema>        schema;  // if the table is TSDB_CHILD_TABLE, schema is acquired by super table meta info
  public:
   /**
    * get the column schema according to the column index
@@ -127,6 +127,16 @@ struct CChildTableMeta {
   CChildTableMeta(const STableMeta &meta) : vgId(meta.vgId), id(meta.id), sTableName(meta.sTableName) {}
 };
 
+struct SColumnIndex {
+  int16_t tableIndex;
+  int16_t columnIndex;
+};
+
+struct SColumn {
+  SColumnIndex                   colIndex;
+  std::vector<SColumnFilterInfo> filterInfo;
+};
+
 struct STableMetaInfo {
   STableMeta   *pTableMeta;      // table meta, cached in client side and acquired by name
   SVgroupsInfo *vgroupList;
@@ -139,7 +149,7 @@ struct STableMetaInfo {
   int32_t       vgroupIndex;
   FixedFrameStr name;                              // (super) table name
   char          aliasName[TSDB_TABLE_NAME_LEN];    // alias name of table specified in query sql
-  SArray       *tagColList;                        // SArray<SColumn*>, involved tag columns
+  std::vector<SColumn> tagColList;                        // SArray<SColumn*>, involved tag columns
 };
 
 /* the structure for sql function in select clause */
@@ -159,11 +169,6 @@ struct SSqlExpr {
   ~SSqlExpr();
 };
 
-typedef struct SColumnIndex {
-  int16_t tableIndex;
-  int16_t columnIndex;
-} SColumnIndex;
-
 typedef struct SInternalField {
   TAOS_FIELD      field;
   bool            visible;
@@ -176,15 +181,6 @@ typedef struct SFieldInfo {
   TAOS_FIELD*  final;
   SArray      *internalField; // SArray<SInternalField>
 } SFieldInfo;
-
-struct SColumn {
-  SColumnIndex       colIndex;
-  int32_t            numOfFilters;
-  SColumnFilterInfo *filterInfo;
-
- public:
-  ~SColumn();
-};
 
 typedef struct SCond {
   uint64_t uid;
@@ -254,7 +250,7 @@ struct SQueryInfo {
   SInterval        interval;
 
   SSqlGroupbyExpr  groupbyExpr;   // group by tags info
-  SArray *         colList;       // SArray<SColumn*>
+  std::vector<SColumn> colList;
   SFieldInfo       fieldsInfo;
   SArray *         exprList;      // SArray<SSqlExpr*>
   SLimitVal        limit;

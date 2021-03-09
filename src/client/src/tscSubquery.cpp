@@ -228,41 +228,29 @@ SJoinSupporter* tscCreateJoinSupporter(SSqlObj* pSql, int32_t index) {
   return pSupporter;
 }
 
-static void tscDestroyJoinSupporter(SJoinSupporter* pSupporter) {
-  if (pSupporter == NULL) {
-    return;
-  }
-
-  if (pSupporter->exprList != NULL) {
-    tscSqlExprInfoDestroy(pSupporter->exprList);
+SJoinSupporter::~SJoinSupporter() {
+  if (exprList != NULL) {
+    tscSqlExprInfoDestroy(exprList);
   }
   
-  if (pSupporter->colList != NULL) {
-    tscColumnListDestroy(pSupporter->colList);
+  tscFieldInfoClear(&fieldsInfo);
+
+  if (pTSBuf != NULL) {
+    tsBufDestroy(pTSBuf);
   }
 
-  tscFieldInfoClear(&pSupporter->fieldsInfo);
-
-  if (pSupporter->pTSBuf != NULL) {
-    tsBufDestroy(pSupporter->pTSBuf);
-    pSupporter->pTSBuf = NULL;
-  }
-
-  unlink(pSupporter->path);
+  unlink(path);
   
-  if (pSupporter->f != NULL) {
-    fclose(pSupporter->f);
-    pSupporter->f = NULL;
+  if (f != NULL) {
+    fclose(f);
   }
 
 
-  if (pSupporter->pVgroupTables != NULL) {
-    taosArrayDestroy(pSupporter->pVgroupTables);
-    pSupporter->pVgroupTables = NULL;
+  if (pVgroupTables != NULL) {
+    taosArrayDestroy(pVgroupTables);
   }
 
-  tfree(pSupporter->pIdTagList);
-  free(pSupporter);
+  tfree(pIdTagList);
 }
 
 /*
@@ -272,11 +260,8 @@ static void tscDestroyJoinSupporter(SJoinSupporter* pSupporter) {
  *
  */
 static UNUSED_FUNC bool needSecondaryQuery(SQueryInfo* pQueryInfo) {
-  size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
-  
-  for (int32_t i = 0; i < numOfCols; ++i) {
-    SColumn* base = (SColumn*)taosArrayGet(pQueryInfo->colList, i);
-    if (base->colIndex.columnIndex != PRIMARYKEY_TIMESTAMP_COL_INDEX) {
+  for (const auto& base : pQueryInfo->colList) {
+    if (base.colIndex.columnIndex != PRIMARYKEY_TIMESTAMP_COL_INDEX) {
       return true;
     }
   }
@@ -381,7 +366,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     if (taosArrayGetSize(pSupporter->exprList) == 0) {
       tscDebug("%p subIndex: %d, no need to launch query, ignore it", pSql, i);
     
-      tscDestroyJoinSupporter(pSupporter);
+      delete pSupporter;
       taos_free_result(pPrevSub);
     
       pSql->pSubs[i] = NULL;
@@ -398,7 +383,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
   
     SSqlObj *pNew = createSubqueryObj(pSql, (int16_t) i, tscJoinQueryCallback, pSupporter, TSDB_SQL_SELECT, NULL);
     if (pNew == NULL) {
-      tscDestroyJoinSupporter(pSupporter);
+      delete pSupporter;
       success = false;
       break;
     }
@@ -428,7 +413,6 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     pTableMetaInfo->pVgroupTables = pSupporter->pVgroupTables;
 
     pSupporter->exprList = NULL;
-    pSupporter->colList = NULL;
     pSupporter->pVgroupTables = NULL;
     memset(&pSupporter->fieldsInfo, 0, sizeof(SFieldInfo));
     memset(&pSupporter->groupInfo, 0, sizeof(SSqlGroupbyExpr));
@@ -479,7 +463,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
       }
     }
 
-    size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
+    size_t numOfCols = pQueryInfo->colList.size();
     tscDebug("%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%d, exprInfo:%" PRIzu ", colList:%" PRIzu ", fieldsInfo:%d, name:%s",
              pSql, pNew, 0, pTableMetaInfo->vgroupIndex, pQueryInfo->type, tscSqlExprNumOfExprs(pQueryInfo),
              numOfCols, pQueryInfo->fieldsInfo.numOfOutput, pTableMetaInfo->name);
@@ -514,7 +498,7 @@ void freeJoinSubqueryObj(SSqlObj* pSql) {
     }
     
     SJoinSupporter* p = (SJoinSupporter*)pSub->param;
-    tscDestroyJoinSupporter(p);
+    delete p;
 
     if (pSub->res.code == TSDB_CODE_SUCCESS) {
       taos_free_result(pSub);
@@ -532,7 +516,7 @@ static void quitAllSubquery(SSqlObj* pSqlObj, SJoinSupporter* pSupporter) {
     freeJoinSubqueryObj(pSqlObj);
   }
 
-  //tscDestroyJoinSupporter(pSupporter);
+  //delete pSupporter;
 }
 
 // update the query time range according to the join results on timestamp
@@ -654,20 +638,13 @@ static void issueTSCompQuery(SSqlObj* pSql, SJoinSupporter* pSupporter, SSqlObj*
   }
 
   // add the filter tag column
-  if (pSupporter->colList != NULL) {
-    size_t s = taosArrayGetSize(pSupporter->colList);
-    
-    for (int32_t i = 0; i < s; ++i) {
-      SColumn *pCol = (SColumn*)taosArrayGetP(pSupporter->colList, i);
-      
-      if (pCol->numOfFilters > 0) {  // copy to the pNew->cmd.colList if it is filtered.
-        SColumn *p = tscColumnClone(pCol);
-        taosArrayPush(pQueryInfo->colList, &p);
-      }
+  for (const auto& pCol : pSupporter->colList) {     
+    if (pCol.filterInfo.size() > 0) {  // copy to the pNew->cmd.colList if it is filtered.
+      pQueryInfo->colList.push_back(pCol);
     }
   }
   
-  size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
+  size_t numOfCols = pQueryInfo->colList.size();
   
   tscDebug(
       "%p subquery:%p tableIndex:%d, vgroupIndex:%d, numOfVgroups:%d, type:%d, ts_comp query to retrieve timestamps, "
@@ -1462,14 +1439,11 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
     assert(pNewQueryInfo != NULL);
     
     // update the table index
-    size_t num = taosArrayGetSize(pNewQueryInfo->colList);
-    for (int32_t i = 0; i < num; ++i) {
-      SColumn* pCol = (SColumn*)taosArrayGetP(pNewQueryInfo->colList, i);
-      pCol->colIndex.tableIndex = 0;
+    for (auto& pCol : pNewQueryInfo->colList) {
+      pCol.colIndex.tableIndex = 0;
     }
     
-    pSupporter->colList = pNewQueryInfo->colList;
-    pNewQueryInfo->colList = NULL;
+    pSupporter->colList = std::move(pNewQueryInfo->colList);
     
     pSupporter->exprList = pNewQueryInfo->exprList;
     pNewQueryInfo->exprList = NULL;
@@ -1520,7 +1494,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
       // set get tags query type
       TSDB_QUERY_SET_TYPE(pNewQueryInfo->type, TSDB_QUERY_TYPE_TAG_FILTER_QUERY);
       tscAddSpecialColumnForSelect(pNewQueryInfo, 0, TSDB_FUNC_TID_TAG, &colIndex, &s1, TSDB_COL_TAG);
-      size_t numOfCols = taosArrayGetSize(pNewQueryInfo->colList);
+      size_t numOfCols = pNewQueryInfo->colList.size();
   
       tscDebug(
           "%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%d, transfer to tid_tag query to retrieve (tableId, tags), "
@@ -1542,20 +1516,13 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
       }
 
       // add the filter tag column
-      if (pSupporter->colList != NULL) {
-        size_t s = taosArrayGetSize(pSupporter->colList);
-
-        for (int32_t i = 0; i < s; ++i) {
-          SColumn *pCol = (SColumn *)taosArrayGetP(pSupporter->colList, i);
-
-          if (pCol->numOfFilters > 0) {  // copy to the pNew->cmd.colList if it is filtered.
-            SColumn *p = tscColumnClone(pCol);
-            taosArrayPush(pNewQueryInfo->colList, &p);
-          }
+      for (const auto& pCol : pSupporter->colList) {
+        if (pCol.filterInfo.size() > 0) {  // copy to the pNew->cmd.colList if it is filtered.
+          pNewQueryInfo->colList.push_back(pCol);
         }
       }
 
-      size_t numOfCols = taosArrayGetSize(pNewQueryInfo->colList);
+      size_t numOfCols = pNewQueryInfo->colList.size();
 
       tscDebug(
           "%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%u, transfer to ts_comp query to retrieve timestamps, "
@@ -1597,7 +1564,7 @@ void tscHandleMasterJoinQuery(SSqlObj* pSql) {
     
     code = tscCreateJoinSubquery(pSql, i, pSupporter);
     if (code != TSDB_CODE_SUCCESS) {  // failed to create subquery object, quit query
-      tscDestroyJoinSupporter(pSupporter);
+      delete pSupporter;
       goto _error;
     }
 

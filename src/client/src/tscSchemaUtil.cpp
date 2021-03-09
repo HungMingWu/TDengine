@@ -41,7 +41,7 @@ int32_t STableMeta::numOfColumns() const {
 }
 
 const SSchema* STableMeta::getSchema() const {
-  return schema;
+  return &schema[0];
 }
 
 const SSchema* STableMeta::getTagSchema() const {
@@ -73,7 +73,7 @@ STableMeta* tscCreateTableMetaFromMsg(STableMetaMsg* pTableMetaMsg) {
   assert(pTableMetaMsg != NULL && pTableMetaMsg->numOfColumns >= 2 && pTableMetaMsg->numOfTags >= 0);
   
   int32_t schemaSize = (pTableMetaMsg->numOfColumns + pTableMetaMsg->numOfTags) * sizeof(SSchema);
-  STableMeta* pTableMeta = (STableMeta*)calloc(1, sizeof(STableMeta) + schemaSize);
+  auto    pTableMeta = new STableMeta;
 
   pTableMeta->tableType = pTableMetaMsg->tableType;
   pTableMeta->vgId      = pTableMetaMsg->vgroup.vgId;
@@ -90,8 +90,8 @@ STableMeta* tscCreateTableMetaFromMsg(STableMetaMsg* pTableMetaMsg) {
   pTableMeta->sversion = pTableMetaMsg->sversion;
   pTableMeta->tversion = pTableMetaMsg->tversion;
   pTableMeta->sTableName = pTableMetaMsg->sTableName;
-  
-  memcpy(pTableMeta->schema, pTableMetaMsg->schema, schemaSize);
+  pTableMeta->schema.resize(pTableMetaMsg->numOfColumns + pTableMetaMsg->numOfTags);
+  memcpy(&pTableMeta->schema[0], pTableMetaMsg->schema, schemaSize);
   
   int32_t numOfTotalCols = pTableMeta->tableInfo.numOfColumns;
   for(int32_t i = 0; i < numOfTotalCols; ++i) {

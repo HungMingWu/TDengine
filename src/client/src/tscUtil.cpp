@@ -1103,21 +1103,21 @@ int32_t tscSqlExprCopy(SArray* dst, const SArray* src, uint64_t uid, bool deepco
   return 0;
 }
 
-SColumn* tscColumnListInsert(SArray* pColumnList, SColumnIndex* pColIndex) {
+SColumn* tscColumnListInsert(std::vector<SColumn>& pColumnList, SColumnIndex* pColIndex) {
   // ignore the tbname columnIndex to be inserted into source list
   if (pColIndex->columnIndex < 0) {
     return NULL;
   }
   
-  size_t numOfCols = taosArrayGetSize(pColumnList);
+  size_t numOfCols = pColumnList.size();
   int16_t col = pColIndex->columnIndex;
 
   int32_t i = 0;
   while (i < numOfCols) {
-    SColumn* pCol = (SColumn*)taosArrayGetP(pColumnList, i);
-    if (pCol->colIndex.columnIndex < col) {
+    const auto &pCol = pColumnList[i];
+    if (pCol.colIndex.columnIndex < col) {
       i++;
-    } else if (pCol->colIndex.tableIndex < pColIndex->tableIndex) {
+    } else if (pCol.colIndex.tableIndex < pColIndex->tableIndex) {
       i++;
     } else {
       break;
@@ -1125,85 +1125,30 @@ SColumn* tscColumnListInsert(SArray* pColumnList, SColumnIndex* pColIndex) {
   }
 
   if (i >= numOfCols || numOfCols == 0) {
-    auto b = new SColumn;
-    if (b == NULL) {
-      return NULL;
-    }
-
-    b->colIndex = *pColIndex;
-    taosArrayInsert(pColumnList, i, &b);
+    pColumnList.push_back({*pColIndex});
   } else {
-    SColumn* pCol = (SColumn*)taosArrayGetP(pColumnList, i);
+    const auto &pCol = pColumnList[i];
   
-    if (i < numOfCols && (pCol->colIndex.columnIndex > col || pCol->colIndex.tableIndex != pColIndex->tableIndex)) {
-      auto b = new SColumn;
-      if (b == NULL) {
-        return NULL;
-      }
-
-      b->colIndex = *pColIndex;
-      taosArrayInsert(pColumnList, i, &b);
+    if (i < numOfCols && (pCol.colIndex.columnIndex > col || pCol.colIndex.tableIndex != pColIndex->tableIndex)) {
+      pColumnList.insert(pColumnList.begin() + i, {*pColIndex});
     }
   }
 
-  return (SColumn*)taosArrayGetP(pColumnList, i);
+  return &pColumnList[i];
 }
 
-static void destroyFilterInfo(SColumnFilterInfo* pFilterInfo, int32_t numOfFilters) {
-  for(int32_t i = 0; i < numOfFilters; ++i) {
-    if (pFilterInfo[i].filterstr) {
-      tfree(pFilterInfo[i].pz);
+SColumnFilterInfo::~SColumnFilterInfo() {
+  if (filterstr) {
+    tfree(pz);
+  }
+}
+
+void tscColumnListCopy(std::vector<SColumn>& dst, const std::vector<SColumn> &src, int16_t tableIndex) { 
+  for (const auto &pCol : src) {
+    if (pCol.colIndex.tableIndex == tableIndex || tableIndex < 0) {
+      dst.push_back(pCol);
     }
   }
-  
-  tfree(pFilterInfo);
-}
-
-SColumn* tscColumnClone(const SColumn* src) {
-  assert(src != NULL);
-  
-  auto dst = new SColumn;
-  if (dst == NULL) {
-    return NULL;
-  }
-
-  dst->colIndex     = src->colIndex;
-  dst->numOfFilters = src->numOfFilters;
-  dst->filterInfo   = tscFilterInfoClone(src->filterInfo, src->numOfFilters);
-  
-  return dst;
-}
-
-SColumn::~SColumn() {
-  destroyFilterInfo(filterInfo, numOfFilters);
-}
-
-void tscColumnListCopy(SArray* dst, const SArray* src, int16_t tableIndex) {
-  assert(src != NULL && dst != NULL);
-  
-  size_t num = taosArrayGetSize(src);
-  for (int32_t i = 0; i < num; ++i) {
-    SColumn* pCol = (SColumn*)taosArrayGetP(src, i);
-
-    if (pCol->colIndex.tableIndex == tableIndex || tableIndex < 0) {
-      SColumn* p = tscColumnClone(pCol);
-      taosArrayPush(dst, &p);
-    }
-  }
-}
-
-void tscColumnListDestroy(SArray* pColumnList) {
-  if (pColumnList == NULL) {
-    return;
-  }
-
-  size_t num = taosArrayGetSize(pColumnList);
-  for (int32_t i = 0; i < num; ++i) {
-    SColumn* pCol = (SColumn*)taosArrayGetP(pColumnList, i);
-    delete pCol;
-  }
-
-  taosArrayDestroy(pColumnList);
 }
 
 /*
@@ -1505,7 +1450,6 @@ void tscInitQueryInfo(SQueryInfo* pQueryInfo) {
   
   assert(pQueryInfo->exprList == NULL);
   pQueryInfo->exprList   = (SArray*)taosArrayInit(4, POINTER_BYTES);
-  pQueryInfo->colList    = (SArray*)taosArrayInit(4, POINTER_BYTES);
   pQueryInfo->udColumnId = TSDB_UD_COLUMN_INDEX;
   pQueryInfo->resColumnId= -1000;
 }
@@ -1542,8 +1486,7 @@ static void freeQueryInfoImpl(SQueryInfo* pQueryInfo) {
   tscSqlExprInfoDestroy(pQueryInfo->exprList);
   pQueryInfo->exprList = NULL;
 
-  tscColumnListDestroy(pQueryInfo->colList);
-  pQueryInfo->colList = NULL;  
+  pQueryInfo->colList.clear();  
   pQueryInfo->tsBuf = (STSBuf*)tsBufDestroy(pQueryInfo->tsBuf);
 
   tfree(pQueryInfo->fillVal);
@@ -1632,7 +1575,7 @@ void clearAllTableMetaInfo(SQueryInfo* pQueryInfo) {
 }
 
 STableMetaInfo* tscAddTableMetaInfo(SQueryInfo* pQueryInfo, const char* name, STableMeta* pTableMeta,
-                                    SVgroupsInfo* vgroupList, SArray* pTagCols, SArray* pVgroupTables) {
+                                    SVgroupsInfo* vgroupList, const std::vector<SColumn> *pTagCols, SArray* pVgroupTables) {
   void* pAlloc = realloc(pQueryInfo->pTableMetaInfo, (pQueryInfo->numOfTables + 1) * POINTER_BYTES);
   if (pAlloc == NULL) {
     terrno = TSDB_CODE_TSC_OUT_OF_MEMORY;
@@ -1658,14 +1601,8 @@ STableMetaInfo* tscAddTableMetaInfo(SQueryInfo* pQueryInfo, const char* name, ST
     pTableMetaInfo->vgroupList = tscVgroupInfoClone(vgroupList);
   }
 
-  // TODO handle malloc failure
-  pTableMetaInfo->tagColList = (SArray*)taosArrayInit(4, POINTER_BYTES);
-  if (pTableMetaInfo->tagColList == NULL) {
-    return NULL;
-  }
-
   if (pTagCols != NULL) {
-    tscColumnListCopy(pTableMetaInfo->tagColList, pTagCols, -1);
+    tscColumnListCopy(pTableMetaInfo->tagColList, *pTagCols, -1);
   }
 
   pTableMetaInfo->pVgroupTables = tscVgroupTableInfoClone(pVgroupTables);
@@ -1686,8 +1623,7 @@ void tscClearTableMetaInfo(STableMetaInfo* pTableMetaInfo) {
   tfree(pTableMetaInfo->pTableMeta);
 
   pTableMetaInfo->vgroupList = (SVgroupsInfo*)tscVgroupInfoClear(pTableMetaInfo->vgroupList);
-  tscColumnListDestroy(pTableMetaInfo->tagColList);
-  pTableMetaInfo->tagColList = NULL;
+  pTableMetaInfo->tagColList.clear();
 }
 
 void tscResetForNextRetrieve(SSqlRes* pRes) {
@@ -1893,13 +1829,13 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
     assert(pTableMeta != NULL);
 
     pFinalInfo = tscAddTableMetaInfo(pNewQueryInfo, name, pTableMeta, pTableMetaInfo->vgroupList,
-                                     pTableMetaInfo->tagColList, pTableMetaInfo->pVgroupTables);
+                                     &pTableMetaInfo->tagColList, pTableMetaInfo->pVgroupTables);
   } else {  // transfer the ownership of pTableMeta to the newly create sql object.
     STableMetaInfo* pPrevInfo = pPrevSql->cmd.getMetaInfo(pPrevSql->cmd.clauseIndex, 0);
 
     STableMeta*  pPrevTableMeta = tscTableMetaClone(pPrevInfo->pTableMeta);
     SVgroupsInfo* pVgroupsInfo = pPrevInfo->vgroupList;
-    pFinalInfo = tscAddTableMetaInfo(pNewQueryInfo, name, pPrevTableMeta, pVgroupsInfo, pTableMetaInfo->tagColList,
+    pFinalInfo = tscAddTableMetaInfo(pNewQueryInfo, name, pPrevTableMeta, pVgroupsInfo, &pTableMetaInfo->tagColList,
         pTableMetaInfo->pVgroupTables);
   }
 
@@ -1924,7 +1860,7 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
   }
 
   if (cmd == TSDB_SQL_SELECT) {
-    size_t size = taosArrayGetSize(pNewQueryInfo->colList);
+    size_t size = pNewQueryInfo->colList.size();
     
     tscDebug(
         "%p new subquery:%p, tableIndex:%d, vgroupIndex:%d, type:%d, exprInfo:%" PRIzu ", colList:%" PRIzu ","
@@ -2371,7 +2307,7 @@ STableMeta* createSuperTableMeta(STableMetaMsg* pChild) {
   assert(pChild != NULL);
   int32_t total = pChild->numOfColumns + pChild->numOfTags;
 
-  STableMeta* pTableMeta = (STableMeta*)calloc(1, sizeof(STableMeta) + sizeof(SSchema) * total);
+  auto pTableMeta = new STableMeta;
   pTableMeta->tableType = TSDB_SUPER_TABLE;
   pTableMeta->tableInfo.numOfTags = pChild->numOfTags;
   pTableMeta->tableInfo.numOfColumns = pChild->numOfColumns;
@@ -2381,8 +2317,8 @@ STableMeta* createSuperTableMeta(STableMetaMsg* pChild) {
   pTableMeta->id.uid = pChild->suid;
   pTableMeta->tversion = pChild->tversion;
   pTableMeta->sversion = pChild->sversion;
-
-  memcpy(pTableMeta->schema, pChild->schema, sizeof(SSchema) * total);
+  pTableMeta->schema.resize(total);
+  memcpy(&pTableMeta->schema[0], pChild->schema, sizeof(SSchema) * total);
 
   int32_t num = pTableMeta->tableInfo.numOfColumns;
   for(int32_t i = 0; i < num; ++i) {
@@ -2413,7 +2349,7 @@ int32_t tscCreateTableMetaFromCChildMeta(STableMeta* pChild, const char* name) {
     memcpy(&pChild->tableInfo, &p->tableInfo, sizeof(STableInfo));
     int32_t total = pChild->tableInfo.numOfColumns + pChild->tableInfo.numOfTags;
 
-    memcpy(pChild->schema, p->schema, sizeof(SSchema) *total);
+    memcpy(&pChild->schema[0], &p->schema[0], sizeof(SSchema) *total);
 
     tfree(p);
     return TSDB_CODE_SUCCESS;

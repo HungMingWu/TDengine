@@ -1490,10 +1490,6 @@ int32_t parseSelectClause(SSqlCmd* pCmd, int32_t clauseIndex, tSQLExprList* pSel
 
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(pCmd, clauseIndex);
 
-  if (pQueryInfo->colList == NULL) {
-    pQueryInfo->colList = (SArray*)taosArrayInit(4, POINTER_BYTES);
-  }
-
   for (int32_t i = 0; i < pSelection->nExpr; ++i) {
     int32_t outputIndex = (int32_t)tscSqlExprNumOfExprs(pQueryInfo);
     tSqlExprItem* pItem = &pSelection->a[i];
@@ -1532,7 +1528,7 @@ int32_t parseSelectClause(SSqlCmd* pCmd, int32_t clauseIndex, tSQLExprList* pSel
   }
 
   // there is only one user-defined column in the final result field, add the timestamp column.
-  size_t numOfSrcCols = taosArrayGetSize(pQueryInfo->colList);
+  size_t numOfSrcCols = pQueryInfo->colList.size();
   if (numOfSrcCols <= 0 && !tscQueryTags(pQueryInfo)) {
     addPrimaryTsColIntoResult(pQueryInfo);
   }
@@ -2884,10 +2880,6 @@ int32_t parseGroupbyClause(SQueryInfo* pQueryInfo, SArray* pList, SSqlCmd* pCmd)
   if (pList == NULL) {
     return TSDB_CODE_SUCCESS;
   }
-
-  if (pQueryInfo->colList == NULL) {
-    pQueryInfo->colList = (SArray*)taosArrayInit(4, POINTER_BYTES);
-  }
   
   auto numOfGroupCols = (int16_t)taosArrayGetSize(pList);
   if (numOfGroupCols > TSDB_MAX_TAGS) {
@@ -2981,28 +2973,6 @@ int32_t parseGroupbyClause(SQueryInfo* pQueryInfo, SArray* pList, SSqlCmd* pCmd)
 
   pQueryInfo->groupbyExpr.tableIndex = tableIndex;
   return TSDB_CODE_SUCCESS;
-}
-
-static SColumnFilterInfo* addColumnFilterInfo(SColumn* pColumn) {
-  if (pColumn == NULL) {
-    return NULL;
-  }
-
-  int32_t size = pColumn->numOfFilters + 1;
-
-  char* tmp = (char*) realloc((void*)(pColumn->filterInfo), sizeof(SColumnFilterInfo) * (size));
-  if (tmp != NULL) {
-    pColumn->filterInfo = (SColumnFilterInfo*)tmp;
-  } else {
-    return NULL;
-  }
-
-  pColumn->numOfFilters++;
-
-  SColumnFilterInfo* pColFilterInfo = &pColumn->filterInfo[pColumn->numOfFilters - 1];
-  memset(pColFilterInfo, 0, sizeof(SColumnFilterInfo));
-
-  return pColFilterInfo;
 }
 
 static int32_t doExtractColumnFilterInfo(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, SColumnFilterInfo* pColumnFilter,
@@ -3282,21 +3252,18 @@ static int32_t extractColumnFilterInfo(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, SC
    */
   if (sqlOptr == TK_AND) {
     // this is a new filter condition on this column
-    if (pColumn->numOfFilters == 0) {
-      pColFilter = addColumnFilterInfo(pColumn);
+    if (pColumn->filterInfo.empty()) {
+      pColumn->filterInfo.emplace_back();
+      pColFilter = &pColumn->filterInfo.back();
     } else {  // update the existed column filter information, find the filter info here
       pColFilter = &pColumn->filterInfo[0];
     }
 
-    if (pColFilter == NULL) {
-      return TSDB_CODE_TSC_OUT_OF_MEMORY;
-    }
   } else if (sqlOptr == TK_OR) {
     // TODO fixme: failed to invalid the filter expression: "col1 = 1 OR col2 = 2"
-    pColFilter = addColumnFilterInfo(pColumn);
-    if (pColFilter == NULL) {
-      return TSDB_CODE_TSC_OUT_OF_MEMORY;
-    }
+    pColumn->filterInfo.emplace_back();
+    pColFilter = &pColumn->filterInfo.back();
+
   } else {  // error;
     return TSDB_CODE_TSC_INVALID_SQL;
   }
@@ -4091,18 +4058,11 @@ static int32_t setTableCondForSTableQuery(SSqlCmd* pCmd, SQueryInfo* pQueryInfo,
   return TSDB_CODE_SUCCESS;
 }
 
-static bool validateFilterExpr(SQueryInfo* pQueryInfo) {
-  SArray* pColList = pQueryInfo->colList;
-  
-  size_t num = taosArrayGetSize(pColList);
-  
-  for (int32_t i = 0; i < num; ++i) {
-    SColumn* pCol = (SColumn*)taosArrayGetP(pColList, i);
-
-    for (int32_t j = 0; j < pCol->numOfFilters; ++j) {
-      SColumnFilterInfo* pColFilter = &pCol->filterInfo[j];
-      int32_t            lowerOptr = pColFilter->lowerRelOptr;
-      int32_t            upperOptr = pColFilter->upperRelOptr;
+static bool validateFilterExpr(SQueryInfo* pQueryInfo) { 
+  for (const auto& pCol : pQueryInfo->colList) {
+    for (const auto& pColFilter : pCol.filterInfo) {
+      int32_t            lowerOptr = pColFilter.lowerRelOptr;
+      int32_t            upperOptr = pColFilter.upperRelOptr;
 
       if ((lowerOptr == TSDB_RELATION_GREATER_EQUAL || lowerOptr == TSDB_RELATION_GREATER) &&
           (upperOptr == TSDB_RELATION_LESS_EQUAL || upperOptr == TSDB_RELATION_LESS)) {
@@ -6805,10 +6765,8 @@ int32_t exprTreeFromSqlExpr(SSqlCmd* pCmd, tExprNode **pExpr, const tSQLExpr* pS
 }
 
 bool hasNormalColumnFilter(SQueryInfo* pQueryInfo) {
-  size_t numOfCols = taosArrayGetSize(pQueryInfo->colList);
-  for (int32_t i = 0; i < numOfCols; ++i) {
-    SColumn* pCol = (SColumn*)taosArrayGetP(pQueryInfo->colList, i);
-    if (pCol->numOfFilters > 0) {
+  for (const auto &pCol : pQueryInfo->colList) {
+    if (pCol.filterInfo.size() > 0) {
       return true;
     }
   }
