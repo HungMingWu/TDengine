@@ -346,7 +346,7 @@ int taos_num_fields(TAOS_RES *res) {
 
   size_t numOfCols = tscNumOfFields(pQueryInfo);
   for(int32_t i = 0; i < numOfCols; ++i) {
-    SInternalField* pInfo = (SInternalField*)taosArrayGet(pQueryInfo->fieldsInfo.internalField, i);
+    SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[i];
     if (pInfo->visible) {
       num++;
     }
@@ -386,11 +386,11 @@ TAOS_FIELD *taos_fetch_fields(TAOS_RES *res) {
   SFieldInfo *pFieldInfo = &pQueryInfo->fieldsInfo;
 
   if (pFieldInfo->final == NULL) {
-    TAOS_FIELD* f = (TAOS_FIELD*)calloc(pFieldInfo->numOfOutput, sizeof(TAOS_FIELD));
+    TAOS_FIELD* f = (TAOS_FIELD*)calloc(pFieldInfo->internalField.size(), sizeof(TAOS_FIELD));
 
     int32_t j = 0;
-    for(int32_t i = 0; i < pFieldInfo->numOfOutput; ++i) {
-      SInternalField* pField = tscFieldInfoGetInternalField(pFieldInfo, i);
+    for (int32_t i = 0; i < pFieldInfo->internalField.size(); ++i) {
+      SInternalField* pField = &pFieldInfo->internalField[i];
       if (pField->visible) {
         f[j] = pField->field;
 
@@ -739,7 +739,7 @@ bool taos_is_null(TAOS_RES *res, int32_t row, int32_t col) {
     return true;
   }
 
-  SInternalField* pInfo = (SInternalField*)TARRAY_GET_ELEM(pQueryInfo->fieldsInfo.internalField, col);
+  SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[col];
   if (col < 0 || col >= tscNumOfFields(pQueryInfo) || row < 0 || row > pSql->res.numOfRows) {
     return true;
   }

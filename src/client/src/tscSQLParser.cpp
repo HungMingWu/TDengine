@@ -1388,7 +1388,7 @@ static int32_t handleArithmeticExpr(SSqlCmd* pCmd, int32_t clauseIndex, int32_t 
     insertResultField(pQueryInfo, exprIndex, &columnList, sizeof(double), TSDB_DATA_TYPE_DOUBLE, aliasName, NULL);
 
     int32_t slot = tscNumOfFields(pQueryInfo) - 1;
-    SInternalField* pInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, slot);
+    SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[slot];
 
     if (pInfo->pSqlExpr == NULL) {
       SExprInfo* pArithExprInfo = (SExprInfo*)calloc(1, sizeof(SExprInfo));
@@ -1475,7 +1475,7 @@ static void addPrimaryTsColIntoResult(SQueryInfo* pQueryInfo) {
   int32_t numOfCols = (int32_t)tscSqlExprNumOfExprs(pQueryInfo);
   tscAddSpecialColumnForSelect(pQueryInfo, numOfCols, TSDB_FUNC_PRJ, &index, pSchema, TSDB_COL_NORMAL);
 
-  SInternalField* pSupInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, numOfCols);
+  SInternalField* pSupInfo = &pQueryInfo->fieldsInfo.internalField[numOfCols];
   pSupInfo->visible = false;
 
   pQueryInfo->type |= TSDB_QUERY_TYPE_PROJECTION_QUERY;
@@ -1522,7 +1522,7 @@ int32_t parseSelectClause(SSqlCmd* pCmd, int32_t clauseIndex, tSQLExprList* pSel
       return invalidSqlErrMsg(pCmd->payload, msg3);
     }
 
-    if (pQueryInfo->fieldsInfo.numOfOutput > TSDB_MAX_COLUMNS) {
+    if (pQueryInfo->fieldsInfo.internalField.size() > TSDB_MAX_COLUMNS) {
       return TSDB_CODE_TSC_INVALID_SQL;
     }
   }
@@ -1568,9 +1568,9 @@ int32_t insertResultField(SQueryInfo* pQueryInfo, int32_t outputIndex, SColumnLi
   }
   
   TAOS_FIELD f = tscCreateField(type, fieldName, bytes);
-  SInternalField* pInfo = tscFieldInfoInsert(&pQueryInfo->fieldsInfo, outputIndex, &f);
-  pInfo->pSqlExpr = pSqlExpr;
-  
+  pQueryInfo->fieldsInfo.internalField.insert(
+      pQueryInfo->fieldsInfo.internalField.begin() + outputIndex, {f, pSqlExpr});
+
   return TSDB_CODE_SUCCESS;
 }
 
@@ -4420,8 +4420,8 @@ int32_t getTimeRange(STimeWindow* win, tSQLExpr* pRight, int32_t optr, int16_t t
 int32_t tsRewriteFieldNameIfNecessary(SSqlCmd* pCmd, SQueryInfo* pQueryInfo) {
   const char rep[] = {'(', ')', '*', ',', '.', '/', '\\', '+', '-', '%', ' '};
 
-  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-    char* fieldName = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i)->name;
+  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
+    char* fieldName = pQueryInfo->fieldsInfo.internalField[i].field.name;
     for (int32_t j = 0; j < (TSDB_COL_NAME_LEN - 1) && fieldName[j] != 0; ++j) {
       for (int32_t k = 0; k < tListLen(rep); ++k) {
         if (fieldName[j] == rep[k]) {
@@ -4435,10 +4435,10 @@ int32_t tsRewriteFieldNameIfNecessary(SSqlCmd* pCmd, SQueryInfo* pQueryInfo) {
   }
 
   // the column name may be identical, here check again
-  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-    char* fieldName = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i)->name;
-    for (int32_t j = i + 1; j < pQueryInfo->fieldsInfo.numOfOutput; ++j) {
-      if (strncasecmp(fieldName, tscFieldInfoGetField(&pQueryInfo->fieldsInfo, j)->name, (TSDB_COL_NAME_LEN - 1)) == 0) {
+  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
+    char* fieldName = pQueryInfo->fieldsInfo.internalField[i].field.name;
+    for (int32_t j = i + 1; j < pQueryInfo->fieldsInfo.internalField.size(); ++j) {
+      if (strncasecmp(fieldName, pQueryInfo->fieldsInfo.internalField[j].field.name, (TSDB_COL_NAME_LEN - 1)) == 0) {
         const char* msg = "duplicated column name in new table";
         return invalidSqlErrMsg(pCmd->payload, msg);
       }
@@ -4477,7 +4477,7 @@ int32_t parseFillClause(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, SQuerySQL* pQuery
   } else if (strncasecmp(pItem->pVar.pz, "null", 4) == 0 && pItem->pVar.nLen == 4) {
     pQueryInfo->fillType = TSDB_FILL_NULL;
     for (int32_t i = START_INTERPO_COL_IDX; i < size; ++i) {
-      TAOS_FIELD* pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+      TAOS_FIELD* pField = &pQueryInfo->fieldsInfo.internalField[i].field;
       setNull((char*)&pQueryInfo->fillVal[i], pField->type, pField->bytes);
     }
   } else if (strncasecmp(pItem->pVar.pz, "prev", 4) == 0 && pItem->pVar.nLen == 4) {
@@ -4511,7 +4511,7 @@ int32_t parseFillClause(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, SQuerySQL* pQuery
     int32_t j = 1;
 
     for (int32_t i = startPos; i < numOfFillVal; ++i, ++j) {
-      TAOS_FIELD* pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+      TAOS_FIELD* pField = &pQueryInfo->fieldsInfo.internalField[i].field;
 
       if (pField->type == TSDB_DATA_TYPE_BINARY || pField->type == TSDB_DATA_TYPE_NCHAR) {
         setVardataNull((char*) &pQueryInfo->fillVal[i], pField->type);
@@ -4529,7 +4529,7 @@ int32_t parseFillClause(SSqlCmd* pCmd, SQueryInfo* pQueryInfo, SQuerySQL* pQuery
       tVariantListItem* lastItem = (tVariantListItem*)taosArrayGetLast(pFillToken);
 
       for (int32_t i = numOfFillVal; i < size; ++i) {
-        TAOS_FIELD* pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+        TAOS_FIELD* pField = &pQueryInfo->fieldsInfo.internalField[i].field;
 
         if (pField->type == TSDB_DATA_TYPE_BINARY || pField->type == TSDB_DATA_TYPE_NCHAR) {
           setVardataNull((char*) &pQueryInfo->fillVal[i], pField->type);
@@ -4810,7 +4810,7 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       return TSDB_CODE_TSC_INVALID_SQL;
     }
   
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, p);
+    pQueryInfo->fieldsInfo.internalField.push_back({*p});
   } else if (pAlterSQL->type == TSDB_ALTER_TABLE_DROP_TAG_COLUMN) {
     if (pTableMeta->numOfTags() == 1) {
       return invalidSqlErrMsg(pCmd->payload, msg7);
@@ -4847,7 +4847,7 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
     strncpy(name1, pItem->pVar.pz, pItem->pVar.nLen);
   
     TAOS_FIELD f = tscCreateField(TSDB_DATA_TYPE_INT, name1, tDataTypes[TSDB_DATA_TYPE_INT].bytes);
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+    pQueryInfo->fieldsInfo.internalField.push_back({f});
   } else if (pAlterSQL->type == TSDB_ALTER_TABLE_CHANGE_TAG_COLUMN) {
     SArray* pVarList = pAlterSQL->varList;
     if (taosArrayGetSize(pVarList) > 2) {
@@ -4889,14 +4889,14 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
     char name[TSDB_COL_NAME_LEN] = {0};
     strncpy(name, pItem->pVar.pz, pItem->pVar.nLen);
     TAOS_FIELD f = tscCreateField(TSDB_DATA_TYPE_INT, name, tDataTypes[TSDB_DATA_TYPE_INT].bytes);
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+    pQueryInfo->fieldsInfo.internalField.push_back({f});
 
     pItem = (tVariantListItem*)taosArrayGet(pVarList, 1);
     memset(name, 0, tListLen(name));
 
     strncpy(name, pItem->pVar.pz, pItem->pVar.nLen);
     f = tscCreateField(TSDB_DATA_TYPE_INT, name, tDataTypes[TSDB_DATA_TYPE_INT].bytes);
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+    pQueryInfo->fieldsInfo.internalField.push_back({f});
   } else if (pAlterSQL->type == TSDB_ALTER_TABLE_UPDATE_TAG_VAL) {
     // Note: update can only be applied to table not super table.
     // the following is used to handle tags value for table created according to super table
@@ -4991,7 +4991,7 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
       return TSDB_CODE_TSC_INVALID_SQL;
     }
   
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, p);
+     pQueryInfo->fieldsInfo.internalField.push_back({*p});
   } else if (pAlterSQL->type == TSDB_ALTER_TABLE_DROP_COLUMN) {
     if (pTableMeta->numOfColumns() == TSDB_MIN_COLUMNS) {  //
       return invalidSqlErrMsg(pCmd->payload, msg15);
@@ -5020,7 +5020,7 @@ int32_t setAlterTableInfo(SSqlObj* pSql, struct SSqlInfo* pInfo) {
     char name1[TSDB_COL_NAME_LEN] = {0};
     tstrncpy(name1, pItem->pVar.pz, sizeof(name1));
     TAOS_FIELD f = tscCreateField(TSDB_DATA_TYPE_INT, name1, tDataTypes[TSDB_DATA_TYPE_INT].bytes);
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+    pQueryInfo->fieldsInfo.internalField.push_back({f});
   }
 
   return TSDB_CODE_SUCCESS;
@@ -5514,7 +5514,7 @@ void doAddGroupColumnForSubquery(SQueryInfo* pQueryInfo, const SColIndex &col) {
   tscAddSpecialColumnForSelect(pQueryInfo, (int32_t)size, TSDB_FUNC_PRJ, &colIndex, pSchema, TSDB_COL_NORMAL);
 
   int32_t numOfFields = tscNumOfFields(pQueryInfo);
-  SInternalField* pInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, numOfFields - 1);
+  SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[numOfFields - 1];
 
   doLimitOutputNormalColOfGroupby(pInfo->pSqlExpr);
   pInfo->visible = false;
@@ -6132,7 +6132,7 @@ int32_t doCheckForCreateTable(SSqlObj* pSql, int32_t subClauseIndex, SSqlInfo* p
 
   for (; col < numOfFields; ++col) {
     TAOS_FIELD* p = (TAOS_FIELD*)taosArrayGet(pFieldList, col);
-    tscFieldInfoAppend(&pQueryInfo->fieldsInfo, p);
+    pQueryInfo->fieldsInfo.internalField.push_back({*p});
   }
 
   pCmd->numOfCols = (int16_t)numOfFields;
@@ -6141,7 +6141,7 @@ int32_t doCheckForCreateTable(SSqlObj* pSql, int32_t subClauseIndex, SSqlInfo* p
     size_t numOfTags = taosArrayGetSize(pTagList);
     for (int32_t i = 0; i < numOfTags; ++i) {
       TAOS_FIELD* p = (TAOS_FIELD*)taosArrayGet(pTagList, i);
-      tscFieldInfoAppend(&pQueryInfo->fieldsInfo, p);
+      pQueryInfo->fieldsInfo.internalField.push_back({*p});
     }
 
     pCmd->count =(int32_t) numOfTags;
@@ -6357,7 +6357,7 @@ int32_t doCheckForStream(SSqlObj* pSql, SSqlInfo* pInfo) {
     return TSDB_CODE_TSC_INVALID_SQL;
   }
 
-  pCmd->numOfCols = pQueryInfo->fieldsInfo.numOfOutput;
+  pCmd->numOfCols = pQueryInfo->fieldsInfo.internalField.size();
 
   if (validateSqlFunctionInStreamSql(pCmd, pQueryInfo) != TSDB_CODE_SUCCESS) {
     return TSDB_CODE_TSC_INVALID_SQL;
@@ -6382,7 +6382,7 @@ int32_t doCheckForStream(SSqlObj* pSql, SSqlInfo* pInfo) {
   }
 
   // set the number of stream table columns
-  pCmd->numOfCols = pQueryInfo->fieldsInfo.numOfOutput;
+  pCmd->numOfCols = pQueryInfo->fieldsInfo.internalField.size();
   return TSDB_CODE_SUCCESS;
 }
 

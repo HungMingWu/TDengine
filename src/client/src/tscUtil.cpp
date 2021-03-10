@@ -213,7 +213,7 @@ bool tscIsSecondStageQuery(SQueryInfo* pQueryInfo) {
 
   size_t numOfOutput = tscNumOfFields(pQueryInfo);
   for(int32_t i = 0; i < numOfOutput; ++i) {
-    SExprInfo* pExprInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, i)->pArithExprInfo;
+    SExprInfo* pExprInfo = pQueryInfo->fieldsInfo.internalField[i].pArithExprInfo;
     if (pExprInfo != NULL) {
       return true;
     }
@@ -250,7 +250,7 @@ void tscClearInterpInfo(SQueryInfo* pQueryInfo) {
 
 int32_t tscCreateResPointerInfo(SSqlRes* pRes, SQueryInfo* pQueryInfo) {
   if (pRes->tsrow == NULL) {
-    pRes->numOfCols = pQueryInfo->fieldsInfo.numOfOutput;
+    pRes->numOfCols = pQueryInfo->fieldsInfo.internalField.size();
 
     pRes->tsrow  = (TAOS_ROW)calloc(pRes->numOfCols, POINTER_BYTES);
     pRes->urow   = (TAOS_ROW)calloc(pRes->numOfCols, POINTER_BYTES);
@@ -278,7 +278,7 @@ void tscSetResRawPtr(SSqlRes* pRes, SQueryInfo* pQueryInfo) {
   int32_t offset = 0;
 
   for (int32_t i = 0; i < pRes->numOfCols; ++i) {
-    SInternalField* pInfo = (SInternalField*)TARRAY_GET_ELEM(pQueryInfo->fieldsInfo.internalField, i);
+    SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[i];
 
     pRes->urow[i] = pRes->data + offset * pRes->numOfRows;
     pRes->length[i] = pInfo->field.bytes;
@@ -833,28 +833,6 @@ TAOS_FIELD tscCreateField(int8_t type, const char* name, int16_t bytes) {
   return f;
 }
 
-SInternalField* tscFieldInfoAppend(SFieldInfo* pFieldInfo, TAOS_FIELD* pField) {
-  assert(pFieldInfo != NULL);
-  pFieldInfo->numOfOutput++;
-  
-  struct SInternalField info;
-  info.pSqlExpr = NULL;
-  info.pArithExprInfo = NULL;
-  info.visible = true;
-  info.field = *pField;
-  return (SInternalField*)taosArrayPush(pFieldInfo->internalField, &info);
-}
-
-SInternalField* tscFieldInfoInsert(SFieldInfo* pFieldInfo, int32_t index, TAOS_FIELD* field) {
-  pFieldInfo->numOfOutput++;
-  struct SInternalField info;
-  info.pSqlExpr = NULL;
-  info.pArithExprInfo = NULL;
-  info.visible = true;
-  info.field = *field;
-  return (SInternalField*)taosArrayInsert(pFieldInfo->internalField, index, &info);
-}
-
 void tscFieldInfoUpdateOffset(SQueryInfo* pQueryInfo) {
   size_t numOfExprs = tscSqlExprNumOfExprs(pQueryInfo);
   
@@ -869,18 +847,8 @@ void tscFieldInfoUpdateOffset(SQueryInfo* pQueryInfo) {
   }
 }
 
-SInternalField* tscFieldInfoGetInternalField(SFieldInfo* pFieldInfo, int32_t index) {
-  assert(index < pFieldInfo->numOfOutput);
-  return (SInternalField*)TARRAY_GET_ELEM(pFieldInfo->internalField, index);
-}
-
-TAOS_FIELD* tscFieldInfoGetField(SFieldInfo* pFieldInfo, int32_t index) {
-  assert(index < pFieldInfo->numOfOutput);
-  return &((SInternalField*)TARRAY_GET_ELEM(pFieldInfo->internalField, index))->field;
-}
-
 int16_t tscFieldInfoGetOffset(SQueryInfo* pQueryInfo, int32_t index) {
-  SInternalField* pInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, index);
+  SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[index];
   assert(pInfo != NULL && pInfo->pSqlExpr != NULL);
 
   return pInfo->pSqlExpr->offset;
@@ -889,13 +857,13 @@ int16_t tscFieldInfoGetOffset(SQueryInfo* pQueryInfo, int32_t index) {
 int32_t tscFieldInfoCompare(const SFieldInfo* pFieldInfo1, const SFieldInfo* pFieldInfo2) {
   assert(pFieldInfo1 != NULL && pFieldInfo2 != NULL);
 
-  if (pFieldInfo1->numOfOutput != pFieldInfo2->numOfOutput) {
-    return pFieldInfo1->numOfOutput - pFieldInfo2->numOfOutput;
+  if (pFieldInfo1->internalField.size() != pFieldInfo2->internalField.size()) {
+    return pFieldInfo1->internalField.size() - pFieldInfo2->internalField.size();
   }
 
-  for (int32_t i = 0; i < pFieldInfo1->numOfOutput; ++i) {
-    TAOS_FIELD* pField1 = tscFieldInfoGetField((SFieldInfo*) pFieldInfo1, i);
-    TAOS_FIELD* pField2 = tscFieldInfoGetField((SFieldInfo*) pFieldInfo2, i);
+  for (int32_t i = 0; i < pFieldInfo1->internalField.size(); ++i) {
+    const TAOS_FIELD* pField1 = &pFieldInfo1->internalField[i].field;
+    const TAOS_FIELD* pField2 = &pFieldInfo2->internalField[i].field;
 
     if (pField1->type != pField2->type ||
         pField1->bytes != pField2->bytes ||
@@ -921,33 +889,25 @@ int32_t tscGetResRowLength(SArray* pExprList) {
   
   return size;
 }
+SInternalField::~SInternalField() 
+{
+  if (pArithExprInfo != NULL) {
+    tExprTreeDestroy(&pArithExprInfo->pExpr, NULL);
 
-void tscFieldInfoClear(SFieldInfo* pFieldInfo) {
-  if (pFieldInfo == NULL) {
-    return;
-  }
-
-  for(int32_t i = 0; i < pFieldInfo->numOfOutput; ++i) {
-    SInternalField* pInfo = (SInternalField*)taosArrayGet(pFieldInfo->internalField, i);
-    
-    if (pInfo->pArithExprInfo != NULL) {
-      tExprTreeDestroy(&pInfo->pArithExprInfo->pExpr, NULL);
-
-      SSqlFuncMsg* pFuncMsg = &pInfo->pArithExprInfo->base;
-      for(int32_t j = 0; j < pFuncMsg->numOfParams; ++j) {
-        if (pFuncMsg->arg[j].argType == TSDB_DATA_TYPE_BINARY) {
-          tfree(pFuncMsg->arg[j].argValue.pz);
-        }
+    SSqlFuncMsg* pFuncMsg = &pArithExprInfo->base;
+    for (int32_t j = 0; j < pFuncMsg->numOfParams; ++j) {
+      if (pFuncMsg->arg[j].argType == TSDB_DATA_TYPE_BINARY) {
+        tfree(pFuncMsg->arg[j].argValue.pz);
       }
-
-      tfree(pInfo->pArithExprInfo);
     }
-  }
-  
-  taosArrayDestroy(pFieldInfo->internalField);
-  tfree(pFieldInfo->final);
 
-  memset(pFieldInfo, 0, sizeof(SFieldInfo));
+    tfree(pArithExprInfo);
+  }
+}
+
+void SFieldInfo::clear() { 
+  internalField.clear();
+  tfree(final);
 }
 
 static SSqlExpr* doBuildSqlExpr(SQueryInfo* pQueryInfo, int16_t functionId, SColumnIndex* pColIndex, int16_t type,
@@ -1444,10 +1404,7 @@ STableMetaInfo* tscGetTableMetaInfoByUid(SQueryInfo* pQueryInfo, uint64_t uid, i
   return tscGetMetaInfo(pQueryInfo, k);
 }
 
-void tscInitQueryInfo(SQueryInfo* pQueryInfo) {
-  assert(pQueryInfo->fieldsInfo.internalField == NULL);
-  pQueryInfo->fieldsInfo.internalField = (SArray*)taosArrayInit(4, sizeof(SInternalField));
-  
+void tscInitQueryInfo(SQueryInfo* pQueryInfo) { 
   assert(pQueryInfo->exprList == NULL);
   pQueryInfo->exprList   = (SArray*)taosArrayInit(4, POINTER_BYTES);
   pQueryInfo->udColumnId = TSDB_UD_COLUMN_INDEX;
@@ -1481,7 +1438,7 @@ int32_t tscAddSubqueryInfo(SSqlCmd* pCmd) {
 }
 
 static void freeQueryInfoImpl(SQueryInfo* pQueryInfo) {
-  tscFieldInfoClear(&pQueryInfo->fieldsInfo);
+  pQueryInfo->fieldsInfo.clear();
 
   tscSqlExprInfoDestroy(pQueryInfo->exprList);
   pQueryInfo->exprList = NULL;
@@ -1699,21 +1656,22 @@ static void doSetSqlExprAndResultFieldInfo(SQueryInfo* pNewQueryInfo, int64_t ui
     SSqlExpr* pExpr = pNewQueryInfo->getExpr(i);
 
     TAOS_FIELD f = tscCreateField((int8_t) pExpr->resType, pExpr->aliasName, pExpr->resBytes);
-    SInternalField* pInfo1 = tscFieldInfoAppend(&pNewQueryInfo->fieldsInfo, &f);
+    pNewQueryInfo->fieldsInfo.internalField.push_back({f});
+    SInternalField* pInfo1 = &pNewQueryInfo->fieldsInfo.internalField.back();
     pInfo1->pSqlExpr = pExpr;
   }
 
   // update the pSqlExpr pointer in SInternalField according the field name
   // make sure the pSqlExpr point to the correct SqlExpr in pNewQueryInfo, not SqlExpr in pQueryInfo
-  for (int32_t f = 0; f < pNewQueryInfo->fieldsInfo.numOfOutput; ++f) {
-    TAOS_FIELD* field = tscFieldInfoGetField(&pNewQueryInfo->fieldsInfo, f);
+  for (int32_t f = 0; f < pNewQueryInfo->fieldsInfo.internalField.size(); ++f) {
+    TAOS_FIELD* field = &pNewQueryInfo->fieldsInfo.internalField[f].field;
 
     bool matched = false;
     for (int32_t k1 = 0; k1 < numOfExprs; ++k1) {
       SSqlExpr* pExpr1 = pNewQueryInfo->getExpr(k1);
 
       if (strcmp(field->name, pExpr1->aliasName) == 0) {  // establish link according to the result field name
-        SInternalField* pInfo = tscFieldInfoGetInternalField(&pNewQueryInfo->fieldsInfo, f);
+        SInternalField* pInfo = &pNewQueryInfo->fieldsInfo.internalField[f];
         pInfo->pSqlExpr = pExpr1;
 
         matched = true;
@@ -1787,13 +1745,13 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
   pNewQueryInfo->tagCond = pQueryInfo->tagCond;
 
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {
-    pNewQueryInfo->fillVal = (int64_t*)malloc(pQueryInfo->fieldsInfo.numOfOutput * sizeof(int64_t));
+    pNewQueryInfo->fillVal = (int64_t*)malloc(pQueryInfo->fieldsInfo.internalField.size() * sizeof(int64_t));
     if (pNewQueryInfo->fillVal == NULL) {
       terrno = TSDB_CODE_TSC_OUT_OF_MEMORY;
       return NULL;
     }
 
-    memcpy(pNewQueryInfo->fillVal, pQueryInfo->fillVal, pQueryInfo->fieldsInfo.numOfOutput * sizeof(int64_t));
+    memcpy(pNewQueryInfo->fillVal, pQueryInfo->fillVal, pQueryInfo->fieldsInfo.internalField.size() * sizeof(int64_t));
   }
 
   pnCmd->payload.resize(TSDB_DEFAULT_PAYLOAD_SIZE);
@@ -1866,7 +1824,7 @@ SSqlObj* createSubqueryObj(SSqlObj* pSql, int16_t tableIndex, __async_cb_func_t 
         "%p new subquery:%p, tableIndex:%d, vgroupIndex:%d, type:%d, exprInfo:%" PRIzu ", colList:%" PRIzu ","
         "fieldInfo:%d, name:%s, qrang:%" PRId64 " - %" PRId64 " order:%d, limit:%" PRId64,
         pSql, pNew, tableIndex, pTableMetaInfo->vgroupIndex, pNewQueryInfo->type, tscSqlExprNumOfExprs(pNewQueryInfo),
-        size, pNewQueryInfo->fieldsInfo.numOfOutput, pFinalInfo->name, pNewQueryInfo->window.skey,
+        size, pNewQueryInfo->fieldsInfo.internalField.size(), pFinalInfo->name, pNewQueryInfo->window.skey,
         pNewQueryInfo->window.ekey, pNewQueryInfo->order.order, pNewQueryInfo->limit.limit);
     
     tscPrintSelectClause(pNew, 0);

@@ -17,6 +17,8 @@
 #define TDENGINE_QRESULTBUF_H
 
 #include <tlist.h>
+#include <vector>
+#include <unordered_map>
 #include "hash.h"
 #include "os.h"
 #include "qExtbuffer.h"
@@ -29,13 +31,15 @@ typedef struct SPageDiskInfo {
   int32_t length;
 } SPageDiskInfo;
 
-typedef struct SPageInfo {
+struct SPageInfo {
   SListNode*    pn;       // point to list node
   int32_t       pageId;
   SPageDiskInfo info;
   void*         pData;
   bool          used;     // set current page is in used
-} SPageInfo;
+ public:
+  ~SPageInfo();
+};
 
 typedef struct SFreeListItem {
   int32_t offset;
@@ -60,7 +64,7 @@ typedef struct SDiskbasedResultBuf {
   char*     path;                // file path
   int32_t   pageSize;            // current used page size
   int32_t   inMemPages;          // numOfPages that are allocated in memory
-  SHashObj* groupSet;            // id hash table
+  std::unordered_map<int32_t, std::vector<SPageInfo>> groupSet;            // id hash table
   SHashObj* all;
   SList*    lruList;
   void*     emptyDummyIdList;    // dummy id list
@@ -105,14 +109,6 @@ tFilePage* getNewDataBuf(SDiskbasedResultBuf* pResultBuf, int32_t groupId, int32
 size_t getNumOfRowsPerPage(const SDiskbasedResultBuf* pResultBuf);
 
 /**
- *
- * @param pResultBuf
- * @param groupId
- * @return
- */
-SIDList getDataBufPagesIdList(SDiskbasedResultBuf* pResultBuf, int32_t groupId);
-
-/**
  * get the specified buffer page by id
  * @param pResultBuf
  * @param id
@@ -132,7 +128,7 @@ void releaseResBufPage(SDiskbasedResultBuf* pResultBuf, void* page);
  * @param pResultBuf
  * @param pi
  */
-void releaseResBufPageInfo(SDiskbasedResultBuf* pResultBuf, SPageInfo* pi);
+void releaseResBufPageInfo(SDiskbasedResultBuf* pResultBuf, SPageInfo &pi);
 
 
 /**
@@ -154,12 +150,5 @@ size_t getNumOfResultBufGroupId(const SDiskbasedResultBuf* pResultBuf);
  * @param pResultBuf
  */
 void destroyResultBuf(SDiskbasedResultBuf* pResultBuf);
-
-/**
- *
- * @param pList
- * @return
- */
-SPageInfo* getLastPageInfo(SIDList pList);
 
 #endif  // TDENGINE_QRESULTBUF_H

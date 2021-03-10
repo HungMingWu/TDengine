@@ -598,14 +598,14 @@ static int32_t addNewWindowResultBuf(SResultRow *pWindowRes, SDiskbasedResultBuf
 
   // in the first scan, new space needed for results
   int32_t pageId = -1;
-  SIDList list = getDataBufPagesIdList(pResultBuf, tid);
+  auto &list = pResultBuf->groupSet[tid];
 
-  if (taosArrayGetSize(list) == 0) {
+  if (list.empty()) {
     pData = getNewDataBuf(pResultBuf, tid, &pageId);
   } else {
-    SPageInfo* pi = getLastPageInfo(list);
-    pData = getResBufPage(pResultBuf, pi->pageId);
-    pageId = pi->pageId;
+    auto &pi = list.back();
+    pData = getResBufPage(pResultBuf, pi.pageId);
+    pageId = pi.pageId;
 
     if (pData->num >= numOfRowsPerPage) {
       // release current page first, and prepare the next one

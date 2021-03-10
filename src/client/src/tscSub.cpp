@@ -211,7 +211,7 @@ static void tscProcessSubscriptionTimer(SSub* pSub, void* tmrId) {
 }
 
 
-static SArray* getTableList( SSqlObj* pSql ) {
+static std::vector<STidTags> getTableList(SSqlObj* pSql) {
   const char* p = strstr( pSql->sqlstr, " from " );
   assert(p != NULL); // we are sure this is a 'select' statement
   char* sql = (char*)alloca(strlen(p) + 32);
@@ -220,39 +220,25 @@ static SArray* getTableList( SSqlObj* pSql ) {
   SSqlObj* pNew = (SSqlObj*)taos_query(pSql->pTscObj, sql);
   if (pNew == NULL) {
     tscError("failed to retrieve table id: cannot create new sql object.");
-    return NULL;
+    return {};
 
   } else if (taos_errno(pNew) != TSDB_CODE_SUCCESS) {
     tscError("failed to retrieve table id: %s", tstrerror(taos_errno(pNew)));
-    return NULL;
+    return {};
   }
 
   TAOS_ROW row;
-  SArray* result = (SArray*)taosArrayInit( 128, sizeof(STidTags) );
+  std::vector<STidTags> result;
   while ((row = taos_fetch_row(pNew))) {
     STidTags tags;
     memcpy(&tags, row[0], sizeof(tags));
-    taosArrayPush(result, &tags);
+    result.push_back(tags);
   }
 
   taos_free_result(pNew);
   
   return result;
 }
-
-static int32_t compareTidTag(const void* p1, const void* p2) {
-  const STidTags* t1 = (const STidTags*)p1;
-  const STidTags* t2 = (const STidTags*)p2;
-  
-  if (t1->vgId != t2->vgId) {
-    return (t1->vgId > t2->vgId) ? 1 : -1;
-  }
-  if (t1->tid != t2->tid) {
-    return (t1->tid > t2->tid) ? 1 : -1;
-  }
-  return 0;
-}
-
 
 static int tscUpdateSubscription(STscObj* pObj, SSub* pSub) {
   SSqlObj* pSql = pSub->pSql;
@@ -273,18 +259,14 @@ static int tscUpdateSubscription(STscObj* pObj, SSub* pSub) {
     return 1;
   }
 
-  SArray* tables = getTableList(pSql);
-  if (tables == NULL) {
-    return 0;
-  }
-  size_t numOfTables = taosArrayGetSize(tables);
+  std::vector<STidTags> tables = getTableList(pSql);
+  if (tables.empty()) return 0;
 
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(pCmd, 0);
-  SArray* progress = (SArray*)taosArrayInit(numOfTables, sizeof(SSubscriptionProgress));
-  for( size_t i = 0; i < numOfTables; i++ ) {
-    STidTags* tt = (STidTags*)taosArrayGet( tables, i );
-    SSubscriptionProgress p = { .uid = tt->uid };
-    p.key = tscGetSubscriptionProgress(pSub, tt->uid, pQueryInfo->window.skey);
+  SArray*     progress = (SArray*)taosArrayInit(tables.size(), sizeof(SSubscriptionProgress));
+  for (const auto &tt : tables) {
+    SSubscriptionProgress p = { .uid = tt.uid };
+    p.key = tscGetSubscriptionProgress(pSub, tt.uid, pQueryInfo->window.skey);
     taosArrayPush(progress, &p);
   }
   taosArraySort(progress, tscCompareSubscriptionProgress);
@@ -293,11 +275,10 @@ static int tscUpdateSubscription(STscObj* pObj, SSub* pSub) {
   pSub->progress = progress;
 
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
-    taosArraySort( tables, compareTidTag );
+    std::sort(tables.begin(), tables.end());
     tscFreeVgroupTableInfo(pTableMetaInfo->pVgroupTables);
     tscBuildVgroupTableInfo(pSql, pTableMetaInfo, tables);
   }
-  taosArrayDestroy(tables);
 
   TSDB_QUERY_SET_TYPE(tscGetQueryInfoDetail(pCmd, 0)->type, TSDB_QUERY_TYPE_MULTITABLE_QUERY);
   return 1;

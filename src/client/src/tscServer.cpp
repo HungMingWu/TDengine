@@ -815,7 +815,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
     SSqlFuncMsg *pSqlFuncExpr1 = (SSqlFuncMsg *)pMsg;
 
     for (int32_t i = 0; i < output; ++i) {
-      SInternalField* pField = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, i);
+      SInternalField* pField = &pQueryInfo->fieldsInfo.internalField[i];
       SSqlExpr *pExpr = pField->pSqlExpr;
       if (pExpr != NULL) {
         if (!tscValidateColumnId(pTableMetaInfo, pExpr->colInfo.colId, pExpr->numOfParams)) {
@@ -1287,7 +1287,7 @@ int tscBuildCreateTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
     pSchema = (SSchema *)pCreateMsg->schema;
 
     for (int i = 0; i < pCmd->numOfCols + pCmd->count; ++i) {
-      TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+      TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[i].field;
 
       pSchema->type = pField->type;
       strcpy(pSchema->name, pField->name);
@@ -1306,7 +1306,7 @@ int tscBuildCreateTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
     }
   }
 
-  tscFieldInfoClear(&pQueryInfo->fieldsInfo);
+  pQueryInfo->fieldsInfo.clear();
 
   msgLen = (int32_t)(pMsg - (char*)pCreateTableMsg);
   pCreateTableMsg->contLen = htonl(msgLen);
@@ -1343,7 +1343,7 @@ int tscBuildAlterTableMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pAlterTableMsg->numOfCols = htons(tscNumOfFields(pQueryInfo));
   SSchema *pSchema = pAlterTableMsg->schema;
   for (int i = 0; i < tscNumOfFields(pQueryInfo); ++i) {
-    TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+    TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[i].field;
   
     pSchema->type = pField->type;
     strcpy(pSchema->name, pField->name);
@@ -1969,13 +1969,14 @@ int tscProcessShowRsp(SSqlObj *pSql) {
     tscColumnListInsert(pQueryInfo->colList, &index);
     
     TAOS_FIELD f = tscCreateField(pSchema->type, pSchema->name, pSchema->bytes);
-    SInternalField* pInfo = tscFieldInfoAppend(pFieldInfo, &f);
+    pFieldInfo->internalField.push_back({f});
+    SInternalField *pInfo = &pFieldInfo->internalField.back();
     
     pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index,
                      pTableSchema[i].type, pTableSchema[i].bytes, getNewResColId(pQueryInfo), pTableSchema[i].bytes, false);
   }
   
-  pCmd->numOfCols = pQueryInfo->fieldsInfo.numOfOutput;
+  pCmd->numOfCols = pQueryInfo->fieldsInfo.internalField.size();
   tscFieldInfoUpdateOffset(pQueryInfo);
   return 0;
 }
@@ -2144,9 +2145,9 @@ int tscProcessRetrieveRspFromNode(SSqlObj *pSql) {
   }
 
   if (pSql->pSubscription != NULL) {
-    int32_t numOfCols = pQueryInfo->fieldsInfo.numOfOutput;
+    int32_t numOfCols = pQueryInfo->fieldsInfo.internalField.size();
     
-    TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, numOfCols - 1);
+    TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[numOfCols - 1].field;
     int16_t     offset = tscFieldInfoGetOffset(pQueryInfo, numOfCols - 1);
     
     char* p = pRes->data + (pField->bytes + offset) * pRes->numOfRows;

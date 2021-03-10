@@ -49,14 +49,27 @@ typedef struct SParsedDataColInfo {
 // this struct is transfered as binary, padding two bytes to avoid
 // an 'uid' whose low bytes is 0xff being recoginized as NULL,
 // and set 'pack' to 1 to avoid break existing code.
-typedef struct STidTags {
+struct STidTags {
   int16_t  padding;
   int64_t  uid;
   int32_t  tid;
   int32_t  vgId;
   char     tag[];
-} STidTags;
+
+ public:
+  bool operator<(const STidTags& rhs) { 
+    if (vgId != rhs.vgId) {
+      return vgId < rhs.vgId;
+    }
+    if (tid != rhs.tid) {
+      return tid < rhs.tid;
+    }
+    return true;
+  }
+};
 #pragma pack(pop)
+
+void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, const std::vector<STidTags>& tables);
 
 struct SJoinSupporter {
   SSqlObj*        pObj;           // parent SqlObj
@@ -143,19 +156,12 @@ void tscGetDBInfoFromTableFullName(char* tableId, char* db);
 
 TAOS_FIELD tscCreateField(int8_t type, const char* name, int16_t bytes);
 
-SInternalField* tscFieldInfoAppend(SFieldInfo* pFieldInfo, TAOS_FIELD* pField);
-SInternalField* tscFieldInfoInsert(SFieldInfo* pFieldInfo, int32_t index, TAOS_FIELD* field);
-
-SInternalField* tscFieldInfoGetInternalField(SFieldInfo* pFieldInfo, int32_t index);
-TAOS_FIELD* tscFieldInfoGetField(SFieldInfo* pFieldInfo, int32_t index);
-
 void tscFieldInfoUpdateOffset(SQueryInfo* pQueryInfo);
 void tscFieldInfoUpdateOffset(SQueryInfo* pQueryInfo);
 
 int16_t tscFieldInfoGetOffset(SQueryInfo* pQueryInfo, int32_t index);
-void    tscFieldInfoClear(SFieldInfo* pFieldInfo);
 
-static FORCE_INLINE int32_t tscNumOfFields(SQueryInfo* pQueryInfo) { return pQueryInfo->fieldsInfo.numOfOutput; }
+static FORCE_INLINE int32_t tscNumOfFields(SQueryInfo* pQueryInfo) { return pQueryInfo->fieldsInfo.internalField.size(); }
 
 int32_t tscFieldInfoCompare(const SFieldInfo* pFieldInfo1, const SFieldInfo* pFieldInfo2);
 

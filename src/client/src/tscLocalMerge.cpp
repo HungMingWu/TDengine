@@ -111,10 +111,10 @@ static void tscInitSqlContext(SSqlCmd *pCmd, SLocalReducer *pReducer, tOrderDesc
 
   int16_t          n = 0;
   int16_t          tagLen = 0;
-  SQLFunctionCtx **pTagCtx = (SQLFunctionCtx **)calloc(pQueryInfo->fieldsInfo.numOfOutput, POINTER_BYTES);
+  SQLFunctionCtx **pTagCtx = (SQLFunctionCtx **)calloc(pQueryInfo->fieldsInfo.internalField.size(), POINTER_BYTES);
 
   SQLFunctionCtx *pCtx = NULL;
-  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
+  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
     const SSqlExpr *pExpr = pQueryInfo->getExpr(i);
     if (pExpr->functionId == TSDB_FUNC_TAG_DUMMY || pExpr->functionId == TSDB_FUNC_TS_DUMMY) {
       tagLen += pExpr->resBytes;
@@ -139,7 +139,7 @@ static std::vector<SFillColInfo> createFillColInfo(SQueryInfo* pQueryInfo) {
   
   std::vector<SFillColInfo> pFillCol(numOfCols);
   for (int32_t i = 0; i < numOfCols; ++i) {
-    SInternalField* pIField = (SInternalField*)taosArrayGet(pQueryInfo->fieldsInfo.internalField, i);
+    SInternalField* pIField = &pQueryInfo->fieldsInfo.internalField[i];
 
     if (pIField->pArithExprInfo == NULL) {
       SSqlExpr* pExpr = pIField->pSqlExpr;
@@ -385,7 +385,7 @@ void tscCreateLocalReducer(tExtMemBuffer **pMemBuffer, int32_t numOfBuffer, tOrd
   if (pQueryInfo->fillType != TSDB_FILL_NONE) {
     auto pFillCol = createFillColInfo(pQueryInfo);
     pReducer->pFillInfo.reset(new SFillInfo(pQueryInfo->order.order, revisedSTime, pQueryInfo->groupbyExpr.columnInfo.size(),
-                                           4096, (int32_t)pQueryInfo->fieldsInfo.numOfOutput, pQueryInfo->interval.sliding, pQueryInfo->interval.slidingUnit,
+                                           4096, (int32_t)pQueryInfo->fieldsInfo.internalField.size(), pQueryInfo->interval.sliding, pQueryInfo->interval.slidingUnit,
                                            tinfo.precision, pQueryInfo->fillType, std::move(pFillCol), pSql));
   }
 }
@@ -762,7 +762,7 @@ int32_t tscLocalReducerEnvCreate(SSqlObj *pSql, tExtMemBuffer ***pMemBuffer, tOr
   size = tscNumOfFields(pQueryInfo);
 
   for(int32_t i = 0; i < size; ++i) {
-    SInternalField* pField = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, i);
+    const SInternalField* pField = &pQueryInfo->fieldsInfo.internalField[i];
     pSchema[i].bytes = pField->field.bytes;
     pSchema[i].type = pField->field.type;
     tstrncpy(pSchema[i].name, pField->field.name, tListLen(pSchema[i].name));
@@ -951,9 +951,9 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
   // todo extract function
   int64_t actualETime = (pQueryInfo->order.order == TSDB_ORDER_ASC)? pQueryInfo->window.ekey: pQueryInfo->window.skey;
 
-  tFilePage **pResPages = (tFilePage **)malloc(POINTER_BYTES * pQueryInfo->fieldsInfo.numOfOutput);
-  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-    TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+  tFilePage **pResPages = (tFilePage **)malloc(POINTER_BYTES * pQueryInfo->fieldsInfo.internalField.size());
+  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
+    TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[i].field;
     pResPages[i] = (tFilePage*)calloc(1, sizeof(tFilePage) + pField->bytes * pLocalReducer->resColModel->capacity);
   }
 
@@ -964,8 +964,8 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
       newRows -= pQueryInfo->limit.offset;
 
       if (pQueryInfo->limit.offset > 0) {
-        for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-          TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+        for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
+          TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[i].field;
           memmove(pResPages[i]->data, pResPages[i]->data + pField->bytes * pQueryInfo->limit.offset,
                   (size_t)(newRows * pField->bytes));
         }
@@ -1008,8 +1008,8 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
     }
 
     int32_t offset = 0;
-    for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
-      TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+    for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
+      TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[i].field;
       memcpy(pRes->data + offset * pRes->numOfRows, pResPages[i]->data, (size_t)(pField->bytes * pRes->numOfRows));
       offset += pField->bytes;
     }
@@ -1019,7 +1019,7 @@ static void doFillResult(SSqlObj *pSql, SLocalReducer *pLocalReducer, bool doneO
   }
 
   pBeforeFillData->num = 0;
-  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.numOfOutput; ++i) {
+  for (int32_t i = 0; i < pQueryInfo->fieldsInfo.internalField.size(); ++i) {
     tfree(pResPages[i]);
   }
   
@@ -1642,7 +1642,7 @@ int32_t doArithmeticCalculate(SQueryInfo* pQueryInfo, tFilePage* pOutput, int32_
   int32_t offset = 0;
 
   for (int i = 0; i < size; ++i) {
-    SInternalField* pSup = (SInternalField*)TARRAY_GET_ELEM(pQueryInfo->fieldsInfo.internalField, i);
+    SInternalField* pSup = &pQueryInfo->fieldsInfo.internalField[i];
     
     // calculate the result from several other columns
     if (pSup->pArithExprInfo != NULL) {

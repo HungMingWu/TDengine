@@ -35,7 +35,6 @@ int32_t createDiskbasedResultBuffer(SDiskbasedResultBuf** pResultBuf, int32_t ro
   pResBuf->lruList = tdListNew(POINTER_BYTES);
 
   // init id hash table
-  pResBuf->groupSet = taosHashInit(10, taosGetDefaultHashFunction(TSDB_DATA_TYPE_INT), true, HASH_NO_LOCK);
   pResBuf->assistBuf = malloc(pResBuf->pageSize + 2); // EXTRA BYTES
   pResBuf->all = taosHashInit(10, taosGetDefaultHashFunction(TSDB_DATA_TYPE_INT), true, HASH_NO_LOCK);
 
@@ -197,37 +196,20 @@ static char* loadPageFromDisk(SDiskbasedResultBuf* pResultBuf, SPageInfo* pg) {
   return (char*)GET_DATA_PAYLOAD(pg);
 }
 
-static SIDList addNewGroup(SDiskbasedResultBuf* pResultBuf, int32_t groupId) {
-  assert(taosHashGet(pResultBuf->groupSet, (const char*) &groupId, sizeof(int32_t)) == NULL);
-
-  SArray* pa = (SArray*)taosArrayInit(1, POINTER_BYTES);
-  int32_t ret = taosHashPut(pResultBuf->groupSet, (const char*)&groupId, sizeof(int32_t), &pa, POINTER_BYTES);
-  assert(ret == 0);
-
-  return pa;
-}
-
-static SPageInfo* registerPage(SDiskbasedResultBuf* pResultBuf, int32_t groupId, int32_t pageId) {
-  SIDList list = NULL;
-
-  char** p = (char**)taosHashGet(pResultBuf->groupSet, (const char*)&groupId, sizeof(int32_t));
-  if (p == NULL) {  // it is a new group id
-    list = addNewGroup(pResultBuf, groupId);
-  } else {
-    list = (SIDList) (*p);
-  }
+static void registerPage(SDiskbasedResultBuf* pResultBuf, int32_t groupId, int32_t pageId) {
+  auto& list = pResultBuf->groupSet[groupId];
 
   pResultBuf->numOfPages += 1;
 
-  SPageInfo* ppi = (SPageInfo*)malloc(sizeof(SPageInfo));//{ .info = PAGE_INFO_INITIALIZER, .pageId = pageId, .pn = NULL};
+  SPageInfo ppi;  //{ .info = PAGE_INFO_INITIALIZER, .pageId = pageId, .pn = NULL};
 
-  ppi->pageId = pageId;
-  ppi->pData  = NULL;
-  ppi->info   = PAGE_INFO_INITIALIZER;
-  ppi->used   = true;
-  ppi->pn     = NULL;
+  ppi.pageId = pageId;
+  ppi.pData  = NULL;
+  ppi.info   = PAGE_INFO_INITIALIZER;
+  ppi.used   = true;
+  ppi.pn     = NULL;
 
-  return *(SPageInfo**) taosArrayPush(list, &ppi);
+  list.push_back(ppi);
 }
 
 static SListNode* getEldestUnrefedPage(SDiskbasedResultBuf* pResultBuf) {
@@ -301,29 +283,30 @@ tFilePage* getNewDataBuf(SDiskbasedResultBuf* pResultBuf, int32_t groupId, int32
   *pageId = (++pResultBuf->allocateId);
 
   // register page id info
-  SPageInfo* pi = registerPage(pResultBuf, groupId, *pageId);
+  registerPage(pResultBuf, groupId, *pageId);
+  SPageInfo& pi = pResultBuf->groupSet[groupId].back();
 
   // add to LRU list
   assert(listNEles(pResultBuf->lruList) < pResultBuf->inMemPages && pResultBuf->inMemPages > 0);
 
-  lruListPushFront(pResultBuf->lruList, pi);
+  lruListPushFront(pResultBuf->lruList, &pi);
 
   // add to hash map
   taosHashPut(pResultBuf->all, pageId, sizeof(int32_t), &pi, POINTER_BYTES);
 
   // allocate buf
   if (availablePage == NULL) {
-    pi->pData = calloc(1, pResultBuf->pageSize + POINTER_BYTES + 2);  // add extract bytes in case of zipped buffer increased.
+    pi.pData = calloc(1, pResultBuf->pageSize + POINTER_BYTES + 2);  // add extract bytes in case of zipped buffer increased.
   } else {
-    pi->pData = availablePage;
+    pi.pData = availablePage;
   }
 
   pResultBuf->totalBufSize += pResultBuf->pageSize;
 
-  ((void**)pi->pData)[0] = pi;
-  pi->used = true;
+  ((void**)pi.pData)[0] = &pi;
+  pi.used = true;
 
-  return (tFilePage*)(GET_DATA_PAYLOAD(pi));
+  return (tFilePage*)(GET_DATA_PAYLOAD(&pi));
 }
 
 tFilePage* getResBufPage(SDiskbasedResultBuf* pResultBuf, int32_t id) {
@@ -377,34 +360,28 @@ void releaseResBufPage(SDiskbasedResultBuf* pResultBuf, void* page) {
   char* p = (char*) page - POINTER_BYTES;
 
   SPageInfo* ppi = ((SPageInfo**) p)[0];
-  releaseResBufPageInfo(pResultBuf, ppi);
+  releaseResBufPageInfo(pResultBuf, *ppi);
 }
 
-void releaseResBufPageInfo(SDiskbasedResultBuf* pResultBuf, SPageInfo* pi) {
-  assert(pi->pData != NULL && pi->used);
+void releaseResBufPageInfo(SDiskbasedResultBuf* pResultBuf, SPageInfo &pi) {
+  assert(pi.pData != NULL && pi.used);
 
-  pi->used = false;
+  pi.used = false;
   pResultBuf->statis.releasePages += 1;
 }
 
 size_t getNumOfRowsPerPage(const SDiskbasedResultBuf* pResultBuf) { return pResultBuf->numOfRowsPerPage; }
 
-size_t getNumOfResultBufGroupId(const SDiskbasedResultBuf* pResultBuf) { return taosHashGetSize(pResultBuf->groupSet); }
+size_t getNumOfResultBufGroupId(const SDiskbasedResultBuf* pResultBuf) { return pResultBuf->groupSet.size(); }
 
 size_t getResBufSize(const SDiskbasedResultBuf* pResultBuf) { return (size_t)pResultBuf->totalBufSize; }
 
-SIDList getDataBufPagesIdList(SDiskbasedResultBuf* pResultBuf, int32_t groupId) {
-  assert(pResultBuf != NULL);
-
-  char** p = (char**)taosHashGet(pResultBuf->groupSet, (const char*)&groupId, sizeof(int32_t));
-  if (p == NULL) {  // it is a new group id
-    return (SIDList)pResultBuf->emptyDummyIdList;
-  } else {
-    return (SArray*) (*p);
-  }
+SPageInfo::~SPageInfo() 
+{
+  tfree(pData);
 }
 
-void destroyResultBuf(SDiskbasedResultBuf* pResultBuf) {
+void destroyResultBuf(SDiskbasedResultBuf * pResultBuf) {
   if (pResultBuf == NULL) {
     return;
   }
@@ -423,30 +400,11 @@ void destroyResultBuf(SDiskbasedResultBuf* pResultBuf) {
   unlink(pResultBuf->path);
   tfree(pResultBuf->path);
 
-  SArray** p = (SArray**)taosHashIterate(pResultBuf->groupSet, NULL);
-  while(p) {
-    size_t n = taosArrayGetSize(*p);
-    for(int32_t i = 0; i < n; ++i) {
-      SPageInfo* pi = (SPageInfo*)taosArrayGetP(*p, i);
-      tfree(pi->pData);
-      tfree(pi);
-    }
-
-    taosArrayDestroy(*p);
-    p = (SArray**)taosHashIterate(pResultBuf->groupSet, p);
-  }
-
   tdListFree(pResultBuf->lruList);
   taosArrayDestroy((SArray*)pResultBuf->emptyDummyIdList);
-  taosHashCleanup(pResultBuf->groupSet);
+  pResultBuf->groupSet.clear();
   taosHashCleanup(pResultBuf->all);
 
   tfree(pResultBuf->assistBuf);
   tfree(pResultBuf);
 }
-
-SPageInfo* getLastPageInfo(SIDList pList) {
-  size_t size = taosArrayGetSize(pList);
-  return (SPageInfo*) taosArrayGetP(pList, size - 1);
-}
-

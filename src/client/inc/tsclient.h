@@ -169,18 +169,23 @@ struct SSqlExpr {
   ~SSqlExpr();
 };
 
-typedef struct SInternalField {
+struct SInternalField {
   TAOS_FIELD      field;
-  bool            visible;
-  SExprInfo      *pArithExprInfo;
-  SSqlExpr       *pSqlExpr;
-} SInternalField;
+  bool            visible = true;
+  SExprInfo      *pArithExprInfo = nullptr;
+  SSqlExpr       *pSqlExpr = nullptr;
 
-typedef struct SFieldInfo {
-  int16_t      numOfOutput;   // number of column in result
+ public:
+  ~SInternalField();
+};
+
+struct SFieldInfo {
   TAOS_FIELD*  final;
-  SArray      *internalField; // SArray<SInternalField>
-} SFieldInfo;
+  std::vector<SInternalField> internalField;
+
+ public:
+  void clear();
+};
 
 typedef struct SCond {
   uint64_t uid;
@@ -499,7 +504,7 @@ int32_t tscSQLSyntaxErrMsg(std::string &msg, const char* additionalInfo,  const 
 int32_t tscToSQLCmd(SSqlObj *pSql, struct SSqlInfo *pInfo);
 
 static FORCE_INLINE void tscGetResultColumnChr(SSqlRes* pRes, SFieldInfo* pFieldInfo, int32_t columnIndex, int32_t offset) {
-  SInternalField* pInfo = (SInternalField*) TARRAY_GET_ELEM(pFieldInfo->internalField, columnIndex);
+  SInternalField* pInfo = &pFieldInfo->internalField[columnIndex];
 
   int32_t type = pInfo->field.type;
   int32_t bytes = pInfo->field.bytes;
@@ -551,7 +556,6 @@ extern int   tscRefId;
 
 extern int (*tscBuildMsg[TSDB_SQL_MAX])(SSqlObj *pSql, SSqlInfo *pInfo);
 
-void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, SArray* tables);
 int16_t getNewResColId(SQueryInfo* pQueryInfo);
 
 #endif

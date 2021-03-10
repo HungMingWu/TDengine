@@ -13,6 +13,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <fmt/format.h>
 #include "os.h"
 #include "taosmsg.h"
 
@@ -75,13 +76,13 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
   const SSchema *pSchema = pMeta->getSchema();
 
   for (int32_t i = 0; i < numOfRows; ++i) {
-    TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 0);
+    TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[0].field;
     char* dst = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 0) * totalNumOfRows + pField->bytes * i;
     STR_WITH_MAXSIZE_TO_VARSTR(dst, pSchema[i].name, pField->bytes);
 
     char *type = tDataTypes[pSchema[i].type].name;
 
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 1);
+    pField = &pQueryInfo->fieldsInfo.internalField[1].field;
     dst = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 1) * totalNumOfRows + pField->bytes * i;
     
     STR_WITH_MAXSIZE_TO_VARSTR(dst, type, pField->bytes);
@@ -95,10 +96,10 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
       }
     }
 
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 2);
+    pField = &pQueryInfo->fieldsInfo.internalField[2].field;
     *(int32_t *)(pRes->data + tscFieldInfoGetOffset(pQueryInfo, 2) * totalNumOfRows + pField->bytes * i) = bytes;
 
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 3);
+    pField = &pQueryInfo->fieldsInfo.internalField[3].field;
     if (i >= pMeta->numOfColumns() && pMeta->numOfTags() != 0) {
       char* output = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 3) * totalNumOfRows + pField->bytes * i;
       const char *src = "TAG";
@@ -113,12 +114,12 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
   // the following is handle display tags for table created according to super table
   for (int32_t i = numOfRows; i < totalNumOfRows; ++i) {
     // field name
-    TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 0);
+    TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[0].field;
     char* output = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 0) * totalNumOfRows + pField->bytes * i;
     STR_WITH_MAXSIZE_TO_VARSTR(output, pSchema[i].name, pField->bytes);
 
     // type name
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 1);
+    pField = &pQueryInfo->fieldsInfo.internalField[1].field;
     char *type = tDataTypes[pSchema[i].type].name;
     
     output = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 1) * totalNumOfRows + pField->bytes * i;
@@ -126,7 +127,7 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
 
     // type length
     int32_t bytes = pSchema[i].bytes;
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 2);
+    pField = &pQueryInfo->fieldsInfo.internalField[2].field;
     if (pSchema[i].type == TSDB_DATA_TYPE_BINARY || pSchema[i].type == TSDB_DATA_TYPE_NCHAR) {
       bytes -= VARSTR_HEADER_SIZE;
       
@@ -138,7 +139,7 @@ static int32_t tscSetValueToResObj(SSqlObj *pSql, int32_t rowLen) {
     *(int32_t *)(pRes->data + tscFieldInfoGetOffset(pQueryInfo, 2) * totalNumOfRows + pField->bytes * i) = bytes;
 
     // tag value
-    pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 3);
+    pField = &pQueryInfo->fieldsInfo.internalField[3].field;
     char *target = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 3) * totalNumOfRows + pField->bytes * i;
     const char *src = "TAG";
     STR_WITH_MAXSIZE_TO_VARSTR(target, src, pField->bytes);
@@ -160,7 +161,8 @@ static int32_t tscBuildTableSchemaResultFields(SSqlObj *pSql, int32_t numOfCols,
   TAOS_FIELD f = {.type = TSDB_DATA_TYPE_BINARY, .bytes = (TSDB_COL_NAME_LEN - 1) + VARSTR_HEADER_SIZE};
   tstrncpy(f.name, "Field", sizeof(f.name));
   
-  SInternalField* pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  SInternalField *pInfo = &pQueryInfo->fieldsInfo.internalField.back();
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_BINARY,
       (TSDB_COL_NAME_LEN - 1) + VARSTR_HEADER_SIZE, -1000, (TSDB_COL_NAME_LEN - 1), false);
   
@@ -170,7 +172,8 @@ static int32_t tscBuildTableSchemaResultFields(SSqlObj *pSql, int32_t numOfCols,
   f.type = TSDB_DATA_TYPE_BINARY;
   tstrncpy(f.name, "Type", sizeof(f.name));
   
-  pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  pInfo = &pQueryInfo->fieldsInfo.internalField.back();
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_BINARY, (int16_t)(typeColLength + VARSTR_HEADER_SIZE),
       -1000, typeColLength, false);
   
@@ -180,7 +183,8 @@ static int32_t tscBuildTableSchemaResultFields(SSqlObj *pSql, int32_t numOfCols,
   f.type = TSDB_DATA_TYPE_INT;
   tstrncpy(f.name, "Length", sizeof(f.name));
   
-  pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  pInfo = &pQueryInfo->fieldsInfo.internalField.back();
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_INT, sizeof(int32_t),
       -1000, sizeof(int32_t), false);
   
@@ -190,7 +194,8 @@ static int32_t tscBuildTableSchemaResultFields(SSqlObj *pSql, int32_t numOfCols,
   f.type = TSDB_DATA_TYPE_BINARY;
   tstrncpy(f.name, "Note", sizeof(f.name));
   
-  pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  pInfo = &pQueryInfo->fieldsInfo.internalField.back();
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_BINARY, (int16_t)(noteColLength + VARSTR_HEADER_SIZE),
       -1000, noteColLength, false);
   
@@ -403,7 +408,9 @@ static int32_t tscSCreateBuildResultFields(SSqlObj *pSql, BuildType type, const 
     tstrncpy(f.name, "Database", sizeof(f.name));
   } 
 
-  SInternalField* pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  SInternalField *pInfo = &pQueryInfo->fieldsInfo.internalField.back();
+
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_BINARY, f.bytes, -1000, f.bytes - VARSTR_HEADER_SIZE, false);
 
   rowLen += f.bytes; 
@@ -416,7 +423,8 @@ static int32_t tscSCreateBuildResultFields(SSqlObj *pSql, BuildType type, const 
     tstrncpy(f.name, "Create Database", sizeof(f.name));
   }
 
-  pInfo = tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
+  pInfo = &pQueryInfo->fieldsInfo.internalField.back();
   pInfo->pSqlExpr = tscSqlExprAppend(pQueryInfo, TSDB_FUNC_TS_DUMMY, &index, TSDB_DATA_TYPE_BINARY, 
       (int16_t)(ddlLen + VARSTR_HEADER_SIZE), -1000, ddlLen, false);
 
@@ -434,11 +442,11 @@ static int32_t tscSCreateSetValueToResObj(SSqlObj *pSql, int32_t rowLen, const c
   }
   tscInitResObjForLocalQuery(pSql, numOfRows, rowLen);
 
-  TAOS_FIELD *pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 0);
+  TAOS_FIELD *pField = &pQueryInfo->fieldsInfo.internalField[0].field;
   char* dst = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 0) * numOfRows;
   STR_WITH_MAXSIZE_TO_VARSTR(dst, tableName, pField->bytes);
 
-  pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, 1);
+  pField = &pQueryInfo->fieldsInfo.internalField[1].field;
   dst = pRes->data + tscFieldInfoGetOffset(pQueryInfo, 1) * numOfRows;
   STR_WITH_MAXSIZE_TO_VARSTR(dst, ddl, pField->bytes);
   return 0;
@@ -551,7 +559,7 @@ static int32_t tscGetTableTagColumnName(SSqlObj *pSql, char **result) {
   *result = buf;
   return TSDB_CODE_SUCCESS;
 }  
-static int32_t tscRebuildDDLForSubTable(SSqlObj *pSql, const char *tableName, char *ddl) {
+static int32_t tscRebuildDDLForSubTable(SSqlObj *pSql, const char *tableName, std::string &ddl) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
 
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
@@ -602,7 +610,7 @@ static int32_t tscRebuildDDLForSubTable(SSqlObj *pSql, const char *tableName, ch
 
   return TSDB_CODE_TSC_ACTION_IN_PROGRESS; 
 }
-static int32_t tscRebuildDDLForNormalTable(SSqlObj *pSql, const char *tableName, char *ddl) {
+static int32_t tscRebuildDDLForNormalTable(SSqlObj *pSql, const char *tableName, std::string &result) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
   STableMeta *    pMeta = pTableMetaInfo->pTableMeta;
@@ -610,8 +618,7 @@ static int32_t tscRebuildDDLForNormalTable(SSqlObj *pSql, const char *tableName,
   int32_t numOfRows = pMeta->numOfColumns();
   const SSchema *pSchema = pMeta->getSchema();
 
-  char *result = ddl;
-  sprintf(result, "create table %s (", tableName);
+  result = fmt::format("create table {} (", tableName);
   for (int32_t i = 0; i < numOfRows; ++i) {
     uint8_t type = pSchema[i].type;
     if (type == TSDB_DATA_TYPE_BINARY || type == TSDB_DATA_TYPE_NCHAR) {
@@ -619,17 +626,17 @@ static int32_t tscRebuildDDLForNormalTable(SSqlObj *pSql, const char *tableName,
       if (type == TSDB_DATA_TYPE_NCHAR) {
         bytes =  bytes/TSDB_NCHAR_SIZE;
       }
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result), "%s %s(%d),", pSchema[i].name, tDataTypes[pSchema[i].type].name, bytes);
+      result += fmt::format("{} {}({}),", pSchema[i].name, tDataTypes[pSchema[i].type].name, bytes);
     } else {
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result), "%s %s,", pSchema[i].name, tDataTypes[pSchema[i].type].name);
+      result += fmt::format("{} {},", pSchema[i].name, tDataTypes[pSchema[i].type].name);
     }
   }
-  sprintf(result + strlen(result) - 1, "%s", ")");
+  result += ")";
 
   return TSDB_CODE_SUCCESS;
 }
-static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, char *ddl) {
-  char *result = ddl;
+
+static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, std::string &result) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(&pSql->cmd, 0);
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
   STableMeta *    pMeta = pTableMetaInfo->pTableMeta;
@@ -638,7 +645,7 @@ static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, 
   int32_t  totalRows = numOfRows + pMeta->numOfTags();
   const SSchema *pSchema = pMeta->getSchema();
 
-  sprintf(result, "create table %s (", tableName);
+  result = fmt::format("create table {} (", tableName);
   for (int32_t i = 0; i < numOfRows; ++i) {
     uint8_t type = pSchema[i].type;
     if (type == TSDB_DATA_TYPE_BINARY || type == TSDB_DATA_TYPE_NCHAR) {
@@ -646,12 +653,12 @@ static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, 
       if (type == TSDB_DATA_TYPE_NCHAR) {
         bytes =  bytes/TSDB_NCHAR_SIZE;
       }
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result),"%s %s(%d),", pSchema[i].name,tDataTypes[pSchema[i].type].name, bytes);
+      result += fmt::format("{} {}({}),", pSchema[i].name,tDataTypes[pSchema[i].type].name, bytes);
     } else {
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result), "%s %s,", pSchema[i].name, tDataTypes[type].name);
+      result += fmt::format("{} {},", pSchema[i].name, tDataTypes[type].name);
     }
   }
-  snprintf(result + strlen(result) - 1, TSDB_MAX_BINARY_LEN - strlen(result), "%s %s", ")", "TAGS (");
+  result += fmt::format(") TAGS (");
 
   for (int32_t i = numOfRows; i < totalRows; i++) {
     uint8_t type = pSchema[i].type;
@@ -660,12 +667,12 @@ static int32_t tscRebuildDDLForSuperTable(SSqlObj *pSql, const char *tableName, 
       if (type == TSDB_DATA_TYPE_NCHAR) {
         bytes =  bytes/TSDB_NCHAR_SIZE;
       }
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result), "%s %s(%d),", pSchema[i].name,tDataTypes[pSchema[i].type].name, bytes);
+      result += fmt::format("{} {}({}),", pSchema[i].name,tDataTypes[pSchema[i].type].name, bytes);
     } else {
-      snprintf(result + strlen(result), TSDB_MAX_BINARY_LEN - strlen(result), "%s %s,", pSchema[i].name, tDataTypes[type].name);
+      result += fmt::format("{} {},", pSchema[i].name, tDataTypes[type].name);
     }
   }
-  sprintf(result + strlen(result) - 1, "%s", ")");
+  result += ")";
 
   return TSDB_CODE_SUCCESS;
 }
@@ -678,7 +685,7 @@ static int32_t tscProcessShowCreateTable(SSqlObj *pSql) {
   char tableName[TSDB_TABLE_NAME_LEN] = {0};
   extractTableName(&pTableMetaInfo->name[0], tableName);
 
-  char *result = (char *)calloc(1, TSDB_MAX_BINARY_LEN);
+  std::string result;
   int32_t code = TSDB_CODE_SUCCESS;
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
     code = tscRebuildDDLForSuperTable(pSql, tableName, result);
@@ -691,9 +698,8 @@ static int32_t tscProcessShowCreateTable(SSqlObj *pSql) {
   }
 
   if (code == TSDB_CODE_SUCCESS) {
-    code = tscSCreateBuildResult(pSql, SCREATE_BUILD_TABLE, tableName, result);
+    code = tscSCreateBuildResult(pSql, SCREATE_BUILD_TABLE, tableName, result.c_str());
   } 
-  free(result);
   return code;
 }
 
@@ -866,15 +872,14 @@ void tscSetLocalQueryResult(SSqlObj *pSql, const char *val, const char *columnNa
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(pCmd, pCmd->clauseIndex);
   pQueryInfo->order.order = TSDB_ORDER_ASC;
 
-  tscFieldInfoClear(&pQueryInfo->fieldsInfo);
-  pQueryInfo->fieldsInfo.internalField = (SArray*)taosArrayInit(1, sizeof(SInternalField));
+  pQueryInfo->fieldsInfo.clear();
 
   TAOS_FIELD f = tscCreateField((int8_t)type, columnName, (int16_t)valueLength);
-  tscFieldInfoAppend(&pQueryInfo->fieldsInfo, &f);
+  pQueryInfo->fieldsInfo.internalField.push_back({f});
 
   tscInitResObjForLocalQuery(pSql, 1, (int32_t)valueLength);
 
-  SInternalField* pInfo = tscFieldInfoGetInternalField(&pQueryInfo->fieldsInfo, 0);
+  SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[0];
   pInfo->pSqlExpr = pQueryInfo->getExpr(0);
 
   memcpy(pRes->data, val, pInfo->field.bytes);

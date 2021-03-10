@@ -31,13 +31,13 @@ static tFilePage *loadDataFromFilePage(tMemBucket *pMemBucket, int32_t slotIdx) 
   tFilePage *buffer = (tFilePage *)calloc(1, pMemBucket->bytes * pMemBucket->pSlots[slotIdx].info.size + sizeof(tFilePage));
 
   int32_t groupId = getGroupId(pMemBucket->numOfSlots, slotIdx, pMemBucket->times);
-  SIDList list = getDataBufPagesIdList(pMemBucket->pBuffer, groupId);
+  auto &list = pMemBucket->pBuffer->groupSet[groupId];
 
   int32_t offset = 0;
-  for(int32_t i = 0; i < list->size; ++i) {
-    SPageInfo* pgInfo = *(SPageInfo**) taosArrayGet(list, i);
+  for(int32_t i = 0; i < list.size(); ++i) {
+    auto &pgInfo = list[i];
 
-    tFilePage* pg = getResBufPage(pMemBucket->pBuffer, pgInfo->pageId);
+    tFilePage* pg = getResBufPage(pMemBucket->pBuffer, pgInfo.pageId);
     memcpy(buffer->data + offset, pg->data, (size_t)(pg->num * pMemBucket->bytes));
 
     offset += (int32_t)(pg->num * pMemBucket->bytes);
@@ -95,11 +95,11 @@ double findOnlyResult(tMemBucket *pMemBucket) {
     }
 
     int32_t groupId = getGroupId(pMemBucket->numOfSlots, i, pMemBucket->times);
-    SIDList list = getDataBufPagesIdList(pMemBucket->pBuffer, groupId);
-    assert(list->size == 1);
+    auto &list = pMemBucket->pBuffer->groupSet[groupId];
+    assert(list.size() == 1);
 
-    SPageInfo* pgInfo = (SPageInfo*) taosArrayGetP(list, 0);
-    tFilePage* pPage = getResBufPage(pMemBucket->pBuffer, pgInfo->pageId);
+    auto& pgInfo = list[0];
+    tFilePage* pPage = getResBufPage(pMemBucket->pBuffer, pgInfo.pageId);
     assert(pPage->num == 1);
 
     double v = 0;
@@ -448,12 +448,12 @@ double getPercentileImpl(tMemBucket *pMemBucket, int32_t count, double fraction)
        resetSlotInfo(pMemBucket);
 
        int32_t groupId = getGroupId(pMemBucket->numOfSlots, i, pMemBucket->times - 1);
-       SIDList list = getDataBufPagesIdList(pMemBucket->pBuffer, groupId);
-       assert(list->size > 0);
+       auto &list = pMemBucket->pBuffer->groupSet[groupId];
+       assert(list.size() > 0);
 
-       for (int32_t f = 0; f < list->size; ++f) {
-         SPageInfo *pgInfo = *(SPageInfo **)taosArrayGet(list, f);
-         tFilePage *pg = getResBufPage(pMemBucket->pBuffer, pgInfo->pageId);
+       for (int32_t f = 0; f < list.size(); ++f) {
+         auto &pgInfo = list[f];
+         tFilePage *pg = getResBufPage(pMemBucket->pBuffer, pgInfo.pageId);
 
          tMemBucketPut(pMemBucket, pg->data, (int32_t)pg->num);
          releaseResBufPageInfo(pMemBucket->pBuffer, pgInfo);

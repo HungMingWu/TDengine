@@ -233,7 +233,7 @@ SJoinSupporter::~SJoinSupporter() {
     tscSqlExprInfoDestroy(exprList);
   }
   
-  tscFieldInfoClear(&fieldsInfo);
+  fieldsInfo.clear();
 
   if (pTSBuf != NULL) {
     tsBufDestroy(pTSBuf);
@@ -466,7 +466,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     size_t numOfCols = pQueryInfo->colList.size();
     tscDebug("%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%d, exprInfo:%" PRIzu ", colList:%" PRIzu ", fieldsInfo:%d, name:%s",
              pSql, pNew, 0, pTableMetaInfo->vgroupIndex, pQueryInfo->type, tscSqlExprNumOfExprs(pQueryInfo),
-             numOfCols, pQueryInfo->fieldsInfo.numOfOutput, pTableMetaInfo->name);
+             numOfCols, pQueryInfo->fieldsInfo.internalField.size(), pTableMetaInfo->name);
   }
   
   //prepare the subqueries object failed, abort
@@ -527,23 +527,23 @@ static void updateQueryTimeRange(SQueryInfo* pQueryInfo, STimeWindow* win) {
 
 }
 
-int32_t tidTagsCompar(const void* p1, const void* p2) {
-  const STidTags* t1 = (const STidTags*) (p1);
-  const STidTags* t2 = (const STidTags*) (p2);
-  
-  if (t1->vgId != t2->vgId) {
-    return (t1->vgId > t2->vgId) ? 1 : -1;
+struct TagCompar {
+  bool operator()(const STidTags& t1, const STidTags &t2) {
+    if (t1.vgId != t2.vgId) {
+      return t1.vgId < t2.vgId;
+    }
+
+    tstr* tag1 = (tstr*)t1.tag;
+    tstr* tag2 = (tstr*)t2.tag;
+
+    if (tag1->len != tag2->len) {
+      return tag1->len < tag2->len;
+    }
+
+    return strncmp(tag1->data, tag2->data, tag1->len);
   }
+};
 
-  tstr* tag1 = (tstr*) t1->tag;
-  tstr* tag2 = (tstr*) t2->tag;
-
-  if (tag1->len != tag2->len) {
-    return (tag1->len > tag2->len)? 1: -1;
-  }
-
-  return strncmp(tag1->data, tag2->data, tag1->len);
-}
 
 int32_t tagValCompar(const void* p1, const void* p2) {
   const STidTags* t1 = (const STidTags*) varDataVal(p1);
@@ -559,21 +559,18 @@ int32_t tagValCompar(const void* p1, const void* p2) {
   return memcmp(tag1->data, tag2->data, tag1->len);
 }
 
-void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, SArray* tables) {
+void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, const std::vector<STidTags>& tables) {
   SArray*   result = (SArray*)taosArrayInit(4, sizeof(SVgroupTableInfo));
   SArray*   vgTables = NULL;
-  STidTags* prev = NULL;
+  const STidTags* prev = nullptr;
 
-  size_t numOfTables = taosArrayGetSize(tables);
-  for (size_t i = 0; i < numOfTables; i++) {
-    STidTags* tt = (STidTags*)taosArrayGet(tables, i);
-
-    if (prev == NULL || tt->vgId != prev->vgId) {
+  for (const auto& tt : tables) {
+    if (prev == NULL || tt.vgId != prev->vgId) {
       SVgroupsInfo* pvg = pTableMetaInfo->vgroupList;
 
       SVgroupTableInfo info = {{0}};
       for (int32_t m = 0; m < pvg->numOfVgroups; ++m) {
-        if (tt->vgId == pvg->vgroups[m].vgId) {
+        if (tt.vgId == pvg->vgroups[m].vgId) {
           info.vgInfo = pvg->vgroups[m];
           break;
         }
@@ -591,11 +588,11 @@ void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, SArr
       taosArrayPush(result, &info);
     }
 
-    STableIdInfo item = {.uid = tt->uid, .tid = tt->tid, .key = INT64_MIN};
+    STableIdInfo item = {.uid = tt.uid, .tid = tt.tid, .key = INT64_MIN};
     taosArrayPush(vgTables, &item);
 
-    tscTrace("%p tid:%d, uid:%"PRIu64",vgId:%d added", pSql, tt->tid, tt->uid, tt->vgId);
-    prev = tt;
+    tscTrace("%p tid:%d, uid:%"PRIu64",vgId:%d added", pSql, tt.tid, tt.uid, tt.vgId);
+    prev = &tt;
   }
 
   pTableMetaInfo->pVgroupTables = result;
@@ -650,7 +647,7 @@ static void issueTSCompQuery(SSqlObj* pSql, SJoinSupporter* pSupporter, SSqlObj*
       "%p subquery:%p tableIndex:%d, vgroupIndex:%d, numOfVgroups:%d, type:%d, ts_comp query to retrieve timestamps, "
       "numOfExpr:%" PRIzu ", colList:%" PRIzu ", numOfOutputFields:%d, name:%s",
       pParent, pSql, 0, pTableMetaInfo->vgroupIndex, pTableMetaInfo->vgroupList->numOfVgroups, pQueryInfo->type,
-      tscSqlExprNumOfExprs(pQueryInfo), numOfCols, pQueryInfo->fieldsInfo.numOfOutput, pTableMetaInfo->name);
+      tscSqlExprNumOfExprs(pQueryInfo), numOfCols, pQueryInfo->fieldsInfo.internalField.size(), pTableMetaInfo->name);
   
   tscProcessSql(pSql);
 }
@@ -671,7 +668,8 @@ static bool checkForDuplicateTagVal(SSchema* pColSchema, SJoinSupporter* p1, SSq
   return true;
 }
 
-static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pParentSql, SArray** s1, SArray** s2) {
+static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pParentSql,std::vector<STidTags> &s1,
+                                           std::vector<STidTags> &s2) {
   SJoinSupporter* p1 = (SJoinSupporter*)pParentSql->pSubs[0]->param;
   SJoinSupporter* p2 = (SJoinSupporter*)pParentSql->pSubs[1]->param;
 
@@ -688,8 +686,6 @@ static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pPar
 
   // int16_t for padding
   int32_t size = p1->tagSize - sizeof(int16_t);
-  *s1 = (SArray*)taosArrayInit(p1->num, size);
-  *s2 = (SArray*)taosArrayInit(p2->num, size);
 
   if (!(checkForDuplicateTagVal(pColSchema, p1, pParentSql) && checkForDuplicateTagVal(pColSchema, p2, pParentSql))) {
     return TSDB_CODE_QRY_DUP_JOIN_KEY;
@@ -706,8 +702,8 @@ static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pPar
       tscDebug("%p tag matched, vgId:%d, val:%d, tid:%d, uid:%"PRIu64", tid:%d, uid:%"PRIu64, pParentSql, pp1->vgId,
                *(int*) pp1->tag, pp1->tid, pp1->uid, pp2->tid, pp2->uid);
 
-      taosArrayPush(*s1, pp1);
-      taosArrayPush(*s2, pp2);
+      s1.push_back(*pp1);
+      s2.push_back(*pp2);
       j++;
       i++;
     } else if (ret > 0) {
@@ -719,11 +715,8 @@ static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pPar
 
   // reorganize the tid-tag value according to both the vgroup id and tag values
   // sort according to the tag value
-  size_t t1 = taosArrayGetSize(*s1);
-  size_t t2 = taosArrayGetSize(*s2);
-
-  qsort((*s1)->pData, t1, size, tidTagsCompar);
-  qsort((*s2)->pData, t2, size, tidTagsCompar);
+  std::sort(s1.begin(), s1.end(), TagCompar{});
+  std::sort(s2.begin(), s2.end(), TagCompar{});
 
 #if 0
   for(int32_t k = 0; k < t1; ++k) {
@@ -737,7 +730,7 @@ static int32_t getIntersectionOfTableTuple(SQueryInfo* pQueryInfo, SSqlObj* pPar
   }
 #endif
 
-  tscDebug("%p tags match complete, result: %"PRIzu", %"PRIzu, pParentSql, t1, t2);
+  tscDebug("%p tags match complete, result: %"PRIzu", %"PRIzu, pParentSql, s1.size(), s2.size());
   return TSDB_CODE_SUCCESS;
 }
 
@@ -824,19 +817,16 @@ static void tidTagRetrieveCallback(void* param, TAOS_RES* tres, int32_t numOfRow
     return;
   }
 
-  SArray *s1 = NULL, *s2 = NULL;
-  int32_t code = getIntersectionOfTableTuple(pQueryInfo, pParentSql, &s1, &s2);
+  std::vector<STidTags> s1, s2;
+  int32_t code = getIntersectionOfTableTuple(pQueryInfo, pParentSql, s1, s2);
   if (code != TSDB_CODE_SUCCESS) {
     freeJoinSubqueryObj(pParentSql);
     pParentSql->res.code = code;
     tscAsyncResultOnError(pParentSql);
-
-    taosArrayDestroy(s1);
-    taosArrayDestroy(s2);
     return;
   }
 
-  if (taosArrayGetSize(s1) == 0 || taosArrayGetSize(s2) == 0) {  // no results,return.
+  if (s1.empty() == 0 || s2.empty()) {  // no results,return.
     assert(pParentSql->fp != tscJoinQueryCallback);
 
     tscDebug("%p tag intersect does not generated qualified tables for join, free all sub SqlObj and quit", pParentSql);
@@ -874,9 +864,6 @@ static void tidTagRetrieveCallback(void* param, TAOS_RES* tres, int32_t numOfRow
       issueTSCompQuery(sub, (SJoinSupporter*)sub->param, pParentSql);
     }
   }
-
-  taosArrayDestroy(s1);
-  taosArrayDestroy(s2);
 }
 
 static void tsCompRetrieveCallback(void* param, TAOS_RES* tres, int32_t numOfRows) {
@@ -1500,7 +1487,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
           "%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%d, transfer to tid_tag query to retrieve (tableId, tags), "
           "exprInfo:%" PRIzu ", colList:%" PRIzu ", fieldsInfo:%d, tagIndex:%d, name:%s",
           pSql, pNew, tableIndex, pTableMetaInfo->vgroupIndex, pNewQueryInfo->type, tscSqlExprNumOfExprs(pNewQueryInfo),
-          numOfCols, pNewQueryInfo->fieldsInfo.numOfOutput, colIndex.columnIndex, pNewQueryInfo->pTableMetaInfo[0]->name);
+          numOfCols, pNewQueryInfo->fieldsInfo.internalField.size(), colIndex.columnIndex, pNewQueryInfo->pTableMetaInfo[0]->name);
     } else {
       SSchema      colSchema = {.type = TSDB_DATA_TYPE_BINARY, .bytes = 1};
       SColumnIndex colIndex = {0, PRIMARYKEY_TIMESTAMP_COL_INDEX};
@@ -1528,7 +1515,7 @@ int32_t tscCreateJoinSubquery(SSqlObj *pSql, int16_t tableIndex, SJoinSupporter 
           "%p subquery:%p tableIndex:%d, vgroupIndex:%d, type:%u, transfer to ts_comp query to retrieve timestamps, "
           "exprInfo:%" PRIzu ", colList:%" PRIzu ", fieldsInfo:%d, name:%s",
           pSql, pNew, tableIndex, pTableMetaInfo->vgroupIndex, pNewQueryInfo->type, tscSqlExprNumOfExprs(pNewQueryInfo),
-          numOfCols, pNewQueryInfo->fieldsInfo.numOfOutput, pNewQueryInfo->pTableMetaInfo[0]->name);
+          numOfCols, pNewQueryInfo->fieldsInfo.internalField.size(), pNewQueryInfo->pTableMetaInfo[0]->name);
     }
   } else {
     assert(0);
@@ -2391,7 +2378,7 @@ int32_t tscHandleMultivnodeInsert(SSqlObj *pSql) {
 static char* getResultBlockPosition(SSqlCmd* pCmd, SSqlRes* pRes, int32_t columnIndex, int16_t* bytes) {
   SQueryInfo* pQueryInfo = tscGetQueryInfoDetail(pCmd, pCmd->clauseIndex);
 
-  SInternalField* pInfo = (SInternalField*) TARRAY_GET_ELEM(pQueryInfo->fieldsInfo.internalField, columnIndex);
+  SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[columnIndex];
   assert(pInfo->pSqlExpr != NULL);
 
   *bytes = pInfo->pSqlExpr->resBytes;
@@ -2467,7 +2454,7 @@ static void doBuildResFromSubqueries(SSqlObj* pSql) {
 
   int32_t finalRowSize = 0;
   for(int32_t i = 0; i < tscNumOfFields(pQueryInfo); ++i) {
-    TAOS_FIELD* pField = tscFieldInfoGetField(&pQueryInfo->fieldsInfo, i);
+    TAOS_FIELD* pField = &pQueryInfo->fieldsInfo.internalField[i].field;
     finalRowSize += pField->bytes;
   }
 
@@ -2568,7 +2555,7 @@ TAOS_ROW doSetResultRowData(SSqlObj *pSql) {
 
   size_t size = tscNumOfFields(pQueryInfo);
   for (int i = 0; i < size; ++i) {
-    SInternalField* pInfo = (SInternalField*)TARRAY_GET_ELEM(pQueryInfo->fieldsInfo.internalField, i);
+    SInternalField* pInfo = &pQueryInfo->fieldsInfo.internalField[i];
 
     int32_t type  = pInfo->field.type;
     int32_t bytes = pInfo->field.bytes;
