@@ -51,7 +51,7 @@ int32_t createDiskbasedResultBuffer(SDiskbasedResultBuf** pResultBuf, int32_t ro
 }
 
 static int32_t createDiskFile(SDiskbasedResultBuf* pResultBuf) {
-  pResultBuf->file = fopen(pResultBuf->path, "wb+");
+  pResultBuf->file = fopen(pResultBuf->path.c_str(), "wb+");
   if (pResultBuf->file == NULL) {
     qError("failed to create tmp file: %s on disk. %s", pResultBuf->path, strerror(errno));
     return TAOS_SYSTEM_ERROR(errno);
@@ -381,30 +381,23 @@ SPageInfo::~SPageInfo()
   tfree(pData);
 }
 
-void destroyResultBuf(SDiskbasedResultBuf * pResultBuf) {
-  if (pResultBuf == NULL) {
-    return;
-  }
-
-  if (pResultBuf->file != NULL) {
+SDiskbasedResultBuf::~SDiskbasedResultBuf() {
+  if (file != NULL) {
     qDebug("QInfo:%p res output buffer closed, total:%.2f Kb, inmem size:%.2f Kb, file size:%.2f Kb",
-        pResultBuf->handle, pResultBuf->totalBufSize/1024.0, listNEles(pResultBuf->lruList) * pResultBuf->pageSize / 1024.0,
-        pResultBuf->fileSize/1024.0);
+        handle, totalBufSize/1024.0, listNEles(lruList) * pageSize / 1024.0,
+        fileSize/1024.0);
 
-    fclose(pResultBuf->file);
+    fclose(file);
   } else {
-    qDebug("QInfo:%p res output buffer closed, total:%.2f Kb, no file created", pResultBuf->handle,
-           pResultBuf->totalBufSize/1024.0);
+    qDebug("QInfo:%p res output buffer closed, total:%.2f Kb, no file created", handle,
+           totalBufSize/1024.0);
   }
 
-  unlink(pResultBuf->path);
-  tfree(pResultBuf->path);
+  unlink(path.c_str());
 
-  tdListFree(pResultBuf->lruList);
-  taosArrayDestroy((SArray*)pResultBuf->emptyDummyIdList);
-  pResultBuf->groupSet.clear();
-  taosHashCleanup(pResultBuf->all);
+  tdListFree(lruList);
+  taosArrayDestroy((SArray*)emptyDummyIdList);
+  taosHashCleanup(all);
 
-  tfree(pResultBuf->assistBuf);
-  tfree(pResultBuf);
+  tfree(assistBuf);
 }

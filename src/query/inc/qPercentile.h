@@ -47,7 +47,7 @@ typedef struct tMemBucketSlot {
 struct tMemBucket;
 typedef int32_t (*__perc_hash_func_t)(struct tMemBucket *pBucket, const void *value);
 
-typedef struct tMemBucket {
+struct tMemBucket {
   int16_t       numOfSlots;
   int16_t       type;
   int16_t       bytes;
@@ -62,11 +62,12 @@ typedef struct tMemBucket {
   tMemBucketSlot *     pSlots;
   SDiskbasedResultBuf *pBuffer;
   __perc_hash_func_t   hashFunc;
-} tMemBucket;
+
+ public:
+  ~tMemBucket();
+};
 
 tMemBucket *tMemBucketCreate(int16_t nElemSize, int16_t dataType, double minval, double maxval);
-
-void tMemBucketDestroy(tMemBucket *pBucket);
 
 int32_t tMemBucketPut(tMemBucket *pBucket, const void *data, size_t size);
 

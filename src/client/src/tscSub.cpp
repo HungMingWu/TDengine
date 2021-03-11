@@ -276,7 +276,7 @@ static int tscUpdateSubscription(STscObj* pObj, SSub* pSub) {
 
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
     std::sort(tables.begin(), tables.end());
-    tscFreeVgroupTableInfo(pTableMetaInfo->pVgroupTables);
+    pTableMetaInfo->pVgroupTables.clear();
     tscBuildVgroupTableInfo(pSql, pTableMetaInfo, tables);
   }
 

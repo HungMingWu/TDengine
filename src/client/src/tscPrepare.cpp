@@ -809,14 +809,7 @@ static int insertStmtExecute(STscStmt* stmt) {
 
   // data block reset
   pCmd->batchSize = 0;
-  for(int32_t i = 0; i < pCmd->numOfTables; ++i) {
-    if (pCmd->pTableNameList && pCmd->pTableNameList[i]) {
-      tfree(pCmd->pTableNameList[i]);
-    }
-  }
-
-  pCmd->numOfTables = 0;
-  tfree(pCmd->pTableNameList);
+  pCmd->pTableNameList.clear();
   pCmd->pDataBlocks = (SArray*)tscDestroyBlockArrayList(pCmd->pDataBlocks);
 
   return pSql->res.code;

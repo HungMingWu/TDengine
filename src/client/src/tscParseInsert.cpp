@@ -1447,7 +1447,7 @@ static void parseFileSendDataBlock(void *param, TAOS_RES *tres, int code) {
   int32_t count = 0;
   int32_t maxRows = 0;
 
-  tfree(pCmd->pTableNameList);
+  pCmd->pTableNameList.clear();
   pCmd->pDataBlocks = (SArray*)tscDestroyBlockArrayList(pCmd->pDataBlocks);
 
   if (pCmd->pTableBlockHashList == NULL) {

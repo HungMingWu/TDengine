@@ -201,10 +201,7 @@ static void resetSlotInfo(tMemBucket* pBucket) {
 }
 
 tMemBucket *tMemBucketCreate(int16_t nElemSize, int16_t dataType, double minval, double maxval) {
-  tMemBucket *pBucket = (tMemBucket *)calloc(1, sizeof(tMemBucket));
-  if (pBucket == NULL) {
-    return NULL;
-  }
+  std::unique_ptr<tMemBucket> pBucket(new tMemBucket);
 
   pBucket->numOfSlots = DEFAULT_NUM_OF_SLOT;
   pBucket->bufPageSize = DEFAULT_PAGE_SIZE * 4;   // 4k per page
@@ -217,8 +214,7 @@ tMemBucket *tMemBucketCreate(int16_t nElemSize, int16_t dataType, double minval,
   pBucket->maxCapacity = 200000;
 
   if (setBoundingBox(&pBucket->range, pBucket->type, minval, maxval) != 0) {
-    qError("MemBucket:%p, invalid value range: %f-%f", pBucket, minval, maxval);
-    free(pBucket);
+    qError("MemBucket:%p, invalid value range: %f-%f", pBucket.get(), minval, maxval);
     return NULL;
   }
 
@@ -227,37 +223,29 @@ tMemBucket *tMemBucketCreate(int16_t nElemSize, int16_t dataType, double minval,
 
   pBucket->hashFunc = getHashFunc(pBucket->type);
   if (pBucket->hashFunc == NULL) {
-    qError("MemBucket:%p, not support data type %d, failed", pBucket, pBucket->type);
-    free(pBucket);
+    qError("MemBucket:%p, not support data type %d, failed", pBucket.get(), pBucket->type);
     return NULL;
   }
 
   pBucket->pSlots = (tMemBucketSlot *)calloc(pBucket->numOfSlots, sizeof(tMemBucketSlot));
   if (pBucket->pSlots == NULL) {
-    free(pBucket);
     return NULL;
   }
 
-  resetSlotInfo(pBucket);
+  resetSlotInfo(pBucket.get());
 
   int32_t ret = createDiskbasedResultBuffer(&pBucket->pBuffer, pBucket->bytes, pBucket->bufPageSize, pBucket->bufPageSize * 512, NULL);
   if (ret != TSDB_CODE_SUCCESS) {
-    tMemBucketDestroy(pBucket);
     return NULL;
   }
   
-  qDebug("MemBucket:%p, elem size:%d", pBucket, pBucket->bytes);
-  return pBucket;
+  qDebug("MemBucket:%p, elem size:%d", pBucket.get(), pBucket->bytes);
+  return pBucket.release();
 }
 
-void tMemBucketDestroy(tMemBucket *pBucket) {
-  if (pBucket == NULL) {
-    return;
-  }
-
-  destroyResultBuf(pBucket->pBuffer);
-  tfree(pBucket->pSlots);
-  tfree(pBucket);
+tMemBucket::~tMemBucket() {
+  delete pBuffer;
+  tfree(pSlots);
 }
 
 void tMemBucketUpdateBoundingBox(MinMaxEntry *r, const char *data, int32_t dataType) {

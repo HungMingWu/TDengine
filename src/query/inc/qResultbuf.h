@@ -54,14 +54,14 @@ typedef struct SResultBufStatis {
   int32_t flushPages;
 } SResultBufStatis;
 
-typedef struct SDiskbasedResultBuf {
+struct SDiskbasedResultBuf {
   int32_t   numOfRowsPerPage;
   int32_t   numOfPages;
   int64_t   totalBufSize;
   int64_t   fileSize;            // disk file size
   FILE*     file;
   int32_t   allocateId;          // allocated page id
-  char*     path;                // file path
+  std::string path;                // file path
   int32_t   pageSize;            // current used page size
   int32_t   inMemPages;          // numOfPages that are allocated in memory
   std::unordered_map<int32_t, std::vector<SPageInfo>> groupSet;            // id hash table
@@ -75,7 +75,10 @@ typedef struct SDiskbasedResultBuf {
 
   const void*      handle;       // for debug purpose
   SResultBufStatis statis;
-} SDiskbasedResultBuf;
+
+ public:
+  ~SDiskbasedResultBuf();
+};
 
 #define DEFAULT_INTERN_BUF_PAGE_SIZE  (256L)                          // in bytes
 #define PAGE_INFO_INITIALIZER         (SPageDiskInfo){-1, -1}
@@ -144,11 +147,5 @@ size_t getResBufSize(const SDiskbasedResultBuf* pResultBuf);
  * @return
  */
 size_t getNumOfResultBufGroupId(const SDiskbasedResultBuf* pResultBuf);
-
-/**
- * destroy result buffer
- * @param pResultBuf
- */
-void destroyResultBuf(SDiskbasedResultBuf* pResultBuf);
 
 #endif  // TDENGINE_QRESULTBUF_H

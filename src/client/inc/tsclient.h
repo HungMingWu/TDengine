@@ -137,10 +137,15 @@ struct SColumn {
   std::vector<SColumnFilterInfo> filterInfo;
 };
 
+struct SVgroupTableInfo {
+  SVgroupInfo               vgInfo;
+  std::vector<STableIdInfo> itemList;
+};
+
 struct STableMetaInfo {
   STableMeta   *pTableMeta;      // table meta, cached in client side and acquired by name
   SVgroupsInfo *vgroupList;
-  SArray       *pVgroupTables;   // SArray<SVgroupTableInfo>
+  std::vector<SVgroupTableInfo> pVgroupTables;  // SArray<SVgroupTableInfo>
   
   /*
    * 1. keep the vgroup index during the multi-vnode super table projection query
@@ -306,8 +311,7 @@ struct SSqlCmd {
   int8_t       submitSchema;   // submit block is built with table schema
   STagData     tagData;        // NOTE: pTagData->data is used as a variant length array
 
-  char       **pTableNameList; // all involved tableMeta list of current insert sql statement.
-  int32_t      numOfTables;
+  std::vector<std::string>       pTableNameList; // all involved tableMeta list of current insert sql statement.
 
   SHashObj    *pTableBlockHashList;     // data block for each table
   SArray      *pDataBlocks;    // SArray<STableDataBlocks*>. Merged submit block for each vgroup

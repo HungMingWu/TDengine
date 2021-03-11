@@ -2053,7 +2053,7 @@ static void teardownQueryRuntimeEnv(SQueryRuntimeEnv *pRuntimeEnv) {
 
   pRuntimeEnv->pFillInfo.reset();
 
-  destroyResultBuf(pRuntimeEnv->pResultBuf);
+  delete pRuntimeEnv->pResultBuf;
   doFreeQueryHandle(pQInfo);
 
   pRuntimeEnv->pTsBuf = (STSBuf*)tsBufDestroy(pRuntimeEnv->pTsBuf);

@@ -245,11 +245,6 @@ SJoinSupporter::~SJoinSupporter() {
     fclose(f);
   }
 
-
-  if (pVgroupTables != NULL) {
-    taosArrayDestroy(pVgroupTables);
-  }
-
   tfree(pIdTagList);
 }
 
@@ -269,7 +264,7 @@ static UNUSED_FUNC bool needSecondaryQuery(SQueryInfo* pQueryInfo) {
   return false;
 }
 
-static void filterVgroupTables(SQueryInfo* pQueryInfo, SArray* pVgroupTables) {
+static void filterVgroupTables(SQueryInfo* pQueryInfo, std::vector<SVgroupTableInfo> &pVgroupTables) {
   int32_t  num = 0;
   int32_t* list = NULL;
   tsBufGetGroupIdList(pQueryInfo->tsBuf, &num, &list);
@@ -277,8 +272,8 @@ static void filterVgroupTables(SQueryInfo* pQueryInfo, SArray* pVgroupTables) {
   // The virtual node, of which all tables are disqualified after the timestamp intersection,
   // is removed to avoid next stage query.
   // TODO: If tables from some vnodes are not qualified for next stage query, discard them.
-  for (int32_t k = 0; k < taosArrayGetSize(pVgroupTables);) {
-    SVgroupTableInfo* p = (SVgroupTableInfo*)taosArrayGet(pVgroupTables, k);
+  for (int32_t k = 0; k < pVgroupTables.size();) {
+    SVgroupTableInfo* p = &pVgroupTables[k];
 
     bool found = false;
     for (int32_t f = 0; f < num; ++f) {
@@ -289,40 +284,41 @@ static void filterVgroupTables(SQueryInfo* pQueryInfo, SArray* pVgroupTables) {
     }
 
     if (!found) {
-      tscRemoveVgroupTableGroup(pVgroupTables, k);
+      pVgroupTables.erase(pVgroupTables.begin() + k);
     } else {
       k++;
     }
   }
 
-  assert(taosArrayGetSize(pVgroupTables) > 0);
+  assert(!pVgroupTables.empty());
   TSDB_QUERY_SET_TYPE(pQueryInfo->type, TSDB_QUERY_TYPE_MULTITABLE_QUERY);
 
   tfree(list);
 }
 
-static SArray* buildVgroupTableByResult(SQueryInfo* pQueryInfo, SArray* pVgroupTables) {
+static std::vector<SVgroupTableInfo> buildVgroupTableByResult(SQueryInfo* pQueryInfo, 
+    const std::vector<SVgroupTableInfo> &pVgroupTables) {
   int32_t  num = 0;
   int32_t* list = NULL;
   tsBufGetGroupIdList(pQueryInfo->tsBuf, &num, &list);
 
-  size_t numOfGroups = taosArrayGetSize(pVgroupTables);
+  size_t numOfGroups = pVgroupTables.size();
 
-  SArray* pNew = (SArray*)taosArrayInit(num, sizeof(SVgroupTableInfo));
+  std::vector<SVgroupTableInfo> pNew;
 
   SVgroupTableInfo info;
   for (int32_t i = 0; i < num; ++i) {
     int32_t vnodeId = list[i];
 
     for (int32_t j = 0; j < numOfGroups; ++j) {
-      SVgroupTableInfo* p1 = (SVgroupTableInfo*)taosArrayGet(pVgroupTables, j);
+      const SVgroupTableInfo* p1 = &pVgroupTables[j];
       if (p1->vgInfo.vgId == vnodeId) {
-        tscVgroupTableCopy(&info, p1);
+        info = pVgroupTables[j];
         break;
       }
     }
 
-    taosArrayPush(pNew, &info);
+    pNew.push_back(info);
   }
 
   tfree(list);
@@ -413,7 +409,7 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     pTableMetaInfo->pVgroupTables = pSupporter->pVgroupTables;
 
     pSupporter->exprList = NULL;
-    pSupporter->pVgroupTables = NULL;
+    pSupporter->pVgroupTables.clear();
     memset(&pSupporter->fieldsInfo, 0, sizeof(SFieldInfo));
     memset(&pSupporter->groupInfo, 0, sizeof(SSqlGroupbyExpr));
 
@@ -453,11 +449,9 @@ static int32_t tscLaunchRealSubqueries(SSqlObj* pSql) {
     }
 
     if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
-      assert(pTableMetaInfo->pVgroupTables != NULL);
+      assert(!pTableMetaInfo->pVgroupTables.empty());
       if (tscNonOrderedProjectionQueryOnSTable(pQueryInfo, 0)) {
-        SArray* p = buildVgroupTableByResult(pQueryInfo, pTableMetaInfo->pVgroupTables);
-        tscFreeVgroupTableInfo(pTableMetaInfo->pVgroupTables);
-        pTableMetaInfo->pVgroupTables = p;
+        pTableMetaInfo->pVgroupTables = buildVgroupTableByResult(pQueryInfo, pTableMetaInfo->pVgroupTables);
       } else {
         filterVgroupTables(pQueryInfo, pTableMetaInfo->pVgroupTables);
       }
@@ -560,8 +554,7 @@ int32_t tagValCompar(const void* p1, const void* p2) {
 }
 
 void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, const std::vector<STidTags>& tables) {
-  SArray*   result = (SArray*)taosArrayInit(4, sizeof(SVgroupTableInfo));
-  SArray*   vgTables = NULL;
+  std::vector<SVgroupTableInfo> result;
   const STidTags* prev = nullptr;
 
   for (const auto& tt : tables) {
@@ -577,19 +570,16 @@ void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, cons
       }
       assert(info.vgInfo.numOfEps != 0);
 
-      vgTables = (SArray*)taosArrayInit(4, sizeof(STableIdInfo));
-      info.itemList = vgTables;
-
-      if (taosArrayGetSize(result) > 0) {
-        SVgroupTableInfo* prevGroup = (SVgroupTableInfo*)taosArrayGet(result, taosArrayGetSize(result) - 1);
-        tscDebug("%p vgId:%d, tables:%"PRIzu, pSql, prevGroup->vgInfo.vgId, taosArrayGetSize(prevGroup->itemList));
+      if (result.size() > 0) {
+        const SVgroupTableInfo& prevGroup = result.back();
+        tscDebug("%p vgId:%d, tables:%"PRIzu, pSql, prevGroup.vgInfo.vgId, prevGroup.itemList.size());
       }
 
-      taosArrayPush(result, &info);
+      result.push_back(info);
     }
 
     STableIdInfo item = {.uid = tt.uid, .tid = tt.tid, .key = INT64_MIN};
-    taosArrayPush(vgTables, &item);
+    result.back().itemList.push_back(item);
 
     tscTrace("%p tid:%d, uid:%"PRIu64",vgId:%d added", pSql, tt.tid, tt.uid, tt.vgId);
     prev = &tt;
@@ -598,9 +588,9 @@ void tscBuildVgroupTableInfo(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo, cons
   pTableMetaInfo->pVgroupTables = result;
   pTableMetaInfo->vgroupIndex = 0;
 
-  if (taosArrayGetSize(result) > 0) {
-    SVgroupTableInfo* g = (SVgroupTableInfo*)taosArrayGet(result, taosArrayGetSize(result) - 1);
-    tscDebug("%p vgId:%d, tables:%"PRIzu, pSql, g->vgInfo.vgId, taosArrayGetSize(g->itemList));
+  if (result.size() > 0) {
+    SVgroupTableInfo* g = &result.back();
+    tscDebug("%p vgId:%d, tables:%"PRIzu, pSql, g->vgInfo.vgId, g->itemList.size());
   }
 }
 
@@ -851,10 +841,10 @@ static void tidTagRetrieveCallback(void* param, TAOS_RES* tres, int32_t numOfRow
     tscBuildVgroupTableInfo(pParentSql, pTableMetaInfo2, s2);
 
     SSqlObj* psub1 = pParentSql->pSubs[0];
-    ((SJoinSupporter*)psub1->param)->pVgroupTables =  tscVgroupTableInfoClone(pTableMetaInfo1->pVgroupTables);
+    ((SJoinSupporter*)psub1->param)->pVgroupTables =  pTableMetaInfo1->pVgroupTables;
 
     SSqlObj* psub2 = pParentSql->pSubs[1];
-    ((SJoinSupporter*)psub2->param)->pVgroupTables =  tscVgroupTableInfoClone(pTableMetaInfo2->pVgroupTables);
+    ((SJoinSupporter*)psub2->param)->pVgroupTables =  pTableMetaInfo2->pVgroupTables;
 
     pParentSql->subState.numOfSub = 2;
     pParentSql->subState.numOfRemain = pParentSql->subState.numOfSub;
@@ -1033,8 +1023,8 @@ static void joinRetrieveFinalResCallback(void* param, TAOS_RES* tres, int numOfR
 
     // for projection query, need to try next vnode if current vnode is exhausted
     int32_t numOfVgroups = 0;  // TODO refactor
-    if (pTableMetaInfo->pVgroupTables != NULL) {
-      numOfVgroups = (int32_t)taosArrayGetSize(pTableMetaInfo->pVgroupTables);
+    if (!pTableMetaInfo->pVgroupTables.empty()) {
+      numOfVgroups = pTableMetaInfo->pVgroupTables.size();
     } else {
       numOfVgroups = pTableMetaInfo->vgroupList->numOfVgroups;
     }
@@ -1193,8 +1183,8 @@ void tscFetchDatablockForSubquery(SSqlObj* pSql) {
 
         // for projection query, need to try next vnode if current vnode is exhausted
         int32_t numOfVgroups = 0;  // TODO refactor
-        if (pTableMetaInfo->pVgroupTables != NULL) {
-          numOfVgroups = (int32_t)taosArrayGetSize(pTableMetaInfo->pVgroupTables);
+        if (!pTableMetaInfo->pVgroupTables.empty()) {
+          numOfVgroups = pTableMetaInfo->pVgroupTables.size();
         } else {
           numOfVgroups = pTableMetaInfo->vgroupList->numOfVgroups;
         }
@@ -1645,10 +1635,10 @@ int32_t tscHandleMasterSTableQuery(SSqlObj *pSql) {
   SSubqueryState *pState = &pSql->subState;
 
   pState->numOfSub = 0;
-  if (pTableMetaInfo->pVgroupTables == NULL) {
+  if (pTableMetaInfo->pVgroupTables.empty()) {
     pState->numOfSub = pTableMetaInfo->vgroupList->numOfVgroups;
   } else {
-    pState->numOfSub = (int32_t)taosArrayGetSize(pTableMetaInfo->pVgroupTables);
+    pState->numOfSub = (int32_t)pTableMetaInfo->pVgroupTables.size();
   }
 
   assert(pState->numOfSub > 0);
@@ -2223,7 +2213,7 @@ static void multiVnodeInsertFinalize(void* param, TAOS_RES* tres, int numOfRows)
         tscFreeQueryInfo(&pSql->cmd);
         SQueryInfo* pQueryInfo = tscGetQueryInfoDetailSafely(&pSql->cmd, 0);
         const STableMetaInfo* pMasterTableMetaInfo = pParentObj->cmd.getMetaInfo(pSql->cmd.clauseIndex, 0);
-        tscAddTableMetaInfo(pQueryInfo, &pMasterTableMetaInfo->name[0], NULL, NULL, NULL, NULL);
+        tscAddTableMetaInfo(pQueryInfo, &pMasterTableMetaInfo->name[0], NULL, NULL, NULL, {});
 
         tscDebug("%p, failed sub:%d, %p", pParentObj, i, pSql);
       }
@@ -2232,10 +2222,9 @@ static void multiVnodeInsertFinalize(void* param, TAOS_RES* tres, int numOfRows)
     tscError("%p Async insertion completed, total inserted:%d rows, numOfFailed:%d, numOfTotal:%d", pParentObj,
              pParentObj->res.numOfRows, numOfFailed, numOfSub);
 
-    tscDebug("%p cleanup %d tableMeta in hashTable", pParentObj, pParentObj->cmd.numOfTables);
-    for(int32_t i = 0; i < pParentObj->cmd.numOfTables; ++i) {
-      char* name = pParentObj->cmd.pTableNameList[i];
-      taosHashRemove(tscTableMetaInfo, name, strnlen(name, TSDB_TABLE_FNAME_LEN));
+    tscDebug("%p cleanup %d tableMeta in hashTable", pParentObj, pParentObj->cmd.pTableNameList.size());
+    for (const auto& name : pParentObj->cmd.pTableNameList) {
+      taosHashRemove(tscTableMetaInfo, name.c_str(), strnlen(name.c_str(), TSDB_TABLE_FNAME_LEN));
     }
 
     pParentObj->cmd.parseFinished = false;

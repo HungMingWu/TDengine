@@ -2533,7 +2533,7 @@ static void percentile_finalizer(SQLFunctionCtx *pCtx) {
     *(double *)pCtx->aOutputBuf = getPercentile(pMemBucket, v);
   }
   
-  tMemBucketDestroy(pMemBucket);
+  delete pMemBucket;
   doFinalizer(pCtx);
 }
 

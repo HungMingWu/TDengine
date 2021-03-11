@@ -46,7 +46,7 @@ static int32_t getWaitingTimeInterval(int32_t count) {
   return initial * ((2u)<<(count - 2));
 }
 
-static void tscSetDnodeEpSet(SRpcEpSet* pEpSet, SVgroupInfo* pVgroupInfo) {
+static void tscSetDnodeEpSet(SRpcEpSet* pEpSet, const SVgroupInfo* pVgroupInfo) {
   assert(pEpSet != NULL && pVgroupInfo != NULL && pVgroupInfo->numOfEps > 0);
 
   // Issue the query to one of the vnode among a vgroup randomly.
@@ -489,17 +489,17 @@ int tscBuildFetchMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   
   if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
     int32_t vgIndex = pTableMetaInfo->vgroupIndex;
-    if (pTableMetaInfo->pVgroupTables == NULL) {
+    if (pTableMetaInfo->pVgroupTables.empty()) {
       SVgroupsInfo *pVgroupInfo = pTableMetaInfo->vgroupList;
       assert(pVgroupInfo->vgroups[vgIndex].vgId > 0 && vgIndex < pTableMetaInfo->vgroupList->numOfVgroups);
 
       pRetrieveMsg->header.vgId = htonl(pVgroupInfo->vgroups[vgIndex].vgId);
       tscDebug("%p build fetch msg from vgId:%d, vgIndex:%d", pSql, pVgroupInfo->vgroups[vgIndex].vgId, vgIndex);
     } else {
-      int32_t numOfVgroups = (int32_t)taosArrayGetSize(pTableMetaInfo->pVgroupTables);
+      int32_t numOfVgroups = pTableMetaInfo->pVgroupTables.size();
       assert(vgIndex >= 0 && vgIndex < numOfVgroups);
 
-      SVgroupTableInfo* pTableIdList = (SVgroupTableInfo*)taosArrayGet(pTableMetaInfo->pVgroupTables, vgIndex);
+      SVgroupTableInfo* pTableIdList = &pTableMetaInfo->pVgroupTables[vgIndex];
 
       pRetrieveMsg->header.vgId = htonl(pTableIdList->vgInfo.vgId);
       tscDebug("%p build fetch msg from vgId:%d, vgIndex:%d", pSql, pTableIdList->vgInfo.vgId, vgIndex);
@@ -570,14 +570,10 @@ static int32_t tscEstimateQueryMsgSize(SSqlObj *pSql, int32_t clauseIndex) {
 
   int32_t tableSerialize = 0;
   STableMetaInfo *pTableMetaInfo = tscGetMetaInfo(pQueryInfo, 0);
-  if (pTableMetaInfo->pVgroupTables != NULL) {
-    size_t numOfGroups = taosArrayGetSize(pTableMetaInfo->pVgroupTables);
-
+  if (!pTableMetaInfo->pVgroupTables.empty()) {
     int32_t totalTables = 0;
-    for (int32_t i = 0; i < numOfGroups; ++i) {
-      SVgroupTableInfo *pTableInfo = (SVgroupTableInfo*)taosArrayGet(pTableMetaInfo->pVgroupTables, i);
-      totalTables += (int32_t) taosArrayGetSize(pTableInfo->itemList);
-    }
+    for (const auto &pTableInfo : pTableMetaInfo->pVgroupTables)
+      totalTables += pTableInfo.itemList.size();
 
     tableSerialize = totalTables * sizeof(STableIdInfo);
   }
@@ -591,7 +587,7 @@ static char *doSerializeTableInfo(SQueryTableMsg* pQueryMsg, SSqlObj *pSql, char
   TSKEY dfltKey = htobe64(pQueryMsg->window.skey);
 
   STableMeta * pTableMeta = pTableMetaInfo->pTableMeta;
-  if (UTIL_TABLE_IS_NORMAL_TABLE(pTableMetaInfo) || pTableMetaInfo->pVgroupTables == NULL) {
+  if (UTIL_TABLE_IS_NORMAL_TABLE(pTableMetaInfo) || pTableMetaInfo->pVgroupTables.empty()) {
     
     int32_t vgId = -1;
     if (UTIL_TABLE_IS_SUPER_TABLE(pTableMetaInfo)) {
@@ -628,23 +624,23 @@ static char *doSerializeTableInfo(SQueryTableMsg* pQueryMsg, SSqlObj *pSql, char
     pMsg += sizeof(STableIdInfo);
   } else { // it is a subquery of the super table query, this EP info is acquired from vgroupInfo
     int32_t index = pTableMetaInfo->vgroupIndex;
-    int32_t numOfVgroups = (int32_t)taosArrayGetSize(pTableMetaInfo->pVgroupTables);
+    int32_t numOfVgroups = pTableMetaInfo->pVgroupTables.size();
     assert(index >= 0 && index < numOfVgroups);
 
     tscDebug("%p query on stable, vgIndex:%d, numOfVgroups:%d", pSql, index, numOfVgroups);
 
-    SVgroupTableInfo *pTableIdList = (SVgroupTableInfo *)taosArrayGet(pTableMetaInfo->pVgroupTables, index);
+    const SVgroupTableInfo *pTableIdList = &pTableMetaInfo->pVgroupTables[index];
 
     // set the vgroup info 
     tscSetDnodeEpSet(&pSql->epSet, &pTableIdList->vgInfo);
     pQueryMsg->head.vgId = htonl(pTableIdList->vgInfo.vgId);
     
-    int32_t numOfTables = (int32_t)taosArrayGetSize(pTableIdList->itemList);
+    int32_t numOfTables = pTableIdList->itemList.size();
     pQueryMsg->numOfTables = htonl(numOfTables);  // set the number of tables
   
     // serialize each table id info
     for(int32_t i = 0; i < numOfTables; ++i) {
-      STableIdInfo* pItem = (STableIdInfo*)taosArrayGet(pTableIdList->itemList, i);
+      const STableIdInfo* pItem = &pTableIdList->itemList[i];
       
       STableIdInfo *pTableIdInfo = (STableIdInfo *)pMsg;
       pTableIdInfo->tid = htonl(pItem->tid);

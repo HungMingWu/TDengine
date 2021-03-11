@@ -89,16 +89,11 @@ struct SJoinSupporter {
   char*           pIdTagList;      // result of first stage tags
   int32_t         totalLen;
   int32_t         num;
-  SArray*         pVgroupTables;
+  std::vector<SVgroupTableInfo> pVgroupTables;
 
  public:
   ~SJoinSupporter();
 };
-
-typedef struct SVgroupTableInfo {
-  SVgroupInfo vgInfo;
-  SArray*     itemList;   //SArray<STableIdInfo>
-} SVgroupTableInfo;
 
 static FORCE_INLINE SQueryInfo* tscGetQueryInfoDetail(SSqlCmd* pCmd, int32_t subClauseIndex) {
   assert(pCmd != NULL && subClauseIndex >= 0);
@@ -208,7 +203,8 @@ SQueryInfo *tscGetQueryInfoDetailSafely(SSqlCmd *pCmd, int32_t subClauseIndex);
 void tscClearTableMetaInfo(STableMetaInfo* pTableMetaInfo);
 
 STableMetaInfo* tscAddTableMetaInfo(SQueryInfo* pQueryInfo, const char* name, STableMeta* pTableMeta,
-    SVgroupsInfo* vgroupList, const std::vector<SColumn> *pTagCols, SArray* pVgroupTables);
+    SVgroupsInfo* vgroupList, const std::vector<SColumn> *pTagCols, 
+    const std::vector<SVgroupTableInfo> &pVgroupTables);
 
 STableMetaInfo* tscAddEmptyMetaInfo(SQueryInfo *pQueryInfo);
 int32_t tscAddSubqueryInfo(SSqlCmd *pCmd);
@@ -216,10 +212,6 @@ int32_t tscAddSubqueryInfo(SSqlCmd *pCmd);
 void tscInitQueryInfo(SQueryInfo* pQueryInfo);
 
 void tscClearSubqueryInfo(SSqlCmd* pCmd);
-void tscFreeVgroupTableInfo(SArray* pVgroupTables);
-SArray* tscVgroupTableInfoClone(SArray* pVgroupTables);
-void tscRemoveVgroupTableGroup(SArray* pVgroupTable, int32_t index);
-void tscVgroupTableCopy(SVgroupTableInfo* info, SVgroupTableInfo* pInfo);
 
 int  tscGetSTableVgroupInfo(SSqlObj* pSql, int32_t clauseIndex);
 int  tscGetTableMeta(SSqlObj* pSql, STableMetaInfo* pTableMetaInfo);
